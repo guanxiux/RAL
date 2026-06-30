@@ -1,0 +1,72 @@
+\documentclass[letterpaper,journal]{IEEEtran}
+\usepackage{amsmath,amsfonts}
+\usepackage{algorithmic}
+\usepackage{algorithm}
+\usepackage{array}
+\usepackage[caption=false,font=normalsize,labelfont=sf,textfont=sf]{subfig}
+\usepackage{textcomp}
+\usepackage{stfloats}
+\usepackage{url}
+\usepackage{verbatim}
+\usepackage{graphicx}
+\usepackage{cite}
+\hyphenation{op-tical net-works semi-conduc-tor IEEE-Xplore}
+
+\begin{document}
+
+\title{WMConv: Worklist-driven Masked Convolution\\
+for Onboard High-Speed Robotic Perception}
+
+\author{Anonymous Authors% <-this % stops a space
+\thanks{Manuscript received Month DD, YYYY.}}
+
+% The paper headers
+\markboth{IEEE Robotics and Automation Letters. Preprint Version.}%
+{Author \MakeLowercase{\textit{et al.}}: WMConv: Worklist-driven Masked Convolution}
+
+\maketitle
+
+\begin{abstract}
+Onboard robotic perception must run convolutional networks within tight
+latency and power budgets, so many high-speed vision systems produce a
+spatial active mask and update only the convolution outputs tied to the
+active regions. Yet existing execution paths for such masked convolution
+sit at opposite ends of a trade-off between useful-compute ratio and
+throughput: tile skipping keeps the dense pipeline's throughput but skips
+too coarsely, while gather-scatter skips precisely but collapses
+throughput, so high sparsity rarely becomes a comparable latency speedup.
+We present WMConv, a worklist-driven dense-grid masked convolution operator
+that fuses the gather into the convolution kernel and sparsifies only the
+output positions to compute, retaining the dense pipeline while skipping at
+position granularity. A lightweight, tiled worklist-construction stage
+resolves both the coordinate-discovery and locality-preservation overheads
+at once. On the Jetson Xavier NX and Orin, across three mask sources and
+three robotic perception tasks, WMConv converts sparsity into on-device
+latency reduction and higher perception frequency more effectively than
+dense cuDNN, tile skipping, and gather-scatter baselines, while preserving
+task accuracy.
+\end{abstract}
+
+\begin{IEEEkeywords}
+Computer architecture for robotic and automation, software, deep learning
+methods, sparse convolution, embedded perception.
+\end{IEEEkeywords}
+
+\input{src/intro}
+\input{src/background}
+
+% ---------------------------------------------------------------------------
+% Remaining sections (to be written):
+% \input{src/related}
+% \input{src/method}
+% \input{src/eval}
+% \input{src/conclusion}
+% ---------------------------------------------------------------------------
+
+\section*{Acknowledgments}
+% TODO
+
+\bibliographystyle{IEEEtran}
+\bibliography{refs}
+
+\end{document}

@@ -1,0 +1,105 @@
+% intro.tex --- Introduction section for the WMConv RAL/ICRA letter.
+% Meant to be \input{} from the main IEEEtran document.
+% Bib keys used below (define in your .bib):
+%   evconv, deltacnn, dgnet, torchsparsepp, spconv, cudnn
+%
+% Length target: ~3/4 to 1 column-page (RAL/ICRA letter). Keep it tight.
+
+\section{Introduction}
+\label{sec:intro}
+
+\IEEEPARstart{O}{nboard} robots run convolutional perception in the control
+loop for navigation, manipulation, and closed-loop control. On embedded
+platforms the available compute is far below server-class GPUs, yet
+perception latency is a hard real-time constraint because it sits directly
+on the control path. Dense convolution recomputes every spatial position,
+and on these platforms it often cannot reach the update frequency the loop
+demands. Many high-speed vision systems on UAVs, mobile robots, and
+embedded devices~\cite{evconv,deltacnn,dgnet} therefore concentrate compute
+on active regions via \emph{masked convolution}: the input stays a dense
+image-grid tensor, but only the outputs at positions marked active are
+updated.
+
+The standard dense convolution pipeline partitions the output grid into
+\emph{tiles} (contiguous spatial blocks) and for each tile reads the
+required input patch by coordinate, computes the convolution, and writes
+the result back. This coordinate-driven, tile-based execution achieves high
+throughput because tiles access spatially contiguous data with regular,
+predictable memory patterns. Existing masked-convolution systems modify or
+abandon this pipeline along two paths.
+
+\emph{Tile skipping}~\cite{evconv,deltacnn} stays inside the dense
+pipeline: it tests each tile and skips it if every position within is
+inactive. Throughput is preserved for non-skipped tiles, but a single
+active position forces the entire tile to execute, so many computed outputs
+are unneeded. \emph{Gather-scatter}~\cite{dgnet} abandons the pipeline
+entirely: it extracts active positions exactly, gathers their input
+neighborhoods, computes, and scatters results back. Every computed output is
+needed, but the extraction, irregular memory access, and scatter writeback
+collapse throughput.
+
+We characterize this trade-off along two axes: \emph{throughput} (operations
+per second, bounded by the dense pipeline) and \emph{useful-compute ratio}
+(the fraction of executed operations that produce needed outputs). Tile
+skipping preserves throughput but sacrifices useful-compute ratio;
+gather-scatter achieves high useful-compute ratio but sacrifices throughput.
+Neither delivers both, so upstream sparsity does not translate into
+proportional latency reduction.
+% TODO: fill measured numbers (XX/YY/AA/BB/CC/DD)
+In our evaluation on Jetson Xavier NX and Orin, existing
+methods~\cite{evconv,deltacnn,dgnet} reduce the active-output ratio to
+roughly \mbox{XX--YY\%}; yet tile-skipping methods achieve only
+\mbox{AA--BB\%} useful-compute ratio, while gather-scatter methods reach
+only \mbox{CC\%} of tile-skipping throughput. Convolution latency is reduced
+by only \mbox{DD--EE\%}.
+
+Our key insight is that the position-level selectivity of gather-scatter
+can be fused into the dense pipeline's coordinate-driven execution without
+the separate data-movement stages. The fusion is straightforward in
+principle: because each tile already performs a coordinate-driven
+read-compute-write per position, replacing the tile's coordinate source,
+from a contiguous block to a set of active positions, gives position-level
+selectivity while keeping the per-position execution path identical. This
+achieves high useful-compute ratio directly, and because the per-position
+datapath remains that of the dense pipeline, it opens the potential for
+dense-level throughput.
+
+Realizing this potential requires addressing the challenge of two practical overheads. First, \emph{coordinate discovery}: the kernel must
+know which positions are active before computation begins, yet scanning for
+them inside the compute kernel would stall the main datapath. Second,
+\emph{locality}: if active positions are processed in arbitrary (instead of contiguous) order,
+memory access loses the spatial regularity that gives the dense pipeline its
+speed; a global sort would restore order but is itself expensive.
+
+We present WMConv (Worklist-driven Masked Convolution), a dense-grid masked
+convolution operator that resolves both overheads through a two-stage
+design. A lightweight construction stage scans the active mask and emits a
+\emph{worklist}: the ordered coordinates of active output positions. The
+subsequent compute stage drives the dense pipeline's coordinate-driven
+execution with the worklist as its coordinate source, computing only the
+active outputs. Both overheads are addressed by the
+construction stage's tiled scan: it operates entirely in 2D mask space (no
+feature data touched), so coordinate discovery costs only XX\% of the
+compute-stage time; and because it proceeds tile by tile over the spatial
+grid, active positions from the same tile appear contiguously in the
+worklist, partially restoring the spatial locality of dense execution
+without any global sort. With construction overhead minimized and only
+active outputs computed, WMConv achieves near-linear latency scaling: an
+active-output ratio of $x$\% yields convolution latency close to $x$\% of
+the dense baseline.
+
+This paper makes the following contributions:
+\begin{itemize}
+  \item We identify the useful-compute ratio vs.\ throughput trade-off as
+        the fundamental bottleneck preventing masked convolution from
+        delivering proportional speedup on embedded
+        platforms~\cite{evconv,deltacnn,dgnet}.
+  \item We present WMConv, a worklist-driven masked convolution operator
+        that fuses position-level selectivity into the dense pipeline's
+        coordinate-driven execution, achieving both high useful-compute
+        ratio and near-dense throughput.
+  \item On Jetson Xavier NX and Orin, WMConv achieves near-linear latency
+        scaling with active-output ratio across three mask sources and three
+        robotic perception tasks, outperforming dense cuDNN, tile skipping,
+        and gather-scatter while preserving task accuracy.
+\end{itemize}
