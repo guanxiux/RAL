@@ -9,15 +9,16 @@
 \label{sec:intro}
 
 \IEEEPARstart{O}{nboard} robots run convolutional perception in the control
-loop for navigation, manipulation, and closed-loop control. On embedded
-platforms the available compute is far below server-class GPUs, yet
-perception latency is a hard real-time constraint because it sits directly
-on the control path. Dense convolution recomputes every spatial position,
-and on these platforms it often cannot reach the update frequency the loop
-demands. Many high-speed vision systems on UAVs, mobile robots, and
-embedded devices~\cite{evconv,deltacnn,dgnet} therefore concentrate compute
-on active regions via \emph{masked convolution}: the input stays a dense
-image-grid tensor, but only the outputs at positions marked active are
+loop for navigation, manipulation, and closed-loop
+control~\cite{fastdepth,nanoflownet,contactgraspnet}. On embedded platforms
+the available compute is far below server-class GPUs, yet perception latency
+is a hard real-time constraint because it sits directly on the control path.
+Dense convolution recomputes every spatial position, and on these platforms
+it often cannot reach the update frequency the loop demands. Many
+high-speed vision systems on UAVs, mobile robots, and embedded
+devices~\cite{evconv,asyncsparse,deltacnn,dgnet} therefore concentrate
+compute on active regions via \emph{masked convolution}: the input stays a
+dense image-grid tensor, but only the outputs at positions marked active are
 updated.
 
 The standard dense convolution pipeline partitions the output grid into
@@ -28,11 +29,11 @@ throughput because tiles access spatially contiguous data with regular,
 predictable memory patterns. Existing masked-convolution systems modify or
 abandon this pipeline along two paths.
 
-\emph{Tile skipping}~\cite{evconv,deltacnn} stays inside the dense
-pipeline: it tests each tile and skips it if every position within is
+\emph{Tile skipping}~\cite{sbnet,skipconv,evconv,deltacnn} stays inside the
+dense pipeline: it tests each tile and skips it if every position within is
 inactive. Throughput is preserved for non-skipped tiles, but a single
 active position forces the entire tile to execute, so many computed outputs
-are unneeded. \emph{Gather-scatter}~\cite{dgnet} abandons the pipeline
+are unneeded. \emph{Gather-scatter}~\cite{dgnet,sai} abandons the pipeline
 entirely: it extracts active positions exactly, gathers their input
 neighborhoods, computes, and scatters results back. Every computed output is
 needed, but the extraction, irregular memory access, and scatter writeback
@@ -47,7 +48,7 @@ Neither delivers both, so upstream sparsity does not translate into
 proportional latency reduction.
 % TODO: fill measured numbers (XX/YY/AA/BB/CC/DD)
 In our evaluation on Jetson Xavier NX and Orin, existing
-methods~\cite{evconv,deltacnn,dgnet} reduce the active-output ratio to
+methods~\cite{evconv,deltacnn,cbinfer,dgnet,sai} reduce the active-output ratio to
 roughly \mbox{XX--YY\%}; yet tile-skipping methods achieve only
 \mbox{AA--BB\%} useful-compute ratio, while gather-scatter methods reach
 only \mbox{CC\%} of tile-skipping throughput. Convolution latency is reduced
@@ -93,7 +94,7 @@ This paper makes the following contributions:
   \item We identify the useful-compute ratio vs.\ throughput trade-off as
         the fundamental bottleneck preventing masked convolution from
         delivering proportional speedup on embedded
-        platforms~\cite{evconv,deltacnn,dgnet}.
+        platforms~\cite{sbnet,skipconv,evconv,deltacnn,dgnet,sai}.
   \item We present WMConv, a worklist-driven masked convolution operator
         that fuses position-level selectivity into the dense pipeline's
         coordinate-driven execution, achieving both high useful-compute

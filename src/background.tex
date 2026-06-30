@@ -5,16 +5,18 @@
 \label{sec:bg:dense}
 
 Convolutional neural networks are the computational backbone of onboard
-robotic visual perception. CNN-based depth estimation and optical flow feed
-obstacle avoidance and path planning; object detection and semantic
-segmentation provide scene understanding for navigation; and pose estimation
-enables closed-loop manipulation. While vision transformers have achieved
-strong accuracy on these tasks, their quadratic attention cost makes them
-impractical under the tight latency and power budgets of embedded
-platforms; CNN-based models remain the dominant deployed choice for
-real-time onboard visual inference. Across these models, 2D convolutional
-layers operating on image-grid feature maps dominate the inference workload
-and sit directly on the control-critical path.
+robotic visual perception. CNN-based depth estimation and optical
+flow~\cite{fastdepth,raft,nanoflownet} feed obstacle avoidance and path
+planning; object detection~\cite{yolov7} and semantic
+segmentation~\cite{bisenet} provide scene understanding for navigation; and
+pose estimation~\cite{densefusion,contactgraspnet} enables closed-loop
+manipulation. While vision transformers~\cite{vit} have achieved strong
+accuracy on these tasks, their quadratic attention cost makes them
+impractical under the tight latency and power budgets of embedded platforms;
+CNN-based models remain the dominant deployed choice for real-time onboard
+visual inference. Across these models, 2D convolutional layers operating on
+image-grid feature maps dominate the inference workload and sit directly on
+the control-critical path.
 
 On embedded platforms (Jetson Xavier NX, Orin, edge TPUs), power and thermal
 budgets limit available compute to a fraction of server-class GPUs, yet the
@@ -78,21 +80,23 @@ families of mask sources produce the initial $M_{in}$:
 % PLACEHOLDER_REST
 
 \paragraph{Event-camera increments.}
-Event cameras are bio-inspired sensors in which each pixel independently
-fires when its brightness change exceeds a threshold, generating data only
-where intensity varies. They offer microsecond temporal resolution, high
-dynamic range, and negligible motion blur, making them widely used on UAVs
-and high-speed platforms. Events accumulated over a temporal window are
-differenced to reveal which positions received new activity, producing a
-naturally sparse mask.
+Event cameras~\cite{eventsurvey} are bio-inspired sensors in which each
+pixel independently fires when its brightness change exceeds a threshold,
+generating data only where intensity varies. They offer microsecond temporal
+resolution, high dynamic range, and negligible motion blur, making them
+widely used on UAVs and high-speed platforms. Events accumulated over a
+temporal window are differenced to reveal which positions received new
+activity, producing a naturally sparse
+mask~\cite{asyncsparse,evconv}.
 
 \paragraph{Temporal frame differences.}
 Standard frame-based cameras on mobile robots and autonomous vehicles
 capture video at a fixed rate. Between consecutive frames most of the scene
 remains static, especially under moderate ego-motion. Temporal differencing
-methods~\cite{deltacnn} compare consecutive frames (or motion-compensated
-histories) and identify positions where pixel differences exceed a
-threshold; only outputs affected by these positions need recomputation.
+methods~\cite{cbinfer,deltacnn} compare consecutive frames (or
+motion-compensated histories) and identify positions where pixel differences
+exceed a threshold; only outputs affected by these positions need
+recomputation.
 
 \paragraph{Learned spatial gating.}
 Rather than relying on temporal change, dynamic networks~\cite{dgnet} train
@@ -115,8 +119,8 @@ $C = \bigcup_{j:\, T_j \cap M \neq \emptyset} T_j$. Because non-skipped
 tiles run the unmodified dense pipeline, throughput is preserved. However,
 $|C|$ can be much larger than $|M|$ when active positions are scattered
 across many tiles: a single active position forces its entire tile to
-execute. Ev-Conv~\cite{evconv} and DeltaCNN~\cite{deltacnn} follow this
-paradigm.
+execute. SBNet~\cite{sbnet}, Skip-Convolutions~\cite{skipconv},
+Ev-Conv~\cite{evconv}, and DeltaCNN~\cite{deltacnn} follow this paradigm.
 
 \paragraph{Gather-scatter.}
 Active positions are extracted exactly: the system gathers
@@ -126,7 +130,7 @@ output grid. The computed set is $C = M$ exactly, so no computation is
 wasted. However, the gather, scatter, and irregular memory access patterns
 abandon the dense pipeline's regular execution, reducing throughput to a
 fraction of tile-based methods.
-DGNet~\cite{dgnet} follows this paradigm.
+DGNet~\cite{dgnet} and SAI~\cite{sai} follow this paradigm.
 
 \subsection{The Gap: Sparsity Does Not Become Speedup}
 \label{sec:bg:gap}
@@ -165,7 +169,7 @@ motivates WMConv.
 \label{sec:bg:3d}
 
 3D sparse convolution (SpConv~v2~\cite{spconv2},
-TorchSparse++~\cite{torchsparse++}) targets point-cloud workloads where
+TorchSparse++~\cite{torchsparsepp}) targets point-cloud workloads where
 input data is inherently irregular: active voxels occupy scattered positions
 with no underlying dense grid. The gathered features have no spatial
 regularity, so the core challenge is how to impose computational structure
