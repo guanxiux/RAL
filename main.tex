@@ -12,9 +12,12 @@
 \usepackage{cite}
 \hyphenation{op-tical net-works semi-conduc-tor IEEE-Xplore}
 
+\newcommand{\sysname}{WISEConv\xspace}
+\usepackage{xspace}
+
 \begin{document}
 
-\title{WMConv: Worklist-driven Masked Convolution\\
+\title{\sysname: Worklist-driven Masked Convolution\\
 for Onboard High-Speed Robotic Perception}
 
 \author{Anonymous Authors% <-this % stops a space
@@ -22,7 +25,7 @@ for Onboard High-Speed Robotic Perception}
 
 % The paper headers
 \markboth{IEEE Robotics and Automation Letters. Preprint Version.}%
-{Author \MakeLowercase{\textit{et al.}}: WMConv: Worklist-driven Masked Convolution}
+{Author \MakeLowercase{\textit{et al.}}: \sysname: Worklist-driven Masked Convolution}
 
 \maketitle
 
@@ -35,13 +38,13 @@ However, existing approaches face a fundamental trade-off: tile skipping
 preserves the dense pipeline's throughput but computes many unneeded
 outputs, while gather-scatter computes only needed outputs but sacrifices
 throughput. Neither converts high sparsity into proportional latency
-reduction. We present WMConv, a masked convolution operator that achieves
+reduction. We present \sysname, a masked convolution operator that achieves
 both high useful-compute ratio and near-dense throughput by fusing
-position-level selectivity into the dense pipeline itself. WMConv first
+position-level selectivity into the dense pipeline itself. \sysname first
 scans the mask to build an ordered worklist of active positions, then drives
 the standard convolution datapath using only those positions. On Jetson
 Xavier NX and Orin, across three mask sources and three robotic perception
-tasks, WMConv achieves near-linear latency scaling with the active ratio,
+tasks, \sysname achieves near-linear latency scaling with the active ratio,
 outperforming state-of-the-art baselines while preserving task accuracy.
 \end{abstract}
 
@@ -52,11 +55,11 @@ methods, sparse convolution, embedded perception.
 
 \input{src/intro}
 \input{src/background}
+\input{src/design}
 
 % ---------------------------------------------------------------------------
 % Remaining sections (to be written):
 % \input{src/related}
-% \input{src/method}
 % \input{src/eval}
 % \input{src/conclusion}
 % ---------------------------------------------------------------------------

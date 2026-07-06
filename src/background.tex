@@ -4,7 +4,7 @@
 \subsection{2D Dense Convolution on Embedded Platforms}
 \label{sec:bg:dense}
 
-Convolutional neural networks are the computational backbone of onboard
+Convolutional neural networks (CNNs) are the computational backbone of onboard
 robotic visual perception. CNN-based depth estimation and optical
 flow~\cite{fastdepth,raft,nanoflownet} feed obstacle avoidance and path
 planning; object detection~\cite{yolov7} and semantic
@@ -14,7 +14,7 @@ manipulation. While vision transformers~\cite{vit} have achieved strong
 accuracy on these tasks, their quadratic attention cost makes them
 impractical under the tight latency and power budgets of embedded platforms;
 CNN-based models remain the dominant deployed choice for real-time onboard
-visual inference. Across these models, 2D convolutional layers operating on
+visual inference. Across these models, convolutional layers operating on
 image-grid feature maps dominate the inference workload and sit directly on
 the control-critical path.
 
@@ -141,54 +141,44 @@ the average fraction of output positions that require computation across
 all layers. We characterize masked-convolution efficiency along two axes:
 \emph{throughput}, the rate of convolution operations per second (bounded by
 the dense pipeline), and \emph{useful-compute ratio}, the fraction of
-executed operations that produce needed outputs. Tile skipping preserves
-throughput but sacrifices useful-compute ratio; gather-scatter achieves high
-useful-compute ratio but sacrifices throughput. Neither delivers both, so
-upstream sparsity does not translate into proportional latency reduction.
+executed operations that produce needed outputs ($|M|/|C|$). Tile skipping
+preserves throughput but sacrifices useful-compute ratio; gather-scatter
+achieves high useful-compute ratio but sacrifices throughput. Neither
+delivers both, so upstream sparsity does not translate into proportional
+latency reduction. Figure~\ref{fig:gap} quantifies this on Jetson Orin
+running XX on YY dataset: with $\rho$ in the range XX--YY\%,
+tile-skipping methods achieve only AA--BB\% useful-compute ratio and
+gather-scatter methods reach only CC\% of tile-skipping throughput, reducing
+convolution latency by only DD--EE\% rather than the ideal $\rho$-linear
+scaling. This gap motivates \sysname.
 
 % TODO: figure showing active-output ratio vs actual speedup on Jetson
 \begin{figure}[t]
   \centering
-  % \includegraphics[width=\columnwidth]{figures/gap.pdf}
+  \fbox{\parbox{0.9\columnwidth}{\centering\vspace{2cm}%
+    \textbf{[TODO]} Active ratio $\rho$ (x-axis) vs.\ actual speedup over
+    dense (y-axis) on Jetson Orin. Three mask sources, two paradigms.
+    Dashed line = ideal linear scaling.\vspace{2cm}}}
   \caption{Active ratio vs.\ actual convolution speedup on Jetson
   Orin for the three mask sources. The dashed line marks ideal (linear)
   scaling. Tile skipping and gather-scatter both fall far short.}
   \label{fig:gap}
 \end{figure}
 
-Figure~\ref{fig:gap} quantifies the problem on Jetson Orin. Across the
-three mask sources, the active ratio $\rho$ reaches XX--YY\%, yet
-tile-skipping methods achieve only AA--BB\% useful-compute ratio (limited by
-tile granularity) and gather-scatter methods reach only CC\% of
-tile-skipping throughput (limited by data-movement overhead). As a result,
-convolution latency is reduced by only DD--EE\%, far below the ideal linear
-scaling where $\rho = x\%$ would yield $x\%$ of dense latency. This gap
-motivates WMConv.
-
 \subsection{3D Sparse Convolution: A Different Problem}
 \label{sec:bg:3d}
 
 3D sparse convolution (SpConv~v2~\cite{spconv2},
 TorchSparse++~\cite{torchsparsepp}) targets point-cloud workloads where
-input data is inherently irregular: active voxels occupy scattered positions
-with no underlying dense grid. The gathered features have no spatial
-regularity, so the core challenge is how to impose computational structure
-on irregular data. Implicit GEMM, the dominant approach, fuses the
-per-offset gather into a single matrix multiplication with index mapping,
-achieving structured computation despite irregular access.
-
-WMConv faces a fundamentally different problem. The input data resides on a
-regular dense grid; reading any position's neighborhood is a structured,
-stride-based access. The challenge is not how to compute efficiently on
-irregular data, but how to skip inactive outputs without leaving the dense
-pipeline's already-efficient execution.
-
-Applying 3D sparse convolution directly to this 2D dense-grid scenario
-performs poorly in practice. These systems require building coordinate hash
-tables and neighbor maps that involve mandatory GPU synchronization,
-equivalent in cost to their ``full convolution'' path. In our scenario the
-active mask changes every frame (or every event window), so this
-construction cannot be amortized across layers as in 3D SubM convolution. On
-Jetson Orin, SpConv~v2 applied to a 2D masked convolution with $\rho =
-\text{XX}\%$ runs XX$\times$ slower than the dense baseline due to
-construction overhead alone (Section~\ref{sec:eval}).
+input data is inherently irregular and the core challenge is imposing
+computational structure on scattered voxels. \sysname faces a fundamentally
+different problem: the input resides on a regular dense grid with
+structured, stride-based access; the challenge is how to skip inactive
+outputs without leaving the dense pipeline's already-efficient execution.
+Applying 3D sparse convolution directly to this 2D scenario performs poorly
+because it requires building coordinate hash tables and neighbor maps with
+mandatory GPU synchronization, and the per-frame mask changes prevent
+amortizing this cost across layers. On Jetson Orin, SpConv~v2 applied to a
+2D masked convolution with $\rho = \text{XX}\%$ runs XX$\times$ slower than
+the dense baseline due to construction overhead alone
+(Section~\ref{sec:eval}).

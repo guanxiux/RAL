@@ -1,0 +1,230 @@
+\section{\sysname Design}
+\label{sec:design}
+
+\subsection{Overview}
+\label{sec:design:overview}
+
+Onboard robotic perception demands real-time convolution under strict
+compute and power budgets; on embedded platforms, dense convolution often
+cannot meet the hard latency ceiling imposed by the control loop
+(Section~\ref{sec:bg:dense}). Masked convolution exploits spatial sparsity
+to reduce convolution latency by computing only the outputs affected by
+active input regions. However, as shown in Section~\ref{sec:bg:gap},
+existing approaches fail to convert high sparsity into proportional latency
+reduction due to the tension between useful-compute ratio and throughput.
+\sysname resolves this tension through a two-stage design
+(Figure~\ref{fig:overview}):
+
+\begin{enumerate}
+  \item \textbf{Construction stage.} A lightweight kernel scans the input
+        active mask $M_{in}$ and evaluates Eq.~\eqref{eq:mask} on the fly,
+        emitting a \emph{worklist} $W = (w_1, \ldots, w_{|M|})$, where each
+        $w_j \in M \subseteq \mathcal{G}_{out}$ is the linear index of an
+        active output position. Each thread block covers one tile $T_j$ and
+        compacts its active positions into a contiguous segment of $W$.
+
+  \item \textbf{Compute stage.} A convolution kernel consumes $W$ as its
+        coordinate source. For each position $w_j \in W$, the kernel
+        decodes the spatial coordinate, reads the receptive-field input
+        $\mathbf{x}[\mathcal{N}(w_j)]$, and accumulates
+        Eq.~\eqref{eq:conv} identically to the dense pipeline. The
+        computed set is $C = \{w_1, \ldots, w_{|M|}\} = M$, so no
+        computation is wasted.
+\end{enumerate}
+
+\sysname achieves high useful-compute ratio because the worklist contains
+only positions that require computation ($C = M$, no wasted work). It
+achieves near-dense throughput through three mechanisms: the construction
+stage operates entirely in mask space with minimal overhead
+(Section~\ref{sec:design:construct}); the worklist preserves locality
+comparable to the dense traversal order
+(Section~\ref{sec:design:construct}); and the compute stage's per-position
+datapath is identical to the dense pipeline
+(Section~\ref{sec:design:compute}).
+
+% TODO: overview figure (double column)
+\begin{figure*}[t]
+  \centering
+  \fbox{\parbox{0.9\textwidth}{\centering\vspace{2.5cm}%
+    \textbf{[TODO]} \sysname overview. Left: input mask $M_{in}$ on the
+    spatial grid. Middle: construction stage scans tiles $T_1, \ldots, T_N$,
+    emits ordered worklist $W$. Right: compute stage consumes $W$, drives
+    implicit GEMM, writes output $\mathbf{y}$ at active positions only.
+    Show tile-respecting order in $W$.\vspace{2.5cm}}}
+  \caption{\sysname two-stage pipeline. The construction stage scans the
+  mask tile by tile and emits an ordered worklist. The compute stage
+  drives the dense convolution datapath using only the worklist positions.}
+  \label{fig:overview}
+\end{figure*}
+
+% PLACEHOLDER_4_2
+
+\subsection{Worklist Construction}
+\label{sec:design:construct}
+
+The construction stage produces a worklist $W \in \mathbb{Z}^{|M|}$, a
+vector whose entries are exactly the positions in $M$.
+
+\paragraph{Tiled scan.}
+The kernel assigns one GPU thread per output position in
+$\mathcal{G}_{out}$, with each thread block covering one tile $T_j$. For
+each tile, the kernel determines its active subset:
+\begin{equation}
+  M_j = \bigl\{\, p \in T_j \;\big|\; \mathcal{N}(p) \cap M_{in} \neq \emptyset \,\bigr\},
+  \label{eq:active-test}
+\end{equation}
+which requires reading at most $k^2$ entries from the boolean mask $M_{in}$
+per position (no feature data accessed). The thread block sorts $M_j$ in
+raster order to produce a sub-vector
+$\mathbf{s}_j \in \mathbb{Z}^{|M_j|}$ and writes it into a contiguous
+segment of $W$ (Algorithm~\ref{alg:construct}).
+
+\paragraph{Worklist structure.}
+The resulting worklist $W$ is partitioned into $N$ contiguous sub-vectors,
+one per tile. Let $o_j$ denote the starting index of tile $T_j$'s segment:
+\begin{equation}
+  W[o_j : o_j + |M_j|] = \mathbf{s}_j, \quad j = 1, \ldots, N.
+  \label{eq:worklist-segment}
+\end{equation}
+Each $\mathbf{s}_j$ is internally ordered (raster order within $T_j$). The
+offsets $\{o_1, \ldots, o_N\}$ constitute a permutation of the prefix sums
+of $\{|M_1|, \ldots, |M_N|\}$, determined by the runtime execution order of
+thread blocks. Define the \emph{ideal worklist} $W^*$ as the same
+sub-vectors arranged in tile-index order:
+\begin{equation}
+  W^* = (\mathbf{s}_1, \mathbf{s}_2, \ldots, \mathbf{s}_N),
+  \label{eq:ideal-worklist}
+\end{equation}
+which corresponds to the subsequence of the dense raster traversal
+restricted to $M$. Both $W$ and $W^*$ consist of the same sub-vectors
+$\{\mathbf{s}_j\}$; they differ only in the ordering of these sub-vectors.
+
+\paragraph{Locality analysis.}
+The compute stage processes $W$ in chunks of $B_M$ consecutive entries. Let
+$n_{\text{tiles}}(W, b)$ denote the number of distinct tiles represented in
+chunk $W[b : b + B_M]$. Since each sub-vector $\mathbf{s}_j$ has length
+$|M_j|$, any chunk of $B_M$ entries spans at least
+\begin{equation}
+  n_{\text{tiles}}(W, b) \;\geq\; \bigl\lceil B_M \,/\, \max_j |M_j| \bigr\rceil
+  \label{eq:tile-count-bound}
+\end{equation}
+tiles, regardless of the sub-vector ordering. The same bound holds for
+$W^*$. Therefore the spatial spread of input data per chunk (and hence the
+cache working set) is equivalent for $W$ and $W^*$; the non-deterministic
+inter-tile ordering does not degrade locality.
+
+\paragraph{Cost analysis.}
+The construction kernel launches $|\mathcal{G}_{out}|$ threads, each
+performing $O(k^2)$ boolean reads from $M_{in}$ and at most one integer
+write to $W$. The total work is $O(|\mathcal{G}_{out}| \cdot k^2)$ in
+mask space. Because it touches only the single-bit mask (not the
+$C_{in}$-channel feature map), its runtime is a small fraction of the
+compute stage (measured at XX\% in Section~\ref{sec:eval}).
+
+The construction stage also writes the output active mask
+$M$ (one boolean per position), which serves as $M_{in}$ for the next
+layer in a multi-layer network.
+
+\begin{algorithm}[t]
+\caption{Worklist Construction (per thread block)}
+\label{alg:construct}
+\begin{algorithmic}[1]
+\REQUIRE Tile $T_j$, input mask $M_{in}$, global counter $\texttt{cnt}$
+\ENSURE Worklist $W$, output mask $M$
+\FOR{each position $p \in T_j$ handled by this thread}
+  \STATE $\texttt{active}(p) \leftarrow [\mathcal{N}(p) \cap M_{in} \neq \emptyset]$
+  \STATE $M[p] \leftarrow \texttt{active}(p)$
+\ENDFOR
+\STATE $\texttt{ballot} \leftarrow \texttt{warp\_ballot}(\texttt{active}(p))$
+\STATE $n_w \leftarrow \texttt{popcount}(\texttt{ballot})$
+\STATE $\texttt{rank} \leftarrow \texttt{prefix\_popcount}(\texttt{ballot})$
+\STATE $\texttt{base} \leftarrow \texttt{atomicAdd}(\texttt{cnt},\; n_w)$ \hfill (warp leader)
+\IF{$\texttt{active}(p)$}
+  \STATE $W[\texttt{base} + \texttt{rank}] \leftarrow \texttt{linear\_index}(p)$
+\ENDIF
+\end{algorithmic}
+\end{algorithm}
+
+% PLACEHOLDER_4_3
+
+\subsection{Worklist-driven Convolution}
+\label{sec:design:compute}
+
+The compute stage evaluates Eq.~\eqref{eq:conv} for exactly the positions
+in $W$. We cast this as an implicit GEMM whose M-dimension is indexed by
+the worklist rather than by a sequential scan of $\mathcal{G}_{out}$.
+
+\paragraph{GEMM formulation.}
+Let $|W| = |M|$. The masked convolution computes:
+\begin{equation}
+  \mathbf{Y}_{|M| \times C_{out}} = \mathbf{A}_{|M| \times k^2 C_{in}}
+  \;\cdot\; \hat{\mathbf{W}}_{k^2 C_{in} \times C_{out}},
+  \label{eq:gemm}
+\end{equation}
+where row $j$ of $\mathbf{A}$ is the flattened receptive-field input for
+position $w_j$:
+\begin{equation}
+  \mathbf{A}[j, :] = \bigl[\,
+    \mathbf{x}[\mathcal{N}_1(w_j)]^\top,\;
+    \ldots,\;
+    \mathbf{x}[\mathcal{N}_{k^2}(w_j)]^\top
+  \,\bigr],
+  \label{eq:implicit-a}
+\end{equation}
+and $\hat{\mathbf{W}}$ is the weight tensor $\mathbf{W}$ reshaped into a
+2D matrix. The matrix $\mathbf{A}$ is never materialized; each element is
+computed on the fly from the worklist index $w_j$ by decoding its spatial
+coordinate and reading the corresponding input position.
+
+\paragraph{Coordinate decoding.}
+Given a linear index $w_j$, the kernel recovers the batch index $n$ and
+spatial position $(p_h, p_w)$:
+\begin{equation}
+  n = \lfloor w_j / (H_{out} W_{out}) \rfloor, \quad
+  p_h = \lfloor (w_j \bmod H_{out} W_{out}) / W_{out} \rfloor, \quad
+  p_w = w_j \bmod W_{out}.
+  \label{eq:decode}
+\end{equation}
+The receptive-field input addresses follow from $(p_h, p_w)$ and the layer's
+stride and padding parameters, identically to the dense pipeline.
+
+\paragraph{Equivalence to dense execution.}
+For any single position $w_j$, the sequence of operations (decode
+coordinate, read $k^2 \times C_{in}$ input values, multiply-accumulate
+against $\mathbf{W}$, write $C_{out}$ outputs) is identical to what the
+dense pipeline performs for that same position. \sysname changes only
+\emph{which} positions are processed (worklist instead of full grid) and
+\emph{how many} ($|M|$ instead of $|\mathcal{G}_{out}|$). The arithmetic
+intensity, memory access pattern per position, and GPU occupancy model are
+preserved.
+
+\begin{algorithm}[t]
+\caption{Worklist-driven Convolution (per tile)}
+\label{alg:compute}
+\begin{algorithmic}[1]
+\REQUIRE Worklist $W$, worklist length $|M|$, input $\mathbf{x}$, weight $\hat{\mathbf{W}}$
+\ENSURE Output $\mathbf{y}$ at positions in $W$
+\FOR{each tile $(b_m, b_n)$ in the GEMM grid \textbf{in parallel}}
+  \STATE Initialize accumulator $\mathbf{Y}_{\text{tile}} \leftarrow \mathbf{0}$
+  \FOR{$s = 1, \ldots, \lceil k^2 C_{in} / B_K \rceil$}
+    \STATE Load input block: for each row $j$ in tile $b_m$, decode $w_j$
+           via Eq.~\eqref{eq:decode}, read the corresponding slice of
+           $\mathbf{x}[\mathcal{N}(w_j)]$
+    \STATE Load weight block from $\hat{\mathbf{W}}$
+    \STATE $\mathbf{Y}_{\text{tile}} \mathrel{+}= \text{block multiply}$
+  \ENDFOR
+  \STATE Write $\mathbf{Y}_{\text{tile}}$ to $\mathbf{y}$ at positions $W[b_m : b_m + B_M]$
+\ENDFOR
+\end{algorithmic}
+\end{algorithm}
+
+\subsection{Multi-layer Integration}
+\label{sec:design:integration}
+
+In a multi-layer CNN, \sysname's construction stage produces both the
+worklist $W$ and the output active mask $M$ for each layer. The output mask
+directly serves as $M_{in}$ for the next layer's construction stage,
+propagating sparsity through the network without additional mask-computation
+passes. \sysname is a drop-in replacement for standard convolution layers: it
+accepts the same weight tensors and produces numerically identical outputs
+at active positions, requiring no model retraining or architectural changes.

@@ -1,4 +1,4 @@
-% intro.tex --- Introduction section for the WMConv RAL/ICRA letter.
+% intro.tex --- Introduction section for the WISEConv RAL/ICRA letter.
 % Meant to be \input{} from the main IEEEtran document.
 % Bib keys used below (define in your .bib):
 %   evconv, deltacnn, dgnet, torchsparsepp, spconv, cudnn
@@ -72,7 +72,7 @@ them inside the compute kernel would stall the main datapath. Second,
 memory access loses the spatial regularity that gives the dense pipeline its
 speed; a global sort would restore order but is itself expensive.
 
-We present WMConv (Worklist-driven Masked Convolution), a dense-grid masked
+We present \sysname (\textbf{W}orkl\textbf{I}st-driven ma\textbf{S}k\textbf{E}d Convolution), a dense-grid masked
 convolution operator that resolves both overheads through a two-stage
 design. A lightweight construction stage scans the active mask and emits a
 \emph{worklist}: the ordered coordinates of active output positions. The
@@ -81,11 +81,11 @@ execution with the worklist as its coordinate source, computing only the
 active outputs. Both overheads are addressed by the
 construction stage's tiled scan: it operates entirely in 2D mask space (no
 feature data touched), so coordinate discovery costs only XX\% of the
-compute-stage time; and because it proceeds tile by tile over the spatial
-grid, active positions from the same tile appear contiguously in the
-worklist, partially restoring the spatial locality of dense execution
-without any global sort. With construction overhead minimized and only
-active outputs computed, WMConv achieves near-linear latency scaling: an
+compute-stage time; and it compacts active positions from each tile into
+contiguous worklist segments, so the compute stage accesses spatially nearby
+input data when processing consecutive worklist entries, preserving locality
+comparable to the dense traversal without any global sort. With construction overhead minimized and only
+active outputs computed, \sysname achieves near-linear latency scaling: an
 active-output ratio of $x$\% yields convolution latency close to $x$\% of
 the dense baseline.
 
@@ -95,11 +95,11 @@ This paper makes the following contributions:
         the fundamental bottleneck preventing masked convolution from
         delivering proportional speedup on embedded
         platforms~\cite{sbnet,skipconv,evconv,deltacnn,dgnet,sai}.
-  \item We present WMConv, a worklist-driven masked convolution operator
+  \item We present \sysname, a worklist-driven masked convolution operator
         that fuses position-level selectivity into the dense pipeline's
         coordinate-driven execution, achieving both high useful-compute
         ratio and near-dense throughput.
-  \item On Jetson Xavier NX and Orin, WMConv achieves near-linear latency
+  \item On Jetson Xavier NX and Orin, \sysname achieves near-linear latency
         scaling with active-output ratio across three mask sources and three
         robotic perception tasks, outperforming dense cuDNN, tile skipping,
         and gather-scatter while preserving task accuracy.
