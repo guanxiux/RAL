@@ -18,10 +18,10 @@ reduction due to the tension between useful-compute ratio and throughput.
 \begin{enumerate}
   \item \textbf{Construction stage.} A lightweight kernel scans the input
         active mask $M_{in}$ and evaluates Eq.~\eqref{eq:mask} on the fly,
-        emitting a \emph{worklist} $W = (w_1, \ldots, w_{|M|})$, where each
-        $w_j \in M \subseteq \mathcal{G}_{out}$ is the linear index of an
-        active output position. Each thread block covers one tile $T_j$ and
-        compacts its active positions into a contiguous segment of $W$.
+        emitting a \emph{worklist} $W = (w_1, \ldots, w_{|M|})$, a vector
+        of active output position indices ($w_j \in M$ for all $j$). The
+        worklist is ordered to preserve the spatial locality of the dense
+        traversal (Section~\ref{sec:design:construct}).
 
   \item \textbf{Compute stage.} A convolution kernel consumes $W$ as its
         coordinate source. For each position $w_j \in W$, the kernel
@@ -62,86 +62,87 @@ datapath is identical to the dense pipeline
 \subsection{Worklist Construction}
 \label{sec:design:construct}
 
-The construction stage produces a worklist $W \in \mathbb{Z}^{|M|}$, a
-vector whose entries are exactly the positions in $M$.
+This section details how the construction stage produces $W$ and analyzes
+the locality of the resulting ordering. The construction operates on the
+same tile partition $\{T_1, \ldots, T_N\}$ used by the dense pipeline.
 
-\paragraph{Tiled scan.}
-The kernel assigns one GPU thread per output position in
-$\mathcal{G}_{out}$, with each thread block covering one tile $T_j$. For
-each tile, the kernel determines its active subset:
+We define the masked selection operator: for a position-index matrix
+$A \in \mathbb{N}^{m \times n}$ and a boolean matrix
+$B \in \{0,1\}^{m \times n}$ of the same shape,
+$\mathrm{select}(A, B)$ returns the vector of entries in $A$ where $B = 1$,
+ordered by row-major traversal of $A$.
+
+\paragraph{Per-tile selection.}
+Since $T_j$ is a submatrix of $\mathcal{G}_{out}$, restricting $M$ to the
+region covered by $T_j$ yields a local mask
+$M_j \in \{0,1\}^{t_h \times t_w}$. The construction stage first evaluates
+Eq.~\eqref{eq:mask} to compute $M_j$, which requires checking $k^2$
+entries of $M_{in}$ per position (the receptive field test). It then
+computes:
 \begin{equation}
-  M_j = \bigl\{\, p \in T_j \;\big|\; \mathcal{N}(p) \cap M_{in} \neq \emptyset \,\bigr\},
-  \label{eq:active-test}
+  \mathbf{s}_j = \mathrm{select}(T_j,\; M_j),
+  \label{eq:select}
 \end{equation}
-which requires reading at most $k^2$ entries from the boolean mask $M_{in}$
-per position (no feature data accessed). The thread block sorts $M_j$ in
-raster order to produce a sub-vector
-$\mathbf{s}_j \in \mathbb{Z}^{|M_j|}$ and writes it into a contiguous
-segment of $W$ (Algorithm~\ref{alg:construct}).
+a vector of length $\|M_j\|_0$ containing the linear indices of active
+positions within $T_j$, in row-major order. No feature data is accessed;
+the entire operation works in boolean mask space.
 
 \paragraph{Worklist structure.}
-The resulting worklist $W$ is partitioned into $N$ contiguous sub-vectors,
-one per tile. Let $o_j$ denote the starting index of tile $T_j$'s segment:
+The worklist $W$ is composed of $N$ contiguous sub-vectors, one per tile.
+Let $o_j$ denote the starting index of tile $T_j$'s segment:
 \begin{equation}
-  W[o_j : o_j + |M_j|] = \mathbf{s}_j, \quad j = 1, \ldots, N.
+  W[o_j : o_j + \|M_j\|_0] = \mathbf{s}_j, \quad j = 1, \ldots, N.
   \label{eq:worklist-segment}
 \end{equation}
-Each $\mathbf{s}_j$ is internally ordered (raster order within $T_j$). The
-offsets $\{o_1, \ldots, o_N\}$ constitute a permutation of the prefix sums
-of $\{|M_1|, \ldots, |M_N|\}$, determined by the runtime execution order of
-thread blocks. Define the \emph{ideal worklist} $W^*$ as the same
-sub-vectors arranged in tile-index order:
+The offsets $\{o_1, \ldots, o_N\}$ form a permutation of the prefix sums of
+$\{\|M_1\|_0, \ldots, \|M_N\|_0\}$, determined by the parallel execution
+order of tiles during construction. Define the \emph{ideal worklist} $W^*$
+as the same sub-vectors arranged in tile-index order:
 \begin{equation}
-  W^* = (\mathbf{s}_1, \mathbf{s}_2, \ldots, \mathbf{s}_N),
+  W^*[o^*_j : o^*_j + \|M_j\|_0] = \mathbf{s}_j, \quad o^*_j = \sum_{i=1}^{j-1} \|M_i\|_0,
   \label{eq:ideal-worklist}
 \end{equation}
-which corresponds to the subsequence of the dense raster traversal
-restricted to $M$. Both $W$ and $W^*$ consist of the same sub-vectors
+which equals $\mathrm{select}(\mathcal{G}_{out}, M)$, the masked selection
+over the full output grid (i.e., the dense raster traversal restricted to
+active positions). Both $W$ and $W^*$ consist of identical sub-vectors
 $\{\mathbf{s}_j\}$; they differ only in the ordering of these sub-vectors.
 
 \paragraph{Locality analysis.}
 The compute stage processes $W$ in chunks of $B_M$ consecutive entries. Let
-$n_{\text{tiles}}(W, b)$ denote the number of distinct tiles represented in
-chunk $W[b : b + B_M]$. Since each sub-vector $\mathbf{s}_j$ has length
-$|M_j|$, any chunk of $B_M$ entries spans at least
+$n_{\text{tiles}}(b)$ denote the number of distinct tiles represented in
+chunk $W[b : b + B_M]$. Since each sub-vector has length $\|M_j\|_0$, any
+chunk spans at least
 \begin{equation}
-  n_{\text{tiles}}(W, b) \;\geq\; \bigl\lceil B_M \,/\, \max_j |M_j| \bigr\rceil
+  n_{\text{tiles}}(b) \;\geq\; \bigl\lceil B_M \,/\, \max_j \|M_j\|_0 \bigr\rceil
   \label{eq:tile-count-bound}
 \end{equation}
-tiles, regardless of the sub-vector ordering. The same bound holds for
-$W^*$. Therefore the spatial spread of input data per chunk (and hence the
-cache working set) is equivalent for $W$ and $W^*$; the non-deterministic
-inter-tile ordering does not degrade locality.
+tiles regardless of sub-vector ordering. The same bound holds for any chunk
+of $W^*$. Therefore the spatial spread of input data per compute chunk is
+equivalent for $W$ and $W^*$; the non-deterministic inter-tile ordering
+does not degrade locality.
 
 \paragraph{Cost analysis.}
-The construction kernel launches $|\mathcal{G}_{out}|$ threads, each
-performing $O(k^2)$ boolean reads from $M_{in}$ and at most one integer
-write to $W$. The total work is $O(|\mathcal{G}_{out}| \cdot k^2)$ in
-mask space. Because it touches only the single-bit mask (not the
-$C_{in}$-channel feature map), its runtime is a small fraction of the
-compute stage (measured at XX\% in Section~\ref{sec:eval}).
-
-The construction stage also writes the output active mask
-$M$ (one boolean per position), which serves as $M_{in}$ for the next
-layer in a multi-layer network.
+The construction stage evaluates Eq.~\eqref{eq:mask} for all
+$|\mathcal{G}_{out}|$ positions, performing $O(k^2)$ boolean reads per
+position and at most one integer write to $W$. The total work is
+$O(|\mathcal{G}_{out}| \cdot k^2)$ in mask space. Because it touches only
+the boolean mask (not the $C_{in}$-channel feature map), its runtime is a
+small fraction of the compute stage (measured at XX\% in
+Section~\ref{sec:eval}). The stage also writes the output mask $M$, which
+serves as $M_{in}$ for the next layer.
 
 \begin{algorithm}[t]
-\caption{Worklist Construction (per thread block)}
+\caption{Worklist Construction (per tile $T_j$)}
 \label{alg:construct}
 \begin{algorithmic}[1]
-\REQUIRE Tile $T_j$, input mask $M_{in}$, global counter $\texttt{cnt}$
-\ENSURE Worklist $W$, output mask $M$
-\FOR{each position $p \in T_j$ handled by this thread}
-  \STATE $\texttt{active}(p) \leftarrow [\mathcal{N}(p) \cap M_{in} \neq \emptyset]$
-  \STATE $M[p] \leftarrow \texttt{active}(p)$
+\REQUIRE Tile $T_j$, input mask $M_{in}$
+\ENSURE Worklist segment $\mathbf{s}_j$ written to $W$, output mask $M$
+\FOR{each position $p \in T_j$ \textbf{in parallel}}
+  \STATE $M[p] \leftarrow [\mathcal{N}(p) \cap \{q : M_{in}[q] = 1\} \neq \emptyset]$
 \ENDFOR
-\STATE $\texttt{ballot} \leftarrow \texttt{warp\_ballot}(\texttt{active}(p))$
-\STATE $n_w \leftarrow \texttt{popcount}(\texttt{ballot})$
-\STATE $\texttt{rank} \leftarrow \texttt{prefix\_popcount}(\texttt{ballot})$
-\STATE $\texttt{base} \leftarrow \texttt{atomicAdd}(\texttt{cnt},\; n_w)$ \hfill (warp leader)
-\IF{$\texttt{active}(p)$}
-  \STATE $W[\texttt{base} + \texttt{rank}] \leftarrow \texttt{linear\_index}(p)$
-\ENDIF
+\STATE $M_j \leftarrow M$ restricted to $T_j$
+\STATE $\mathbf{s}_j \leftarrow \mathrm{select}(T_j,\; M_j)$
+\STATE Write $\mathbf{s}_j$ to $W[o_j : o_j + \|M_j\|_0]$
 \end{algorithmic}
 \end{algorithm}
 

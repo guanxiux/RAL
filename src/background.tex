@@ -30,10 +30,12 @@ output $\mathbf{y} \in \mathbb{R}^{H_{out} \times W_{out} \times C_{out}}$
 using a weight tensor
 $\mathbf{W} \in \mathbb{R}^{C_{out} \times C_{in} \times k \times k}$,
 where $k$ is the kernel size and $k \times k$ is the receptive field size.
-The computation is defined per position on the output grid
-$\mathcal{G}_{out} = \{1,\dots,H_{out}\} \times \{1,\dots,W_{out}\}$. For each
-$p \in \mathcal{G}_{out}$, let $\mathcal{N}(p) \subset \mathcal{G}_{in}$ denote
-the set of $k^2$ input positions in the receptive field of $p$. The layer
+The output spatial grid is a position-index matrix
+$\mathcal{G}_{out} \in \mathbb{N}^{H_{out} \times W_{out}}$, where
+$\mathcal{G}_{out}[h, w] = (h-1) W_{out} + w$ assigns each spatial
+position a unique linear index. The computation is defined per position: for
+each $p \in \mathcal{G}_{out}$, let $\mathcal{N}(p) \subset \mathcal{G}_{in}$
+denote the $k^2$ input positions in the receptive field of $p$. The layer
 computes:
 \begin{equation}
   \mathbf{y}[p] = \sum_{i=1}^{k^2} \mathbf{W}_i \; \mathbf{x}[\mathcal{N}_i(p)],
@@ -42,17 +44,16 @@ computes:
 where $\mathcal{N}_i(p)$ is the $i$-th position in the receptive field and
 $\mathbf{W}_i \in \mathbb{R}^{C_{out} \times C_{in}}$ is the corresponding
 weight slice. The output at each position is thus an accumulation of
-$k^2$ weighted contributions from the input. On the GPU, $\mathcal{G}_{out}$ is
-partitioned into $N$ disjoint tiles
-$\mathcal{G}_{out} = T_1 \cup \dots \cup T_N$, $T_i \cap T_j = \emptyset$
-for $i \neq j$, where each tile $T_j$ is a contiguous spatial block of
-output positions. Tiles are processed in parallel; within each tile,
-positions are spatially adjacent, so their receptive fields overlap and lie
-in contiguous memory. This regularity enables cuDNN-class~\cite{cudnn}
-throughput. We denote by $C \subseteq \mathcal{G}_{out}$ the set of
-positions actually computed by a given execution strategy. Dense convolution
-sets $C = \mathcal{G}_{out}$ unconditionally, which on embedded platforms
-often exceeds the latency budget.
+$k^2$ weighted contributions from the input. On the GPU, $\mathcal{G}_{out}$
+is partitioned into $N$ disjoint tiles
+$T_1, \ldots, T_N \in \mathbb{N}^{t_h \times t_w}$, each a contiguous
+spatial submatrix of $\mathcal{G}_{out}$. Tiles are processed in parallel;
+within each tile, positions are spatially adjacent, so their receptive
+fields overlap and lie in contiguous memory. This regularity enables
+cuDNN-class~\cite{cudnn} throughput. We denote by $C$ the set of positions
+actually computed by a given execution strategy. Dense convolution sets
+$C = \mathcal{G}_{out}$ (all positions) unconditionally, which on embedded
+platforms often exceeds the latency budget.
 
 \subsection{Masked Convolution for Onboard Perception}
 \label{sec:bg:masked}
@@ -63,14 +64,17 @@ often exceeds the latency budget.
 Many onboard vision systems exploit the fact that only a subset of the
 input changes between inference calls or is relevant to the current
 decision. Let
-$\mathcal{G}_{in} = \{1,\dots,H_{in}\} \times \{1,\dots,W_{in}\}$ denote
-the input spatial grid. These systems identify an input active mask
-$M_{in} \subseteq \mathcal{G}_{in}$ marking positions where the input has
-changed or is task-relevant. An output position $p$ must be recomputed
-whenever its receptive field intersects the input mask, giving the output
-active mask:
+$\mathcal{G}_{in} \in \mathbb{N}^{H_{in} \times W_{in}}$ denote the input
+position-index matrix. These systems identify an input active mask
+$M_{in} \in \{0,1\}^{H_{in} \times W_{in}}$ marking positions where the
+input has changed or is task-relevant. An output position $p$ must be
+recomputed whenever its receptive field contains an active input position,
+giving the output active mask $M \in \{0,1\}^{H_{out} \times W_{out}}$:
 \begin{equation}
-  M = \bigl\{\, p \in \mathcal{G}_{out} \;\big|\; \mathcal{N}(p) \cap M_{in} \neq \emptyset \,\bigr\}.
+  M[p] = \begin{cases}
+    1 & \text{if } \exists\, q \in \mathcal{N}(p) \text{ s.t.\ } M_{in}[q] = 1, \\
+    0 & \text{otherwise.}
+  \end{cases}
   \label{eq:mask}
 \end{equation}
 In a multi-layer network, the output mask of layer $l$ becomes the input
@@ -110,38 +114,41 @@ to task-relevant content per frame.
 \label{sec:bg:paradigms}
 
 Given a mask $M$, the system must compute $\mathbf{y}[p]$ only for
-$p \in M$. Existing methods follow one of two paradigms:
+positions where $M[p] = 1$. Existing methods follow one of two paradigms:
 
 \paragraph{Tile skipping.}
-A tile $T_j$ is executed if and only if $T_j \cap M \neq \emptyset$;
-otherwise it is skipped entirely. The computed set is
-$C = \bigcup_{j:\, T_j \cap M \neq \emptyset} T_j$. Because non-skipped
-tiles run the unmodified dense pipeline, throughput is preserved. However,
-$|C|$ can be much larger than $|M|$ when active positions are scattered
-across many tiles: a single active position forces its entire tile to
-execute. SBNet~\cite{sbnet}, Skip-Convolutions~\cite{skipconv},
-Ev-Conv~\cite{evconv}, and DeltaCNN~\cite{deltacnn} follow this paradigm.
+A tile $T_j$ is executed if and only if it contains at least one active
+position; otherwise it is skipped entirely. The computed set is
+$C = \bigcup_{j:\, \exists\, p \in T_j,\, M[p]=1} T_j$. Because
+non-skipped tiles run the unmodified dense pipeline, throughput is
+preserved. However, $|C|$ can be much larger than the number of active
+positions when they are scattered across many tiles: a single active
+position forces its entire tile to execute. SBNet~\cite{sbnet},
+Skip-Convolutions~\cite{skipconv}, Ev-Conv~\cite{evconv}, and
+DeltaCNN~\cite{deltacnn} follow this paradigm.
 
 \paragraph{Gather-scatter.}
 Active positions are extracted exactly: the system gathers
-$\{\mathbf{x}[\mathcal{N}(p)] : p \in M\}$ into a contiguous buffer,
+$\{\mathbf{x}[\mathcal{N}(p)] : M[p] = 1\}$ into a contiguous buffer,
 computes Eq.~\eqref{eq:conv} for each, and scatters results back to the
-output grid. The computed set is $C = M$ exactly, so no computation is
-wasted. However, the gather, scatter, and irregular memory access patterns
-abandon the dense pipeline's regular execution, reducing throughput to a
-fraction of tile-based methods.
+output grid. The computed set contains only active positions, so no
+computation is wasted. However, the gather, scatter, and irregular memory
+access patterns abandon the dense pipeline's regular execution, reducing
+throughput to a fraction of tile-based methods.
 DGNet~\cite{dgnet} and SAI~\cite{sai} follow this paradigm.
 
 \subsection{The Gap: Sparsity Does Not Become Speedup}
 \label{sec:bg:gap}
 
-For a network with $L$ convolution layers, we define the \emph{active
-ratio} $\rho = \frac{1}{L}\sum_{l=1}^{L} |M^l|/|\mathcal{G}_{out}^l|$,
+For a network with $L$ convolution layers, let $\|M^l\|_0$ denote the
+number of active positions (nonzeros) in layer $l$'s output mask. We define
+the \emph{active ratio}
+$\rho = \frac{1}{L}\sum_{l=1}^{L} \|M^l\|_0 / |\mathcal{G}_{out}^l|$,
 the average fraction of output positions that require computation across
 all layers. We characterize masked-convolution efficiency along two axes:
 \emph{throughput}, the rate of convolution operations per second (bounded by
 the dense pipeline), and \emph{useful-compute ratio}, the fraction of
-executed operations that produce needed outputs ($|M|/|C|$). Tile skipping
+executed operations that produce needed outputs ($\|M\|_0 / |C|$). Tile skipping
 preserves throughput but sacrifices useful-compute ratio; gather-scatter
 achieves high useful-compute ratio but sacrifices throughput. Neither
 delivers both, so upstream sparsity does not translate into proportional
