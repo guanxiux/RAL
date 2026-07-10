@@ -17,204 +17,223 @@ reduction due to the tension between useful-compute ratio and throughput.
 
 \begin{enumerate}
   \item \textbf{Construction stage.} A lightweight kernel scans the input
-        active mask $M_{in}$ and evaluates Eq.~\eqref{eq:mask} on the fly,
-        emitting a \emph{worklist} $W = (w_1, \ldots, w_{|M|})$, a vector
-        of active output position indices ($w_j \in M$ for all $j$). The
-        worklist is ordered to preserve the spatial locality of the dense
-        traversal (Section~\ref{sec:design:construct}).
+        active mask $M_{in}$ and evaluates Eq.~\eqref{eq:mask} for each
+        output position, emitting an ordered \emph{worklist}
+        $\mathbf{q} = (q_1, \ldots, q_m)$ of $m = \|M\|_0$ active output
+        indices drawn from $G_{out}$. The worklist preserves tile-local
+        spatial locality (Section~\ref{sec:design:construct}).
 
-  \item \textbf{Compute stage.} A convolution kernel consumes $W$ as its
-        coordinate source. For each position $w_j \in W$, the kernel
-        decodes the spatial coordinate, reads the receptive-field input
-        $\mathbf{x}[\mathcal{N}(w_j)]$, and accumulates
-        Eq.~\eqref{eq:conv} identically to the dense pipeline. The
-        computed set is $C = \{w_1, \ldots, w_{|M|}\} = M$, so no
-        computation is wasted.
+  \item \textbf{Compute stage.} A convolution kernel consumes $\mathbf{q}$
+        as its coordinate source. For each $q_j$, the kernel decodes the
+        spatial coordinate, reads the receptive-field input
+        $\mathbf{x}[\mathcal{N}(q_j)]$, and accumulates
+        Eq.~\eqref{eq:conv} identically to the dense pipeline
+        (Section~\ref{sec:design:compute}).
 \end{enumerate}
 
-\sysname achieves high useful-compute ratio because the worklist contains
-only positions that require computation ($C = M$, no wasted work). It
-achieves near-dense throughput through three mechanisms: the construction
-stage operates entirely in mask space with minimal overhead
-(Section~\ref{sec:design:construct}); the worklist preserves locality
-comparable to the dense traversal order
-(Section~\ref{sec:design:construct}); and the compute stage's per-position
-datapath is identical to the dense pipeline
-(Section~\ref{sec:design:compute}).
+\sysname achieves high useful-compute ratio because the computed set
+$\mathcal{C} = \{q_1, \ldots, q_m\}$ equals the set of active positions
+(no wasted work). It achieves near-dense throughput through three
+mechanisms: the construction stage operates entirely in mask space with
+minimal overhead; the worklist preserves locality comparable to the dense
+traversal order; and the compute stage's per-position datapath is identical
+to the dense pipeline.
 
 % TODO: overview figure (double column)
 \begin{figure*}[t]
   \centering
   \fbox{\parbox{0.9\textwidth}{\centering\vspace{2.5cm}%
     \textbf{[TODO]} \sysname overview. Left: input mask $M_{in}$ on the
-    spatial grid. Middle: construction stage scans tiles $T_1, \ldots, T_N$,
-    emits ordered worklist $W$. Right: compute stage consumes $W$, drives
-    implicit GEMM, writes output $\mathbf{y}$ at active positions only.
-    Show tile-respecting order in $W$.\vspace{2.5cm}}}
+    spatial grid. Middle: construction stage scans tiles, emits ordered
+    worklist $\mathbf{q}$. Right: compute stage consumes $\mathbf{q}$, drives
+    implicit GEMM, writes output $\mathbf{y}$ at active positions
+    only.\vspace{2.5cm}}}
   \caption{\sysname two-stage pipeline. The construction stage scans the
   mask tile by tile and emits an ordered worklist. The compute stage
   drives the dense convolution datapath using only the worklist positions.}
   \label{fig:overview}
 \end{figure*}
 
-% PLACEHOLDER_4_2
 
 \subsection{Worklist Construction}
 \label{sec:design:construct}
 
-This section details how the construction stage produces $W$ and analyzes
-the locality of the resulting ordering. The construction operates on the
-same tile partition $\{T_1, \ldots, T_N\}$ used by the dense pipeline.
+The construction stage produces the worklist $\mathbf{q}$ from the input
+mask $M_{in}$ by performing a per-tile gather followed by concatenation.
+It operates on the same tile partition
+$\{T_{i,j}\}_{i \in [N_h],\, j \in [N_w]}$ defined in
+Eq.~\eqref{eq:tile}.
 
-We define the masked selection operator: for a position-index matrix
-$A \in \mathbb{N}^{m \times n}$ and a boolean matrix
-$B \in \{0,1\}^{m \times n}$ of the same shape,
-$\mathrm{select}(A, B)$ returns the vector of entries in $A$ where $B = 1$,
-ordered by row-major traversal of $A$.
+\paragraph{Output mask evaluation.}
+For each linear index $g \in G_{out}$, the construction stage evaluates
+Eq.~\eqref{eq:mask} by testing whether the receptive field of $g$
+intersects the input mask:
+\begin{equation}
+  M[g] = \begin{cases}
+    1 & \text{if } \exists\, q \in \mathcal{N}(g) \text{ s.t.\ }
+        M_{in}[q] = 1, \\
+    0 & \text{otherwise,}
+  \end{cases}
+  \label{eq:mask-eval}
+\end{equation}
+requiring $k^2$ boolean reads of $M_{in}$ per position.
 
-\paragraph{Per-tile selection.}
-Since $T_j$ is a submatrix of $\mathcal{G}_{out}$, restricting $M$ to the
-region covered by $T_j$ yields a local mask
-$M_j \in \{0,1\}^{t_h \times t_w}$. The construction stage first evaluates
-Eq.~\eqref{eq:mask} to compute $M_j$, which requires checking $k^2$
-entries of $M_{in}$ per position (the receptive field test). It then
-computes:
+\paragraph{Per-tile gather.}
+For each tile $T_{i,j}$, the output mask $M$ induces a support set of
+active indices within the tile:
 \begin{equation}
-  \mathbf{s}_j = \mathrm{select}(T_j,\; M_j),
-  \label{eq:select}
+  \mathcal{I}_{i,j} = \bigl\{\, k \in [t_h t_w] : M[T_{i,j}[k]] = 1 \,\bigr\}.
+  \label{eq:support}
 \end{equation}
-a vector of length $\|M_j\|_0$ containing the linear indices of active
-positions within $T_j$, in row-major order. No feature data is accessed;
-the entire operation works in boolean mask space.
+The per-tile subsequence is the gather of $T_{i,j}$ by its support set:
+\begin{equation}
+  \mathbf{q}_{i,j} = (T_{i,j})_{\mathcal{I}_{i,j}}
+                    = (T_{i,j}[k])_{k \in \mathcal{I}_{i,j}},
+  \label{eq:pertile-gather}
+\end{equation}
+ordered by ascending $k$ (i.e., row-major within the tile), with length
+$|\mathbf{q}_{i,j}| = |\mathcal{I}_{i,j}|$.
 
-\paragraph{Worklist structure.}
-The worklist $W$ is composed of $N$ contiguous sub-vectors, one per tile.
-Let $o_j$ denote the starting index of tile $T_j$'s segment:
+\paragraph{Worklist concatenation.}
+The $N = N_h \cdot N_w$ tiles are enumerated in row-major order as
+$1, \ldots, N$. Let $P = (P_1, \ldots, P_N)$ be the permutation of
+$[N]$ determined by nondeterministic parallel block scheduling. The
+worklist is:
 \begin{equation}
-  W[o_j : o_j + \|M_j\|_0] = \mathbf{s}_j, \quad j = 1, \ldots, N.
-  \label{eq:worklist-segment}
+  \mathbf{q} = (\mathbf{q}_{P_1},\; \mathbf{q}_{P_2},\; \ldots,\;
+               \mathbf{q}_{P_N}),
+  \label{eq:worklist}
 \end{equation}
-The offsets $\{o_1, \ldots, o_N\}$ form a permutation of the prefix sums of
-$\{\|M_1\|_0, \ldots, \|M_N\|_0\}$, determined by the parallel execution
-order of tiles during construction. Define the \emph{ideal worklist} $W^*$
-as the same sub-vectors arranged in tile-index order:
-\begin{equation}
-  W^*[o^*_j : o^*_j + \|M_j\|_0] = \mathbf{s}_j, \quad o^*_j = \sum_{i=1}^{j-1} \|M_i\|_0,
-  \label{eq:ideal-worklist}
-\end{equation}
-which equals $\mathrm{select}(\mathcal{G}_{out}, M)$, the masked selection
-over the full output grid (i.e., the dense raster traversal restricted to
-active positions). Both $W$ and $W^*$ consist of identical sub-vectors
-$\{\mathbf{s}_j\}$; they differ only in the ordering of these sub-vectors.
+with total length $|\mathbf{q}| = \|M\|_0$. Each $\mathbf{q}_{P_n}$
+retains its internal row-major ordering; only the inter-tile order varies
+with $P$.
+
 
 \paragraph{Locality analysis.}
-The compute stage processes $W$ in chunks of $B_M$ consecutive entries. Let
-$n_{\text{tiles}}(b)$ denote the number of distinct tiles represented in
-chunk $W[b : b + B_M]$. Since each sub-vector has length $\|M_j\|_0$, any
-chunk spans at least
-\begin{equation}
-  n_{\text{tiles}}(b) \;\geq\; \bigl\lceil B_M \,/\, \max_j \|M_j\|_0 \bigr\rceil
-  \label{eq:tile-count-bound}
-\end{equation}
-tiles regardless of sub-vector ordering. The same bound holds for any chunk
-of $W^*$. Therefore the spatial spread of input data per compute chunk is
-equivalent for $W$ and $W^*$; the non-deterministic inter-tile ordering
-does not degrade locality.
+The compute stage processes $\mathbf{q}$ in chunks of $B_M$ consecutive
+entries. Consider any contiguous chunk $\mathbf{q}[b:b{+}B_M]$. Because
+each per-tile subsequence $\mathbf{q}_{P_n}$ contains at most $t_h t_w$
+entries, a chunk spans at most
+$\lceil B_M / \min_n |\mathbf{q}_{P_n}| \rceil$ tiles regardless of
+the permutation $P$. Within each tile, consecutive entries in
+$\mathbf{q}_{P_n}$ are row-major neighbors in $G_{out}$, so their
+receptive fields overlap in contiguous memory. The nondeterministic
+inter-tile ordering does not degrade locality relative to a hypothetical
+identity-permutation (dense raster) ordering, because consecutive tiles
+under any permutation access the same set of tile-sized spatial regions.
 
 \paragraph{Cost analysis.}
-The construction stage evaluates Eq.~\eqref{eq:mask} for all
-$|\mathcal{G}_{out}|$ positions, performing $O(k^2)$ boolean reads per
-position and at most one integer write to $W$. The total work is
-$O(|\mathcal{G}_{out}| \cdot k^2)$ in mask space. Because it touches only
-the boolean mask (not the $C_{in}$-channel feature map), its runtime is a
-small fraction of the compute stage (measured at XX\% in
-Section~\ref{sec:eval}). The stage also writes the output mask $M$, which
-serves as $M_{in}$ for the next layer.
+Mask evaluation (Eq.~\ref{eq:mask-eval}) performs $k^2$ boolean reads per
+output position, totaling $O(H_{out} W_{out} k^2)$ work. The gather and
+concatenation write $\|M\|_0$ integer indices. The entire stage operates
+in 2D mask space: its cost depends on spatial resolution and kernel size
+but is independent of $C_{in}$ and $C_{out}$. Because the compute stage
+scales with $\|M\|_0 \cdot k^2 \cdot C_{in} \cdot C_{out}$, the
+construction overhead becomes negligible as channel dimensions grow
+(measured at XX\% in Section~\ref{sec:eval}). The stage also produces the
+output mask $M$, which serves as $M_{in}$ for the next layer.
 
 \begin{algorithm}[t]
-\caption{Worklist Construction (per tile $T_j$)}
+\caption{Worklist Construction}
 \label{alg:construct}
 \begin{algorithmic}[1]
-\REQUIRE Tile $T_j$, input mask $M_{in}$
-\ENSURE Worklist segment $\mathbf{s}_j$ written to $W$, output mask $M$
-\FOR{each position $p \in T_j$ \textbf{in parallel}}
-  \STATE $M[p] \leftarrow [\mathcal{N}(p) \cap \{q : M_{in}[q] = 1\} \neq \emptyset]$
+\REQUIRE Tiles $\{T_{i,j}\}$, input mask $M_{in}$
+\ENSURE Worklist $\mathbf{q}$, output mask $M$
+\FOR{each tile $T_{i,j}$ \textbf{in parallel}}
+  \FOR{each $k \in [t_h t_w]$}
+    \STATE $g \leftarrow T_{i,j}[k]$
+    \STATE $M[g] \leftarrow$ Eq.~\eqref{eq:mask-eval}
+  \ENDFOR
+  \STATE $\mathcal{I}_{i,j} \leftarrow \{k : M[T_{i,j}[k]] = 1\}$
+  \STATE $\mathbf{q}_{i,j} \leftarrow (T_{i,j}[k])_{k \in \mathcal{I}_{i,j}}$
 \ENDFOR
-\STATE $M_j \leftarrow M$ restricted to $T_j$
-\STATE $\mathbf{s}_j \leftarrow \mathrm{select}(T_j,\; M_j)$
-\STATE Write $\mathbf{s}_j$ to $W[o_j : o_j + \|M_j\|_0]$
+\STATE $\mathbf{q} \leftarrow (\mathbf{q}_{P_1}, \ldots, \mathbf{q}_{P_N})$
+  \hfill \COMMENT{$P$ from block scheduling}
 \end{algorithmic}
 \end{algorithm}
 
-% PLACEHOLDER_4_3
 
 \subsection{Worklist-driven Convolution}
 \label{sec:design:compute}
 
 The compute stage evaluates Eq.~\eqref{eq:conv} for exactly the positions
-in $W$. We cast this as an implicit GEMM whose M-dimension is indexed by
-the worklist rather than by a sequential scan of $\mathcal{G}_{out}$.
+in $\mathbf{q}$, formulated as an implicit GEMM whose M-dimension is
+indexed by the worklist rather than a full raster scan of $G_{out}$.
 
 \paragraph{GEMM formulation.}
-Let $|W| = |M|$. The masked convolution computes:
+Let $m = |\mathbf{q}| = \|M\|_0$. The masked convolution computes:
 \begin{equation}
-  \mathbf{Y}_{|M| \times C_{out}} = \mathbf{A}_{|M| \times k^2 C_{in}}
+  \mathbf{Y}_{m \times C_{out}} = \mathbf{A}_{m \times k^2 C_{in}}
   \;\cdot\; \hat{\mathbf{W}}_{k^2 C_{in} \times C_{out}},
   \label{eq:gemm}
 \end{equation}
-where row $j$ of $\mathbf{A}$ is the flattened receptive-field input for
-position $w_j$:
+where $\hat{\mathbf{W}}$ is the weight tensor reshaped into a 2D matrix,
+and row $j$ of $\mathbf{A}$ is the flattened receptive-field input for
+worklist entry $q_j$:
 \begin{equation}
   \mathbf{A}[j, :] = \bigl[\,
-    \mathbf{x}[\mathcal{N}_1(w_j)]^\top,\;
+    \mathbf{x}[\mathcal{N}_1(q_j)]^\top,\;
     \ldots,\;
-    \mathbf{x}[\mathcal{N}_{k^2}(w_j)]^\top
-  \,\bigr],
+    \mathbf{x}[\mathcal{N}_{k^2}(q_j)]^\top
+  \,\bigr].
   \label{eq:implicit-a}
 \end{equation}
-and $\hat{\mathbf{W}}$ is the weight tensor $\mathbf{W}$ reshaped into a
-2D matrix. The matrix $\mathbf{A}$ is never materialized; each element is
-computed on the fly from the worklist index $w_j$ by decoding its spatial
-coordinate and reading the corresponding input position.
+The matrix $\mathbf{A}$ is never materialized; each element is computed on
+the fly by decoding the spatial coordinate of $q_j$ and reading the
+corresponding input position from $\mathbf{x}$.
 
 \paragraph{Coordinate decoding.}
-Given a linear index $w_j$, the kernel recovers the batch index $n$ and
-spatial position $(p_h, p_w)$:
+Given a worklist entry $q_j$ (a linear index in $G_{out}$), the kernel
+recovers the 2D spatial position:
 \begin{equation}
-  n = \lfloor w_j / (H_{out} W_{out}) \rfloor, \quad
-  p_h = \lfloor (w_j \bmod H_{out} W_{out}) / W_{out} \rfloor, \quad
-  p_w = w_j \bmod W_{out}.
+  h = \lfloor q_j / W_{out} \rfloor, \quad
+  w = q_j \bmod W_{out}.
   \label{eq:decode}
 \end{equation}
-The receptive-field input addresses follow from $(p_h, p_w)$ and the layer's
-stride and padding parameters, identically to the dense pipeline.
+The receptive-field addresses $\mathcal{N}(q_j)$ follow from $(h, w)$ and
+the layer's stride and padding parameters, identically to the dense
+pipeline.
+
+\paragraph{Tiled execution.}
+The GEMM is partitioned into tiles of size $B_M \times B_N$ (worklist
+rows $\times$ output channels), identical to standard implicit GEMM. Each
+tile $(b_m, b_n)$ computes the output for $B_M$ consecutive worklist
+entries and $B_N$ output channels. The inner loop reduces over the
+K-dimension ($k^2 C_{in}$) in steps of $B_K$: at each step, the kernel
+decodes the worklist entries $q_j$ via Eq.~\eqref{eq:decode} to gather
+the corresponding input block from $\mathbf{x}$, loads the matching weight
+block from $\hat{\mathbf{W}}$, and accumulates the partial product. After
+all K-steps complete, the result is written back to $\mathbf{y}[q_j]$
+using worklist entries as output addresses.
+Algorithm~\ref{alg:compute} summarizes this procedure. The only difference
+from the dense implicit GEMM is the coordinate source: the worklist
+$\mathbf{q}$ replaces the sequential scan of $G_{out}$.
 
 \paragraph{Equivalence to dense execution.}
-For any single position $w_j$, the sequence of operations (decode
-coordinate, read $k^2 \times C_{in}$ input values, multiply-accumulate
-against $\mathbf{W}$, write $C_{out}$ outputs) is identical to what the
-dense pipeline performs for that same position. \sysname changes only
-\emph{which} positions are processed (worklist instead of full grid) and
-\emph{how many} ($|M|$ instead of $|\mathcal{G}_{out}|$). The arithmetic
+For any single position $q_j$, the operations (decode coordinate, read
+$k^2 \times C_{in}$ input values, multiply-accumulate against
+$\mathbf{W}$, write $C_{out}$ outputs) are identical to what the dense
+pipeline performs for that position. \sysname changes only \emph{which}
+positions are processed ($\mathbf{q}$ instead of the full $G_{out}$) and
+\emph{how many} ($\|M\|_0$ instead of $H_{out} W_{out}$). The arithmetic
 intensity, memory access pattern per position, and GPU occupancy model are
 preserved.
 
 \begin{algorithm}[t]
-\caption{Worklist-driven Convolution (per tile)}
+\caption{Worklist-driven Convolution}
 \label{alg:compute}
 \begin{algorithmic}[1]
-\REQUIRE Worklist $W$, worklist length $|M|$, input $\mathbf{x}$, weight $\hat{\mathbf{W}}$
-\ENSURE Output $\mathbf{y}$ at positions in $W$
-\FOR{each tile $(b_m, b_n)$ in the GEMM grid \textbf{in parallel}}
-  \STATE Initialize accumulator $\mathbf{Y}_{\text{tile}} \leftarrow \mathbf{0}$
-  \FOR{$s = 1, \ldots, \lceil k^2 C_{in} / B_K \rceil$}
-    \STATE Load input block: for each row $j$ in tile $b_m$, decode $w_j$
-           via Eq.~\eqref{eq:decode}, read the corresponding slice of
-           $\mathbf{x}[\mathcal{N}(w_j)]$
-    \STATE Load weight block from $\hat{\mathbf{W}}$
-    \STATE $\mathbf{Y}_{\text{tile}} \mathrel{+}= \text{block multiply}$
+\REQUIRE Worklist $\mathbf{q}$, input $\mathbf{x}$, weight $\hat{\mathbf{W}}$
+\ENSURE Output $\mathbf{y}$ at positions in $\mathbf{q}$
+\FOR{each tile $(b_m, b_n)$ \textbf{in parallel}}
+  \STATE Load worklist segment $\mathbf{q}[b_m]$
+  \STATE Initialize accumulator $\mathbf{Y} \leftarrow \mathbf{0}_{B_M \times B_N}$
+  \FOR{$k = 1, \ldots, \lceil k^2 C_{in} / B_K \rceil$}
+    \STATE $\mathbf{X} \leftarrow$ gather input block from $\mathbf{x}$ at positions $\mathcal{N}(\mathbf{q}[b_m])$, channel tile $k$
+    \STATE $\hat{\mathbf{W}}_k \leftarrow$ load weight block for channel tile $k$
+    \STATE $\mathbf{Y} \leftarrow \mathbf{Y} + \mathbf{X} \cdot \hat{\mathbf{W}}_k$
   \ENDFOR
-  \STATE Write $\mathbf{Y}_{\text{tile}}$ to $\mathbf{y}$ at positions $W[b_m : b_m + B_M]$
+  \STATE Write $\mathbf{Y}$ to $\mathbf{y}$ at addresses $\mathbf{q}[b_m]$
 \ENDFOR
 \end{algorithmic}
 \end{algorithm}
@@ -223,9 +242,10 @@ preserved.
 \label{sec:design:integration}
 
 In a multi-layer CNN, \sysname's construction stage produces both the
-worklist $W$ and the output active mask $M$ for each layer. The output mask
-directly serves as $M_{in}$ for the next layer's construction stage,
-propagating sparsity through the network without additional mask-computation
-passes. \sysname is a drop-in replacement for standard convolution layers: it
-accepts the same weight tensors and produces numerically identical outputs
-at active positions, requiring no model retraining or architectural changes.
+worklist $\mathbf{q}^l$ and the output active mask $M^l$ for each layer
+$l$. The output mask directly serves as $M_{in}^{l+1}$ for the next
+layer's construction stage, propagating sparsity through the network
+without additional mask-computation passes. \sysname is a drop-in
+replacement for standard convolution layers: it accepts the same weight
+tensors and produces numerically identical outputs at active positions,
+requiring no model retraining or architectural changes.
