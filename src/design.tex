@@ -62,27 +62,16 @@ The construction stage produces the worklist $\mathbf{q}$ from the input
 mask $M_{in}$ by performing a per-tile gather followed by concatenation.
 It operates on the same tile partition
 $\{T_{i,j}\}_{i \in [N_h],\, j \in [N_w]}$ defined in
-Eq.~\eqref{eq:tile}.
-
-\paragraph{Output mask evaluation.}
-For each linear index $g \in G_{out}$, the construction stage evaluates
-Eq.~\eqref{eq:mask} by testing whether the receptive field of $g$
-intersects the input mask:
-\begin{equation}
-  M[g] = \begin{cases}
-    1 & \text{if } \exists\, q \in \mathcal{N}(g) \text{ s.t.\ }
-        M_{in}[q] = 1, \\
-    0 & \text{otherwise,}
-  \end{cases}
-  \label{eq:mask-eval}
-\end{equation}
-requiring $k^2$ boolean reads of $M_{in}$ per position.
+Eq.~\eqref{eq:tile}. For each output position, the stage first evaluates
+Eq.~\eqref{eq:mask} to determine the output mask $M$ (requiring $k^2$
+boolean reads of $M_{in}$ per position), then gathers the active indices
+tile by tile.
 
 \paragraph{Per-tile gather.}
 For each tile $T_{i,j}$, the output mask $M$ induces a support set of
 active indices within the tile:
 \begin{equation}
-  \mathcal{I}_{i,j} = \bigl\{\, k \in [t_h t_w] : M[T_{i,j}[k]] = 1 \,\bigr\}.
+  \mathcal{I}_{i,j} = \bigl\{\, k \in \{1, \ldots, t_h t_w\} : M[T_{i,j}[k]] = 1 \,\bigr\}.
   \label{eq:support}
 \end{equation}
 The per-tile subsequence is the gather of $T_{i,j}$ by its support set:
@@ -123,7 +112,7 @@ identity-permutation (dense raster) ordering, because consecutive tiles
 under any permutation access the same set of tile-sized spatial regions.
 
 \paragraph{Cost analysis.}
-Mask evaluation (Eq.~\ref{eq:mask-eval}) performs $k^2$ boolean reads per
+Mask evaluation (Eq.~\ref{eq:mask}) performs $k^2$ boolean reads per
 output position, totaling $O(H_{out} W_{out} k^2)$ work. The gather and
 concatenation write $\|M\|_0$ integer indices. The entire stage operates
 in 2D mask space: its cost depends on spatial resolution and kernel size
@@ -140,9 +129,9 @@ output mask $M$, which serves as $M_{in}$ for the next layer.
 \REQUIRE Tiles $\{T_{i,j}\}$, input mask $M_{in}$
 \ENSURE Worklist $\mathbf{q}$, output mask $M$
 \FOR{each tile $T_{i,j}$ \textbf{in parallel}}
-  \FOR{each $k \in [t_h t_w]$}
+  \FOR{each $k \in \{1, \ldots, t_h t_w\}$}
     \STATE $g \leftarrow T_{i,j}[k]$
-    \STATE $M[g] \leftarrow$ Eq.~\eqref{eq:mask-eval}
+    \STATE $M[g] \leftarrow$ Eq.~\eqref{eq:mask}
   \ENDFOR
   \STATE $\mathcal{I}_{i,j} \leftarrow \{k : M[T_{i,j}[k]] = 1\}$
   \STATE $\mathbf{q}_{i,j} \leftarrow (T_{i,j}[k])_{k \in \mathcal{I}_{i,j}}$
