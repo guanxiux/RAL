@@ -46,18 +46,20 @@ To formalize the GPU execution model, we define the \emph{output index grid}
 $G_{out} \in \mathbb{Z}^{H_{out} \times W_{out}}$ with entries
 $G_{out}[h,w] = h \cdot W_{out} + w$, assigning each output spatial position
 a unique row-major linear index. The GPU partitions this grid into
-$N_h \times N_w$ disjoint tiles, where
+$N = N_h \cdot N_w$ disjoint tiles of size $t_h \times t_w$, where
 $N_h = \lceil H_{out}/t_h \rceil$ and $N_w = \lceil W_{out}/t_w \rceil$.
-Each tile is the row-major flattening of its corresponding slice:
+Tiles are enumerated in row-major order as $T_1, \ldots, T_N$. The $n$-th
+tile occupies row $i_n = \lfloor (n{-}1) / N_w \rfloor$ and column
+$j_n = (n{-}1) \bmod N_w$ of the tile grid, and is defined as the
+row-major flattening of its slice:
 \begin{equation}
-  T_{i,j} = \mathrm{vec}\!\bigl(
-    G_{out}[i t_h{:}(i{+}1)t_h,\; j t_w{:}(j{+}1)t_w]^\top
+  T_n = \mathrm{vec}\!\bigl(
+    G_{out}[i_n t_h{:}(i_n{+}1)t_h,\; j_n t_w{:}(j_n{+}1)t_w]^\top
   \bigr),
   \label{eq:tile}
 \end{equation}
-yielding a vector of $t_h t_w$ linear indices for
-$i \in [N_h],\; j \in [N_w]$.
-Tiles are processed in parallel; within each tile, consecutive indices
+yielding a vector of $t_h \cdot t_w$ linear indices.
+Tiles are processed in parallel; within each tile, consecutive entries
 correspond to spatially adjacent positions whose receptive fields overlap and
 lie in contiguous memory. This regularity enables
 cuDNN-class~\cite{cudnn} throughput. We denote by $\mathcal{C}$ the set of
@@ -125,9 +127,9 @@ Given a mask $M$, the system must compute $\mathbf{y}[p]$ only for
 positions where $M[p] = 1$. Existing methods follow one of two paradigms:
 
 \paragraph{Tile skipping.}
-A tile $T_{i,j}$ is executed if and only if it contains at least one active
+A tile $T_n$ is executed if and only if it contains at least one active
 position; otherwise it is skipped entirely. The computed set is
-$\mathcal{C} = \bigcup_{\{(i,j):\, \exists\, g \in T_{i,j},\, M[g]=1\}} T_{i,j}$.
+$\mathcal{C} = \bigcup_{\{n:\, \exists\, g \in T_n,\, M[g]=1\}} T_n$.
 Because non-skipped tiles run the unmodified dense pipeline, throughput is
 preserved. However, $|\mathcal{C}|$ can be much larger than $\|M\|_0$
 when active positions are scattered across many tiles: a single active

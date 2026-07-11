@@ -1,0 +1,19 @@
+\section{Implementation}
+\label{sec:impl}
+
+\sysname is implemented as a CUDA C++ extension exposed to PyTorch via
+Pybind11, serving as a drop-in replacement for standard convolution layers.
+All tensors use the channels-last (NHWC) memory layout, ensuring that
+each active position's gather reads a contiguous memory segment. The construction
+kernel maps one thread per output position; each thread tests the receptive
+field against $M_{in}$ with early exit. Within each warp,
+\texttt{\_\_ballot\_sync} produces a bitmask of active lanes and
+\texttt{\_\_popc} on masked prefixes yields each active lane's rank, giving
+the support set $\mathcal{I}_n$ (the ordered indices of active positions)
+without a sort or prefix-sum pass. One warp-elected thread performs a
+single \texttt{atomicAdd} to reserve a contiguous worklist segment; each
+active lane writes its index at the reserved base plus its rank. The
+compute kernel follows a Cutlass-style~\cite{cutlass} implicit-GEMM
+structure with double-buffered shared memory and asynchronous
+global-to-shared loads (\texttt{cp.async} on Ampere+). Tile configurations
+are selected via Triton-style~\cite{triton} offline autotuning.
