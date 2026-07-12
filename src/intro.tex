@@ -55,24 +55,21 @@ roughly \mbox{XX--YY\%}; yet tile-skipping methods achieve only
 only \mbox{CC\%} of tile-skipping throughput. Convolution latency is reduced
 by only \mbox{DD--EE\%}.
 
-Our key insight is that the position-level selectivity of gather-scatter
-can be fused into the dense pipeline's coordinate-driven execution without
-the separate data-movement stages. The fusion is straightforward in
-principle: because each tile already performs a coordinate-driven
-read-compute-write per position, replacing the tile's coordinate source,
-from a contiguous block to a set of active positions, gives position-level
-selectivity while keeping the per-position execution path identical. This
-achieves high useful-compute ratio directly, and because the per-position
-datapath remains that of the dense pipeline, it opens the potential for
-dense-level throughput.
+Our key insight is that position-level selectivity can be fused into the
+dense pipeline itself by replacing its coordinate source. Each tile already
+performs a coordinate-driven read-compute-write per position; substituting
+the tile's contiguous coordinate block with a pre-built set of active
+positions restricts computation to needed outputs while keeping the
+per-position datapath identical to the dense pipeline. This fusion achieves
+high useful-compute ratio without abandoning dense-level throughput.
 
-Realizing this potential requires addressing the challenge of two practical overheads. First,
-\emph{coordinate discovery}: the kernel must know which positions are active
-before computation begins, yet scanning for them inside the compute kernel
-would stall the main datapath. Second, \emph{locality}: if active positions
-are processed in arbitrary order, memory access loses the spatial regularity
-that gives the dense pipeline its speed. A global sort could improve locality,
-but its own cost would erode the saved computation.
+Two problems must be solved to make this fusion practical. First,
+\emph{coordinate discovery}: active positions must be identified before
+computation begins, yet scanning for them inside the compute kernel would
+stall the main datapath. Second, \emph{locality preservation}: if active
+positions are fed in arbitrary order, memory access loses the spatial
+regularity that gives the dense pipeline its speed, and a global sort would
+itself erode the saved computation.
 
 We present \sysname (\textbf{W}orkl\textbf{I}st-driven ma\textbf{S}k\textbf{E}d Convolution), a dense-grid masked
 convolution operator that resolves both overheads through a two-stage

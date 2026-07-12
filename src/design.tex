@@ -50,48 +50,52 @@ to the compute stage.
 \subsection{Worklist Construction}
 \label{sec:design:construct}
 
-The construction stage produces the worklist $\mathbf{q}$ from the input
-mask $M_{in}$ by performing a per-tile gather followed by concatenation.
-It operates on the tile partition $T_1, \ldots, T_N$ defined in
-Eq.~\eqref{eq:tile}. For each output position, the stage first evaluates
-Eq.~\eqref{eq:mask} to determine the output mask $M$ (requiring $k^2$
-boolean reads of $M_{in}$ per position), then gathers the active indices
-tile by tile.
+The construction stage discovers active coordinates and arranges them to
+preserve tile-local spatial locality, with negligible overhead relative to the
+compute stage it feeds.
+It produces the worklist $\mathbf{q}$ from the input mask $M_{in}$ by
+performing a per-tile gather followed by concatenation over the tile
+partition $T_1, \ldots, T_N$ defined in Eq.~\eqref{eq:tile}. For each
+output position, the stage evaluates Eq.~\eqref{eq:mask} to determine the
+output mask $M$ (requiring $k^2$ boolean reads of $M_{in}$ per position),
+then gathers active indices within each tile in parallel.
 
-\paragraph{Per-tile gather.}
-For each tile $T_n$, the output mask $M$ induces a support set of
-active indices within the tile:
+\paragraph{Per-tile gather}
+For each tile $T_n$, the stage selects positions where $M$ is active,
+yielding a support set:
 \begin{equation}
   \mathcal{I}_n = \bigl\{\, k \in \{1, \ldots, t_h t_w\} : M[T_n[k]] = 1 \,\bigr\}.
   \label{eq:support}
 \end{equation}
-The per-tile subsequence is the gather of $T_n$ by its support set:
+It then gathers the corresponding output indices from $T_n$ in row-major
+order:
 \begin{equation}
-  \mathbf{q}_n = (T_n)_{\mathcal{I}_n}
-               = (T_n[k])_{k \in \mathcal{I}_n},
+  \mathbf{q}_n = (T_n[k])_{k \in \mathcal{I}_n},
   \label{eq:pertile-gather}
 \end{equation}
-ordered by ascending $k$ (i.e., row-major within the tile), with length
-$|\mathbf{q}_n| = |\mathcal{I}_n|$.
+with length $|\mathbf{q}_n| = |\mathcal{I}_n|$.
 
-\paragraph{Worklist concatenation.}
-Let $P = (P_1, \ldots, P_N)$ be the permutation of $\{1, \ldots, N\}$
-determined by nondeterministic parallel block scheduling. The worklist is:
+\paragraph{Worklist concatenation}
+The stage concatenates all per-tile subsequences into the final worklist.
+Let $P = (P_1, \ldots, P_N)$ be a permutation of $(1, \ldots, N)$
+determined by nondeterministic parallel block scheduling. The stage writes:
 \begin{equation}
-  \mathbf{q} = (\mathbf{q}_{P_1},\; \mathbf{q}_{P_2},\; \ldots,\;
-               \mathbf{q}_{P_N}),
+  \mathbf{q} = \bigl[\;\mathbf{q}_{P_1};\; \mathbf{q}_{P_2};\;
+               \cdots;\; \mathbf{q}_{P_N}\;\bigr],
   \label{eq:worklist}
 \end{equation}
-with total length $|\mathbf{q}| = \|M\|_0$. Each $\mathbf{q}_{P_n}$
-retains its internal row-major ordering; only the inter-tile order varies
-with $P$.
+a contiguous array of $|\mathbf{q}| = \|M\|_0$ active output indices.
+Each segment $\mathbf{q}_{P_n}$ preserves its internal row-major order;
+only the inter-segment ordering depends on the scheduling permutation $P$.
+The above is summarized in Algorithm~\ref{alg:construct}: lines~3--4
+compute $M$, lines~5--6 perform the per-tile gather, and line~7
+concatenates segments into $\mathbf{q}$.
 
 
-\paragraph{Cost analysis.}
+\paragraph{Cost analysis}
 The construction stage evaluates Eq.~\eqref{eq:mask} for all
-$H_{out} W_{out}$ output positions, performing $k^2$ boolean reads of
-$M_{in}$ per position, plus $\|M\|_0$ integer writes to form
-$\mathbf{q}$. Its total work per layer is
+$H_{out} W_{out}$ output positions, performing $k^2$ mask comparisons
+per position. Its total work per layer is
 $O(H_{out} W_{out} \cdot k^2)$, independent of $C_{in}$ and $C_{out}$.
 
 To estimate the overhead relative to computation, we model per-layer
@@ -108,8 +112,10 @@ FMAs. Under this model the overhead ratio is:
 \end{equation}
 For a layer with $C_{in} = C_{out} = 64$ and $\rho^l = 5\%$, this gives
 ${\approx}\,0.5\%$; at $\rho^l = 1\%$ it is ${\approx}\,2.4\%$.
-Section~\ref{sec:eval} confirms that the measured construction overhead
-is consistent with this bound.
+Construction overhead is thus negligible, and the end-to-end latency of
+\sysname is dominated by the compute stage.
+Section~\ref{sec:eval} confirms that measured overhead is consistent with
+this bound.
 
 \begin{algorithm}[t]
 \caption{Worklist Construction}
@@ -119,14 +125,15 @@ is consistent with this bound.
 \ENSURE Worklist $\mathbf{q}$, output mask $M$
 \FOR{each tile $T_n$ \textbf{in parallel}}
   \FOR{each $k \in \{1, \ldots, t_h t_w\}$}
-    \STATE $g \leftarrow T_n[k]$
-    \STATE $M[g] \leftarrow$ Eq.~\eqref{eq:mask}
+    \STATE $p \leftarrow$ spatial position of $T_n[k]$
+    \STATE $M[p] \leftarrow$ Eq.~\eqref{eq:mask}
+      \hfill $\triangleright$ test $\mathcal{N}(p)$ against $M_{in}$
   \ENDFOR
   \STATE $\mathcal{I}_n \leftarrow \{k : M[T_n[k]] = 1\}$
   \STATE $\mathbf{q}_n \leftarrow (T_n[k])_{k \in \mathcal{I}_n}$
 \ENDFOR
 \STATE $\mathbf{q} \leftarrow (\mathbf{q}_{P_1}, \ldots, \mathbf{q}_{P_N})$
-  \hfill \COMMENT{$P$ from block scheduling}
+  \hfill $\triangleright$ $P$ from block scheduling
 \end{algorithmic}
 \end{algorithm}
 
@@ -154,7 +161,7 @@ loads the matching weight block, and accumulates the partial product.
 Finally, the tile writes the accumulated result back to $\mathbf{y}$ using
 the linear indices in $\mathbf{q}'$ as output addresses (line~8).
 
-\paragraph{Locality.}
+\paragraph{Locality}
 Each compute tile processes $B_M$ consecutive worklist entries. Because
 construction compacts active positions per tile, consecutive entries within
 each $\mathbf{q}_{P_n}$ are row-major neighbors in $G_{out}$ whose

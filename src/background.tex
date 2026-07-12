@@ -135,21 +135,13 @@ positions where $M[p] = 1$. Existing methods follow one of two paradigms:
 A tile $T_n$ is executed if and only if it contains at least one active
 position; otherwise it is skipped entirely. The computed set is
 $\mathcal{C} = \bigcup_{\{n:\, \exists\, g \in T_n,\, M[g]=1\}} T_n$.
-Because non-skipped tiles run the unmodified dense pipeline, throughput is
-preserved. However, $|\mathcal{C}|$ can be much larger than $\|M\|_0$
-when active positions are scattered across many tiles: a single active
-position forces its entire tile to execute. SBNet~\cite{sbnet},
+Representative systems include SBNet~\cite{sbnet},
 Skip-Convolutions~\cite{skipconv}, Ev-Conv~\cite{evconv}, and
-DeltaCNN~\cite{deltacnn} follow this paradigm.
+DeltaCNN~\cite{deltacnn}.
 
 \paragraph{Gather-scatter.}
-Active positions are extracted exactly: the system gathers
-$\{\mathbf{x}[\mathcal{N}(g)] : M[g] = 1\}$ into a contiguous buffer,
-computes Eq.~\eqref{eq:conv} for each, and scatters results back to the
-output grid. The computed set $\mathcal{C}$ contains only active positions,
-so no computation is wasted. However, the gather, scatter, and irregular
-memory access patterns abandon the dense pipeline's regular execution,
-reducing throughput to a fraction of tile-based methods.
+Active positions are extracted exactly: the computed set
+$\mathcal{C} = \{g : M[g] = 1\}$ contains only active positions.
 DGNet~\cite{dgnet} and SAI~\cite{sai} follow this paradigm.
 
 \subsection{The Gap: Sparsity Does Not Become Speedup}
