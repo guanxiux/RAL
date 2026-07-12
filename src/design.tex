@@ -146,20 +146,27 @@ pipeline's coordinate-driven execution: it computes Eq.~\eqref{eq:conv}
 for exactly the $\|M\|_0$ worklist entries while preserving the
 per-position datapath unchanged, summarized as
 Algorithm~\ref{alg:compute}.
+
 Following standard implicit GEMM, the workload is partitioned into compute
-tiles: the worklist positions are divided into segments of
-size $B_M$ indexed by $b_m$, and the $C_{out}$ output channels into
-segments of size $B_N$ indexed by $b_n$; all compute tiles execute in
-parallel (line~1). Each compute tile first
-loads its $B_M$ worklist entries into $\mathbf{q}'$ (line~2); this is the
-sole deviation from the dense pipeline, which uses implicitly sequential
-coordinates. After initializing the accumulator (line~3), the tile
-iterates over the $k^2 C_{in}$ reduction dimension in steps of $B_K$
-(lines~4--7): at each step $b_k$, the kernel uses coordinates in
-$\mathbf{q}'$ to gather the corresponding input slice from $\mathbf{x}$,
-loads the matching weight block, and accumulates the partial product.
-Finally, the tile writes the accumulated result back to $\mathbf{y}$ using
-the linear indices in $\mathbf{q}'$ as output addresses (line~8).
+tiles: the worklist positions are divided into segments of size $B_M$
+indexed by $b_m = 1, \ldots, \lceil \|M\|_0 / B_M \rceil$, and the
+$C_{out}$ output channels into segments of size $B_N$ indexed by
+$b_n = 1, \ldots, \lceil C_{out} / B_N \rceil$; all compute tiles execute
+in parallel (line~1 in Algorithm~\ref{alg:compute}). Each compute tile first loads its $B_M$ worklist
+entries into $\mathbf{q}'$ (line~2). After initializing the accumulator
+(line~3), the compute tile iterates over the $k^2$ receptive-field offsets
+(line~4) and within each offset over $C_{in}$ in steps of $B_K$ (line~5):
+at each step, the kernel gathers the input slice $\mathbf{x}'$ at offset
+$i$ from positions $\mathcal{N}_i(\mathbf{q}')$, loads the corresponding
+weight slice $\mathbf{w}'$ from $\mathbf{w}_i$, and accumulates the
+partial product (lines~6--8).
+Finally, the compute tile writes the accumulated result back to $\mathbf{y}$ at
+the worklist addresses (line~9).
+% Compared with dense implicit GEMM, the differences are: (1)~each compute
+% tile loads its coordinates from the worklist rather than generating them
+% sequentially, (2)~the input gather reads from worklist-derived positions
+% $\mathcal{N}_i(\mathbf{q}')$, and (3)~the output writeback addresses are
+% the worklist entries themselves.
 
 \paragraph{Locality}
 Each compute tile processes $B_M$ consecutive worklist entries. Because
@@ -175,17 +182,21 @@ preservation of the global dense raster order.
 \caption{Worklist-driven Convolution}
 \label{alg:compute}
 \begin{algorithmic}[1]
-\REQUIRE Worklist $\mathbf{q}$, input $\mathbf{x}$, weight $\hat{\mathbf{W}}$
+\REQUIRE Worklist $\mathbf{q}$, input $\mathbf{x}$, weight $\mathbf{w}$
 \ENSURE Output $\mathbf{y}$ at positions in $\mathbf{q}$
 \FOR{each compute tile $(b_m, b_n)$ \textbf{in parallel}}
-  \STATE $\mathbf{q}' \leftarrow$ load $B_M$ entries from $\mathbf{q}$ for segment $b_m$
-  \STATE Initialize accumulator $\mathbf{Y} \leftarrow \mathbf{0}_{B_M \times B_N}$
-  \FOR{$b_k = 1, \ldots, \lceil k^2 C_{in} / B_K \rceil$}
-    \STATE $\mathbf{X} \leftarrow$ gather input block from $\mathbf{x}$ at positions $\mathcal{N}(\mathbf{q}')$, reduction step $b_k$
-    \STATE $\hat{\mathbf{W}}' \leftarrow$ load weight block for step $b_k$, channels $b_n$
-    \STATE $\mathbf{Y} \leftarrow \mathbf{Y} + \mathbf{X} \cdot \hat{\mathbf{W}}'$
+  \STATE $\mathbf{q}' \leftarrow \mathbf{q}[\,(b_m{-}1)B_M : b_m B_M\,]$
+  \STATE $\mathbf{y}' \leftarrow \mathbf{0}_{B_M \times B_N}$
+  \FOR{$i = 1, \ldots, k^2$}
+    \FOR{$j = 1, \ldots, \lceil C_{in} / B_K \rceil$}
+      \STATE $\mathbf{x}' \leftarrow \mathbf{x}\bigl[\,\mathcal{N}_i(\mathbf{q}'),\; (j{-}1)B_K : jB_K\,\bigr]$
+      \\\hfill $\triangleright$ gather input slice
+      \STATE $\mathbf{w}' \leftarrow \mathbf{w}_i\bigl[\,(b_n{-}1)B_N : b_n B_N,\; (j{-}1)B_K : jB_K\,\bigr]$
+      \\\hfill $\triangleright$ load weight slice
+      \STATE $\mathbf{y}' \leftarrow \mathbf{y}' + \mathbf{x}' \cdot \mathbf{w}'^\top$
+    \ENDFOR
   \ENDFOR
-  \STATE Write $\mathbf{Y}$ to $\mathbf{y}$ at addresses $\mathbf{q}'$
+  \STATE $\mathbf{y}[\mathbf{q}'] \leftarrow \mathbf{y}'$
 \ENDFOR
 \end{algorithmic}
 \end{algorithm}

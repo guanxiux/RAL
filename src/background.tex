@@ -33,17 +33,17 @@ A 2D convolution layer transforms an input feature map
 $\mathbf{x} \in \mathbb{R}^{H_{in} \times W_{in} \times C_{in}}$ into an
 output $\mathbf{y} \in \mathbb{R}^{H_{out} \times W_{out} \times C_{out}}$
 using a weight tensor
-$\mathbf{W} \in \mathbb{R}^{C_{out} \times C_{in} \times k \times k}$,
+$\mathbf{w} \in \mathbb{R}^{C_{out} \times C_{in} \times k \times k}$,
 where $k$ is the kernel size and $k \times k$ is the receptive field size.
 The computation is defined per spatial position $p = (h, w)$ in the output:
 for each $p$, let $\mathcal{N}(p)$ denote the $k^2$ input positions in the
 receptive field of $p$. The layer computes:
 \begin{equation}
-  \mathbf{y}[p] = \sum_{i=1}^{k^2} \mathbf{W}_i \; \mathbf{x}[\mathcal{N}_i(p)],
+  \mathbf{y}[p] = \sum_{i=1}^{k^2} \mathbf{w}_i \; \mathbf{x}[\mathcal{N}_i(p)],
   \label{eq:conv}
 \end{equation}
 where $\mathcal{N}_i(p)$ is the $i$-th position in the receptive field and
-$\mathbf{W}_i \in \mathbb{R}^{C_{out} \times C_{in}}$ is the corresponding
+$\mathbf{w}_i \in \mathbb{R}^{C_{out} \times C_{in}}$ is the corresponding
 weight slice. The output at each position is thus an accumulation of
 $k^2$ weighted contributions from the input.
 
