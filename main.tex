@@ -41,9 +41,9 @@ throughput. Neither converts high sparsity into proportional latency
 reduction. We present \sysname, a masked convolution operator that achieves
 both high useful-compute ratio and near-dense throughput by fusing
 position-level selectivity into the dense pipeline itself. \sysname first
-scans the mask to build an ordered worklist of active positions, then drives
-the standard convolution datapath using only those positions. On Jetson
-Xavier NX and Orin, across three mask sources and three robotic perception
+scans the mask to build a spatially compact worklist of active positions,
+then drives the standard convolution datapath using only those positions. On
+Jetson Xavier NX and Orin, across three mask sources and three robotic perception
 tasks, \sysname achieves near-linear latency scaling with the active ratio,
 outperforming state-of-the-art baselines while preserving task accuracy.
 \end{abstract}

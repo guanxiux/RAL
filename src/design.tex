@@ -11,9 +11,9 @@
 \begin{enumerate}
   \item \textbf{Construction stage.} A lightweight kernel scans the input
         active mask $M_{in}$ and evaluates Eq.~\eqref{eq:mask} for each
-        output position, emitting an ordered \emph{worklist}
+        output position, emitting a spatially compact \emph{worklist}
         $\mathbf{q} = (q_1, \ldots, q_m)$ of $m = \|M\|_0$ active output
-        indices drawn from $G_{out}$. The worklist preserves tile-local
+        indices drawn from $G_{out}$. The worklist exposes tile-local
         spatial locality (Section~\ref{sec:design:construct}).
 
   \item \textbf{Compute stage.} A convolution kernel consumes $\mathbf{q}$
@@ -36,12 +36,12 @@ to the compute stage.
   \centering
   \fbox{\parbox{0.9\textwidth}{\centering\vspace{2.5cm}%
     \textbf{[TODO]} \sysname overview. Left: input mask $M_{in}$ on the
-    spatial grid. Middle: construction stage scans tiles, emits ordered
-    worklist $\mathbf{q}$. Right: compute stage consumes $\mathbf{q}$, drives
+    spatial grid. Middle: construction stage scans tiles, emits worklist
+    $\mathbf{q}$. Right: compute stage consumes $\mathbf{q}$, drives
     implicit GEMM, writes output $\mathbf{y}$ at active positions
     only.\vspace{2.5cm}}}
   \caption{\sysname two-stage pipeline. The construction stage scans the
-  mask tile by tile and emits an ordered worklist. The compute stage
+  mask tile by tile and emits a worklist of active positions. The compute stage
   drives the dense convolution datapath using only the worklist positions.}
   \label{fig:overview}
 \end{figure*}
@@ -156,13 +156,13 @@ the linear indices in $\mathbf{q}'$ as output addresses (line~8).
 
 \paragraph{Locality.}
 Each compute tile processes $B_M$ consecutive worklist entries. Because
-construction compacts active positions per tile, consecutive entries in
+construction compacts active positions per tile, consecutive entries within
 each $\mathbf{q}_{P_n}$ are row-major neighbors in $G_{out}$ whose
-receptive fields overlap in contiguous memory. A compute chunk of $B_M$
-entries spans at most $\lceil B_M / \min_n |\mathbf{q}_{P_n}| \rceil$
-construction tiles regardless of the permutation $P$; the
-nondeterministic inter-tile ordering does not degrade spatial locality
-relative to the dense raster order.
+receptive fields overlap in contiguous memory. Locality can degrade across
+segment boundaries when active positions are sparse across tiles, but this
+construction avoids a fully arbitrary active-position order without requiring a
+global sort. Accordingly, \sysname claims tile-local locality rather than
+preservation of the global dense raster order.
 
 \begin{algorithm}[t]
 \caption{Worklist-driven Convolution}
