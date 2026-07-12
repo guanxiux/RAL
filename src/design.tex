@@ -88,14 +88,28 @@ with $P$.
 
 
 \paragraph{Cost analysis.}
-Mask evaluation (Eq.~\ref{eq:mask}) performs $k^2$ boolean reads per
-output position, totaling $O(H_{out} W_{out} k^2)$ work. The gather and
-concatenation write $\|M\|_0$ integer indices. The entire stage operates
-in 2D mask space: its cost depends on spatial resolution and kernel size
-but is independent of $C_{in}$ and $C_{out}$. Because the compute stage
-scales with $\|M\|_0 \cdot k^2 \cdot C_{in} \cdot C_{out}$, the
-construction overhead becomes negligible as channel dimensions grow
-(measured at XX\% in Section~\ref{sec:eval}).
+The construction stage evaluates Eq.~\eqref{eq:mask} for all
+$H_{out} W_{out}$ output positions, performing $k^2$ boolean reads of
+$M_{in}$ per position, plus $\|M\|_0$ integer writes to form
+$\mathbf{q}$. Its total work per layer is
+$O(H_{out} W_{out} \cdot k^2)$, independent of $C_{in}$ and $C_{out}$.
+
+To estimate the overhead relative to computation, we model per-layer
+latency as $\hat{t} = \hat{t}_{\text{construct}} +
+\hat{t}_{\text{compute}}$, assuming each is proportional to its
+operation count. Construction performs $H_{out} W_{out} \cdot k^2$
+operations; computation performs
+$\rho^l \cdot H_{out} W_{out} \cdot k^2 \cdot C_{in} \cdot C_{out}$
+FMAs. Under this model the overhead ratio is:
+\begin{equation}
+  \hat{t}_{\text{construct}} \,/\, \hat{t}_{\text{compute}}
+  \;\leq\; 1\,/\,(\rho^l \cdot C_{in} \cdot C_{out}).
+  \label{eq:overhead}
+\end{equation}
+For a layer with $C_{in} = C_{out} = 64$ and $\rho^l = 5\%$, this gives
+${\approx}\,0.5\%$; at $\rho^l = 1\%$ it is ${\approx}\,2.4\%$.
+Section~\ref{sec:eval} confirms that the measured construction overhead
+is consistent with this bound.
 
 \begin{algorithm}[t]
 \caption{Worklist Construction}
@@ -120,36 +134,25 @@ construction overhead becomes negligible as channel dimensions grow
 \subsection{Worklist-driven Convolution}
 \label{sec:design:compute}
 
-The compute stage evaluates Eq.~\eqref{eq:conv} for exactly the positions
-in $\mathbf{q}$, formulated as an implicit GEMM whose M-dimension is
-indexed by the worklist rather than a full raster scan of $G_{out}$.
-
-\paragraph{GEMM formulation.}
-Let $m = |\mathbf{q}| = \|M\|_0$. The masked convolution computes:
-\begin{equation}
-  \mathbf{Y}_{m \times C_{out}} = \mathbf{A}_{m \times k^2 C_{in}}
-  \;\cdot\; \hat{\mathbf{W}}_{k^2 C_{in} \times C_{out}},
-  \label{eq:gemm}
-\end{equation}
-where $\hat{\mathbf{W}}$ is the weight tensor reshaped into a 2D matrix,
-and row $j$ of $\mathbf{A}$ is the flattened receptive-field input for
-worklist entry $q_j$:
-\begin{equation}
-  \mathbf{A}[j, :] = \bigl[\,
-    \mathbf{x}[\mathcal{N}_1(q_j)]^\top,\;
-    \ldots,\;
-    \mathbf{x}[\mathcal{N}_{k^2}(q_j)]^\top
-  \,\bigr].
-  \label{eq:implicit-a}
-\end{equation}
-The matrix $\mathbf{A}$ is never materialized; each element is computed on
-the fly by decoding the spatial coordinate from $q_j$ and reading the
-corresponding input position from $\mathbf{x}$. The execution follows the
-standard implicit-GEMM tiled pipeline; the only modification is the
-coordinate source: the worklist $\mathbf{q}$ replaces the sequential scan
-of $G_{out}$. After accumulation, each output row is written back to
-$\mathbf{y}[q_j]$ using the worklist entry as the output address.
-Algorithm~\ref{alg:compute} summarizes this procedure.
+The compute stage fuses position-level selectivity into the dense
+pipeline's coordinate-driven execution: it computes Eq.~\eqref{eq:conv}
+for exactly the $\|M\|_0$ worklist entries while preserving the
+per-position datapath unchanged, summarized as
+Algorithm~\ref{alg:compute}.
+Following standard implicit GEMM, the workload is partitioned into compute
+tiles: the worklist positions are divided into segments of
+size $B_M$ indexed by $b_m$, and the $C_{out}$ output channels into
+segments of size $B_N$ indexed by $b_n$; all compute tiles execute in
+parallel (line~1). Each compute tile first
+loads its $B_M$ worklist entries into $\mathbf{q}'$ (line~2); this is the
+sole deviation from the dense pipeline, which uses implicitly sequential
+coordinates. After initializing the accumulator (line~3), the tile
+iterates over the $k^2 C_{in}$ reduction dimension in steps of $B_K$
+(lines~4--7): at each step $b_k$, the kernel uses coordinates in
+$\mathbf{q}'$ to gather the corresponding input slice from $\mathbf{x}$,
+loads the matching weight block, and accumulates the partial product.
+Finally, the tile writes the accumulated result back to $\mathbf{y}$ using
+the linear indices in $\mathbf{q}'$ as output addresses (line~8).
 
 \paragraph{Locality.}
 Each compute tile processes $B_M$ consecutive worklist entries. Because
@@ -161,31 +164,21 @@ construction tiles regardless of the permutation $P$; the
 nondeterministic inter-tile ordering does not degrade spatial locality
 relative to the dense raster order.
 
-\paragraph{Equivalence to dense execution.}
-For any single position $q_j$, the operations (decode coordinate, read
-$k^2 \times C_{in}$ input values, multiply-accumulate against
-$\mathbf{W}$, write $C_{out}$ outputs) are identical to what the dense
-pipeline performs for that position. \sysname changes only \emph{which}
-positions are processed ($\mathbf{q}$ instead of the full $G_{out}$) and
-\emph{how many} ($\|M\|_0$ instead of $H_{out} W_{out}$). The arithmetic
-intensity, memory access pattern per position, and GPU occupancy model are
-preserved.
-
 \begin{algorithm}[t]
 \caption{Worklist-driven Convolution}
 \label{alg:compute}
 \begin{algorithmic}[1]
 \REQUIRE Worklist $\mathbf{q}$, input $\mathbf{x}$, weight $\hat{\mathbf{W}}$
 \ENSURE Output $\mathbf{y}$ at positions in $\mathbf{q}$
-\FOR{each tile $(b_m, b_n)$ \textbf{in parallel}}
-  \STATE Load worklist segment $\mathbf{q}[b_m]$
+\FOR{each compute tile $(b_m, b_n)$ \textbf{in parallel}}
+  \STATE $\mathbf{q}' \leftarrow$ load $B_M$ entries from $\mathbf{q}$ for segment $b_m$
   \STATE Initialize accumulator $\mathbf{Y} \leftarrow \mathbf{0}_{B_M \times B_N}$
-  \FOR{$k = 1, \ldots, \lceil k^2 C_{in} / B_K \rceil$}
-    \STATE $\mathbf{X} \leftarrow$ gather input block from $\mathbf{x}$ at positions $\mathcal{N}(\mathbf{q}[b_m])$, channel tile $k$
-    \STATE $\hat{\mathbf{W}}_k \leftarrow$ load weight block for channel tile $k$
-    \STATE $\mathbf{Y} \leftarrow \mathbf{Y} + \mathbf{X} \cdot \hat{\mathbf{W}}_k$
+  \FOR{$b_k = 1, \ldots, \lceil k^2 C_{in} / B_K \rceil$}
+    \STATE $\mathbf{X} \leftarrow$ gather input block from $\mathbf{x}$ at positions $\mathcal{N}(\mathbf{q}')$, reduction step $b_k$
+    \STATE $\hat{\mathbf{W}}' \leftarrow$ load weight block for step $b_k$, channels $b_n$
+    \STATE $\mathbf{Y} \leftarrow \mathbf{Y} + \mathbf{X} \cdot \hat{\mathbf{W}}'$
   \ENDFOR
-  \STATE Write $\mathbf{Y}$ to $\mathbf{y}$ at addresses $\mathbf{q}[b_m]$
+  \STATE Write $\mathbf{Y}$ to $\mathbf{y}$ at addresses $\mathbf{q}'$
 \ENDFOR
 \end{algorithmic}
 \end{algorithm}

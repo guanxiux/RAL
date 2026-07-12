@@ -24,6 +24,11 @@ closed control loop imposes a hard latency ceiling: perception must complete
 within the sensor frame interval (typically tens of milliseconds) to feed
 downstream planning and control in time.
 
+Consider a CNN with $L$ convolution layers. We describe the operation of a
+single layer $l$; all per-layer quantities ($H_{out}$, $W_{out}$, $C_{in}$,
+$C_{out}$, $k$, $M$, etc.) are implicitly indexed by $l$ but we omit the
+superscript for clarity unless comparing across layers.
+
 A 2D convolution layer transforms an input feature map
 $\mathbf{x} \in \mathbb{R}^{H_{in} \times W_{in} \times C_{in}}$ into an
 output $\mathbf{y} \in \mathbb{R}^{H_{out} \times W_{out} \times C_{out}}$
@@ -152,8 +157,10 @@ DGNet~\cite{dgnet} and SAI~\cite{sai} follow this paradigm.
 
 For a network with $L$ convolution layers, let $\|M^l\|_0$ denote the
 number of active positions (nonzeros) in layer $l$'s output mask. We define
-the \emph{active ratio}
-$\rho = \frac{1}{L}\sum_{l=1}^{L} \|M^l\|_0 / (H_{out}^l W_{out}^l)$,
+layer $l$'s \emph{active ratio}
+$\rho^l = \|M^l\|_0 / (H_{out}^l W_{out}^l)$
+and the network-level active ratio
+$\hat{\rho} = \frac{1}{L}\sum_{l=1}^{L} \rho^l$,
 the average fraction of output positions that require computation across
 all layers. We characterize masked-convolution efficiency along two axes:
 \emph{throughput}, the rate of convolution operations per second (bounded by
@@ -164,17 +171,17 @@ sacrifices useful-compute ratio; gather-scatter achieves high useful-compute
 ratio but sacrifices throughput. Neither delivers both, so upstream sparsity
 does not translate into proportional latency reduction.
 Figure~\ref{fig:gap} quantifies this on Jetson Orin
-running XX on YY dataset: with $\rho$ in the range XX--YY\%,
+running XX on YY dataset: with $\hat{\rho}$ in the range XX--YY\%,
 tile-skipping methods achieve only AA--BB\% useful-compute ratio and
 gather-scatter methods reach only CC\% of tile-skipping throughput, reducing
-convolution latency by only DD--EE\% rather than the ideal $\rho$-linear
+convolution latency by only DD--EE\% rather than the ideal $\hat{\rho}$-linear
 scaling. This gap motivates \sysname.
 
 % TODO: figure showing active-output ratio vs actual speedup on Jetson
 \begin{figure}[t]
   \centering
   \fbox{\parbox{0.9\columnwidth}{\centering\vspace{2cm}%
-    \textbf{[TODO]} Active ratio $\rho$ (x-axis) vs.\ actual speedup over
+    \textbf{[TODO]} Active ratio $\hat{\rho}$ (x-axis) vs.\ actual speedup over
     dense (y-axis) on Jetson Orin. Three mask sources, two paradigms.
     Dashed line = ideal linear scaling.\vspace{2cm}}}
   \caption{Active ratio vs.\ actual convolution speedup on Jetson
@@ -197,6 +204,6 @@ Applying 3D sparse convolution directly to this 2D scenario performs poorly
 because it requires building coordinate hash tables and neighbor maps with
 mandatory GPU synchronization, and the per-frame mask changes prevent
 amortizing this cost across layers. On Jetson Orin, SpConv~v2 applied to a
-2D masked convolution with $\rho = \text{XX}\%$ runs XX$\times$ slower than
+2D masked convolution with $\rho^l = \text{XX}\%$ runs XX$\times$ slower than
 the dense baseline due to construction overhead alone
 (Section~\ref{sec:eval}).
