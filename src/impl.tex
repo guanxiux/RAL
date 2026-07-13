@@ -2,7 +2,10 @@
 \label{sec:impl}
 
 \sysname is implemented as a CUDA C++ extension exposed to PyTorch via
-Pybind11, serving as a drop-in replacement for standard convolution layers.
+Pybind11, serving as a drop-in replacement for standard
+\texttt{nn.Conv2d} layers with identical weight tensors and
+hyperparameters; no model architecture modification is required and
+existing pretrained weights load directly.
 All tensors use the channels-last (NHWC) memory layout, ensuring that
 each active position's gather reads a contiguous memory segment. The construction
 kernel maps one thread per output position; each thread tests the receptive
@@ -13,7 +16,16 @@ the support set $\mathcal{I}_n$ (the ordered indices of active positions)
 without a sort or prefix-sum pass. One warp-elected thread performs a
 single \texttt{atomicAdd} to reserve a contiguous worklist segment; each
 active lane writes its index at the reserved base plus its rank. The
-compute kernel follows a Cutlass-style~\cite{cutlass} implicit-GEMM
+construction kernel also writes the output mask $M$, which the next layer
+consumes as its $M_{in}$; mask propagation is thus fused into worklist
+construction with no separate pass.
+
+The compute kernel follows a Cutlass-style~\cite{cutlass} implicit-GEMM
 structure with double-buffered shared memory and asynchronous
 global-to-shared loads (\texttt{cp.async} on Ampere+). Tile configurations
-are selected via Triton-style~\cite{triton} offline autotuning.
+($B_M$, $B_N$, $B_K$) are selected via Triton-style~\cite{triton} offline
+autotuning: for each unique
+layer shape (spatial dimensions, channels, kernel size), a one-time
+profiling sweep determines the best-performing tile, which is then reused
+across all inference calls. The \sysname output is bit-identical to dense cuDNN convolution for all
+active positions.

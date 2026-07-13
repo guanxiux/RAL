@@ -6,7 +6,11 @@
 
 \sysname resolves the useful-compute ratio vs.\ throughput tension
 (Section~\ref{sec:bg:gap}) through a two-stage design
-(Figure~\ref{fig:overview}):
+(Figure~\ref{fig:overview}). Each \sysname layer takes as input the dense
+feature map $\mathbf{x}$ and the input active mask $M_{in}$
+(Section~\ref{sec:bg:masked}), and produces the output feature map
+$\mathbf{y}$ (valid at active positions) together with the output mask $M$
+for the subsequent layer:
 
 \begin{enumerate}
   \item \textbf{Construction stage.} A lightweight kernel scans the input
@@ -24,6 +28,8 @@
         (Section~\ref{sec:design:compute}).
 \end{enumerate}
 
+Both stages execute once per layer, since the output mask $M$ differs at
+each layer due to mask propagation (Eq.~\eqref{eq:mask}).
 The computed set $\mathcal{C} = \{q_1, \ldots, q_m\}$ contains only active
 positions (high useful-compute ratio), while the per-position datapath
 remains that of the dense pipeline (near-dense throughput). The
@@ -60,7 +66,6 @@ output position, the stage evaluates Eq.~\eqref{eq:mask} to determine the
 output mask $M$ (requiring $k^2$ boolean reads of $M_{in}$ per position),
 then gathers active indices within each tile in parallel.
 
-\paragraph{Per-tile gather}
 For each tile $T_n$, the stage selects positions where $M$ is active,
 yielding a support set:
 \begin{equation}
@@ -75,8 +80,8 @@ order:
 \end{equation}
 with length $|\mathbf{q}_n| = |\mathcal{I}_n|$.
 
-\paragraph{Worklist concatenation}
-The stage concatenates all per-tile subsequences into the final worklist.
+Once all tiles complete, the stage concatenates their subsequences into the
+final worklist.
 Let $P = (P_1, \ldots, P_N)$ be a permutation of $(1, \ldots, N)$
 determined by nondeterministic parallel block scheduling. The stage writes:
 \begin{equation}
@@ -91,8 +96,7 @@ The above is summarized in Algorithm~\ref{alg:construct}: lines~3--4
 compute $M$, lines~5--6 perform the per-tile gather, and line~7
 concatenates segments into $\mathbf{q}$.
 
-
-\paragraph{Cost analysis}
+The construction cost is dominated by mask evaluation.
 The construction stage evaluates Eq.~\eqref{eq:mask} for all
 $H_{out} W_{out}$ output positions, performing $k^2$ mask comparisons
 per position. Its total work per layer is
@@ -104,13 +108,13 @@ latency as $\hat{t} = \hat{t}_{\text{construct}} +
 operation count. Construction performs $H_{out} W_{out} \cdot k^2$
 operations; computation performs
 $\rho^l \cdot H_{out} W_{out} \cdot k^2 \cdot C_{in} \cdot C_{out}$
-FMAs. Under this model the overhead ratio is:
+FMAs (fused multiply-accumulate operations). Under this model the overhead ratio is:
 \begin{equation}
   \hat{t}_{\text{construct}} \,/\, \hat{t}_{\text{compute}}
   \;\leq\; 1\,/\,(\rho^l \cdot C_{in} \cdot C_{out}).
   \label{eq:overhead}
 \end{equation}
-For a layer with $C_{in} = C_{out} = 64$ and $\rho^l = 5\%$, this gives
+For a typical layer with $C_{in} = C_{out} = 64$ and $\rho^l = 5\%$, this gives
 ${\approx}\,0.5\%$; at $\rho^l = 1\%$ it is ${\approx}\,2.4\%$.
 Construction overhead is thus negligible, and the end-to-end latency of
 \sysname is dominated by the compute stage.
@@ -161,22 +165,24 @@ $i$ from positions $\mathcal{N}_i(\mathbf{q}')$, loads the corresponding
 weight slice $\mathbf{w}'$ from $\mathbf{w}_i$, and accumulates the
 partial product (lines~6--8).
 Finally, the compute tile writes the accumulated result back to $\mathbf{y}$ at
-the worklist addresses (line~9).
+the worklist addresses (line~11).
 % Compared with dense implicit GEMM, the differences are: (1)~each compute
 % tile loads its coordinates from the worklist rather than generating them
 % sequentially, (2)~the input gather reads from worklist-derived positions
 % $\mathcal{N}_i(\mathbf{q}')$, and (3)~the output writeback addresses are
 % the worklist entries themselves.
 
-\paragraph{Locality}
+The worklist order also determines access locality in the compute stage.
 Each compute tile processes $B_M$ consecutive worklist entries. Because
 construction compacts active positions per tile, consecutive entries within
 each $\mathbf{q}_{P_n}$ are row-major neighbors in $G_{out}$ whose
-receptive fields overlap in contiguous memory. Locality can degrade across
-segment boundaries when active positions are sparse across tiles, but this
-construction avoids a fully arbitrary active-position order without requiring a
-global sort. Accordingly, \sysname claims tile-local locality rather than
-preservation of the global dense raster order.
+receptive fields overlap in contiguous memory. Locality can degrade when a
+compute tile's $B_M$ entries span multiple construction-tile boundaries;
+however, each construction tile contributes on average
+$\rho^l \cdot t_h t_w$ active positions, so at moderate active ratios most
+compute tiles fall entirely within a single segment and experience
+tile-local spatial locality. \sysname does not claim preservation of the
+global dense raster order; it relies on this tile-local property instead.
 
 \begin{algorithm}[t]
 \caption{Worklist-driven Convolution}
