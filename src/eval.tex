@@ -1,0 +1,111 @@
+\section{Evaluation}
+\label{sec:eval}
+
+\subsection{Experimental Setup}
+\label{sec:eval:setup}
+
+We evaluate \sysname on four GPU platforms, three robotic perception tasks
+with distinct mask sources, and three baselines representing the dense,
+tile-skipping, and gather-scatter paradigms.
+
+\subsubsection{Platforms}
+Experiments run on two embedded platforms representative of onboard robotic
+deployment and two desktop-class GPUs that test generality:
+Jetson Xavier NX (8\,GB, CUDA~11.4),
+Jetson AGX Orin (64\,GB, CUDA~11.4),
+RTX~4070 Laptop (CUDA~12.1), and
+RTX~3080 Desktop (CUDA~12.1).
+% TODO: Jetson power mode, clock settings if fixed.
+
+\subsubsection{Models, Tasks, and Mask Sources}
+
+Table~\ref{tab:models} summarizes the three evaluation workloads. Each
+pairs a robotic perception task with a mask source drawn from a different
+family (Section~\ref{sec:bg:masks}).
+
+\begin{table}[t]
+\centering
+\caption{Evaluation workloads.}
+\label{tab:models}
+\begin{tabular}{lccc}
+\hline
+ & \textbf{UNet} & \textbf{YOLO} & \textbf{ResNet} \\
+\hline
+Task & Optical flow & Object detection & Depth estimation \\
+Mask source & EvConv & DeltaCNN & DGNet \\
+Dataset & MVSEC & TODO & TODO \\
+Resolution & $346{\times}260$ & TODO & TODO \\
+\#Parameters & TODO & TODO & TODO \\
+Dataset size & TODO & TODO & TODO \\
+\hline
+\end{tabular}
+\end{table}
+
+\textbf{Optical flow.} We use EVFlowNet~\cite{evflownet}, a UNet
+encoder-decoder, with EvConv~\cite{evconv} as the mask source. We follow
+the standard EvConv evaluation protocol on the MVSEC
+dataset~\cite{mvsec} ($346{\times}260$ resolution).
+
+\textbf{Object detection.} We use YOLOv11 % TODO: cite
+with temporal frame differences as the mask source
+(DeltaCNN~\cite{deltacnn}): consecutive frames are differenced and
+positions exceeding a threshold % TODO: threshold value
+are marked active.
+% TODO: dataset, input resolution.
+
+\textbf{Depth estimation.} We use a ResNet-34-based depth network % TODO: cite specific model
+with DGNet~\cite{dgnet} learned spatial gating as the mask source: a
+lightweight gating module predicts task-relevant regions per frame.
+% TODO: dataset, input resolution.
+
+\subsubsection{Baselines}
+
+We compare against three baselines, all running in FP32 on identical
+hardware and inputs:
+\begin{itemize}
+  \item \textbf{Dense}: cuDNN implicit GEMM with best-algorithm selection
+        via \texttt{cudnnFind}.
+  \item \textbf{Tile skipping}: DeltaCNN~\cite{deltacnn} execution engine.
+        DeltaCNN includes a delta-propagation optimization specific to
+        temporal frame differences (computing and propagating only output
+        deltas). We enable delta propagation for the temporal frame difference task
+        and disable it for the event-camera and learned-gating tasks.
+  \item \textbf{Gather-scatter}: MMCV~\cite{mmcv} \texttt{MaskedConv2d}
+        operator, which performs \texttt{masked\_im2col} (gather active
+        patches), matrix multiply, and \texttt{masked\_col2im} (scatter
+        back).
+\end{itemize}
+
+\subsubsection{Metrics and Methodology}
+
+We report four metrics:
+(1)~end-to-end latency (ms),
+(2)~useful-compute ratio $\|M\|_0 / |\mathcal{C}|$
+(Section~\ref{sec:bg:gap}),
+(3)~throughput (GFLOPS, giga floating-point operations per second), and
+(4)~task accuracy: Average Endpoint Error (AEE, pixels) for optical flow,
+mean Average Precision (mAP, \%) for object detection, and Root Mean
+Square Error (RMSE, meters) for depth estimation.
+All latency measurements use CUDA events with device synchronization,
+averaged over 3 repetitions after 3 warm-up runs. We report standard
+deviation.
+
+\subsection{End-to-End Latency}
+\label{sec:eval:latency}
+
+% TODO
+
+\subsection{Efficiency Analysis}
+\label{sec:eval:efficiency}
+
+% TODO
+
+\subsection{Construction Overhead}
+\label{sec:eval:overhead}
+
+% TODO
+
+\subsection{Task Accuracy}
+\label{sec:eval:accuracy}
+
+% TODO

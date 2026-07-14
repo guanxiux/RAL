@@ -180,9 +180,9 @@ receptive fields overlap in contiguous memory. Locality can degrade when a
 compute tile's $B_M$ entries span multiple construction-tile boundaries;
 however, each construction tile contributes on average
 $\rho^l \cdot t_h t_w$ active positions, so at moderate active ratios most
-compute tiles fall entirely within a single segment and experience
-tile-local spatial locality. \sysname does not claim preservation of the
-global dense raster order; it relies on this tile-local property instead.
+compute tiles fall entirely within a single segment. The resulting
+tile-local locality avoids the cost of a global sort while retaining
+sufficient regularity for efficient memory access.
 
 \begin{algorithm}[t]
 \caption{Worklist-driven Convolution}
