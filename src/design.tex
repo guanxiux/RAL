@@ -63,7 +63,7 @@ It produces the worklist $\mathbf{q}$ from the input mask $M_{in}$ by
 performing a per-tile gather followed by concatenation over the tile
 partition $T_1, \ldots, T_N$ defined in Eq.~\eqref{eq:tile}. For each
 output position, the stage evaluates Eq.~\eqref{eq:mask} to determine the
-output mask $M$ (requiring $k^2$ boolean reads of $M_{in}$ per position),
+output mask $M$ (requiring $k^2$ mask comparisons per position) and
 then gathers active indices within each tile in parallel.
 
 For each tile $T_n$, the stage selects positions where $M$ is active,
@@ -94,7 +94,9 @@ Each segment $\mathbf{q}_{P_n}$ preserves its internal row-major order;
 only the inter-segment ordering depends on the scheduling permutation $P$.
 The above is summarized in Algorithm~\ref{alg:construct}: lines~3--4
 compute $M$, lines~5--6 perform the per-tile gather, and line~7
-concatenates segments into $\mathbf{q}$.
+concatenates segments into $\mathbf{q}$. Computing $M$ and building
+$\mathbf{q}$ are thus fused into a single kernel with no separate
+mask-propagation pass.
 
 The construction cost is dominated by mask evaluation.
 The construction stage evaluates Eq.~\eqref{eq:mask} for all

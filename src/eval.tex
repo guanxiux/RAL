@@ -33,8 +33,8 @@ family (Section~\ref{sec:bg:masks}).
 \hline
 Task & Optical flow & Object detection & Depth estimation \\
 Mask source & EvConv & DeltaCNN & DGNet \\
-Dataset & MVSEC & TODO & TODO \\
-Resolution & $346{\times}260$ & TODO & TODO \\
+Dataset & MVSEC & MOT16 & KITTI \\
+Resolution & $346{\times}260$ & $640{\times}640$ & $1280{\times}384$ \\
 \#Parameters & TODO & TODO & TODO \\
 Dataset size & TODO & TODO & TODO \\
 \hline
@@ -46,24 +46,31 @@ encoder-decoder, with EvConv~\cite{evconv} as the mask source. We follow
 the standard EvConv evaluation protocol on the MVSEC
 dataset~\cite{mvsec} ($346{\times}260$ resolution).
 
-\textbf{Object detection.} We use YOLOv11 % TODO: cite
+\textbf{Object detection.} We use YOLOv11~\cite{yolov11}
 with temporal frame differences as the mask source
 (DeltaCNN~\cite{deltacnn}): consecutive frames are differenced and
 positions exceeding a threshold % TODO: threshold value
-are marked active.
-% TODO: dataset, input resolution.
+are marked active. We evaluate on the MOT16 dataset~\cite{mot16} with
+$640{\times}640$ input resolution.
 
-\textbf{Depth estimation.} We use a ResNet-34-based depth network % TODO: cite specific model
+\textbf{Depth estimation.} We use a ResNet-34 encoder-decoder~\cite{monodepth2}
 with DGNet~\cite{dgnet} learned spatial gating as the mask source: a
 lightweight gating module predicts task-relevant regions per frame.
-% TODO: dataset, input resolution.
+We evaluate on KITTI~\cite{kitti} ($1280{\times}384$ resolution).
+
+EVFlowNet~\cite{evflownet} and YOLOv11 % TODO: cite yolov11
+use their respective official pretrained weights;
+EvConv~\cite{evconv} and DeltaCNN~\cite{deltacnn} are inference-time mask
+sources that do not modify model weights. For DGNet~\cite{dgnet}, the
+gating module is jointly trained with the backbone following the default
+DGNet configuration.
 
 \subsubsection{Baselines}
 
 We compare against three baselines, all running in FP32 on identical
 hardware and inputs:
 \begin{itemize}
-  \item \textbf{Dense}: cuDNN implicit GEMM with best-algorithm selection
+  \item \textbf{Dense}: cuDNN~\cite{cudnn} implicit GEMM with best-algorithm selection
         via \texttt{cudnnFind}.
   \item \textbf{Tile skipping}: DeltaCNN~\cite{deltacnn} execution engine.
         DeltaCNN includes a delta-propagation optimization specific to
@@ -80,8 +87,7 @@ hardware and inputs:
 
 We report four metrics:
 (1)~end-to-end latency (ms),
-(2)~useful-compute ratio $\|M\|_0 / |\mathcal{C}|$
-(Section~\ref{sec:bg:gap}),
+(2)~useful-compute ratio $\eta$ (Section~\ref{sec:bg:gap}),
 (3)~throughput (GFLOPS, giga floating-point operations per second), and
 (4)~task accuracy: Average Endpoint Error (AEE, pixels) for optical flow,
 mean Average Precision (mAP, \%) for object detection, and Root Mean

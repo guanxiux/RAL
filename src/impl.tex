@@ -1,13 +1,19 @@
 \section{Implementation}
 \label{sec:impl}
 
-\sysname is implemented as a CUDA C++ extension exposed to PyTorch via
-Pybind11, serving as a drop-in replacement for standard
-\texttt{nn.Conv2d} layers with identical weight tensors and
-hyperparameters; no model architecture modification is required and
-existing pretrained weights load directly.
-All tensors use the channels-last (NHWC) memory layout, ensuring that
-each active position's gather reads a contiguous memory segment. The construction
+\sysname is implemented as a CUDA C++ library exposed to PyTorch via
+Pybind11. The core masked convolution operator serves as a drop-in
+replacement for \texttt{nn.Conv2d} with identical weights and
+hyperparameters. To support end-to-end sparse execution of complete CNN
+architectures, the library also provides mask-aware implementations of
+\texttt{ConvTranspose2d}, pooling, element-wise addition, etc. All
+operators accept and propagate the active mask; no model architecture
+modification is required and existing pretrained weights load directly.
+All tensors use the channels-last (NHWC) memory layout, so that reading
+a spatially sparse set of positions still produces contiguous memory
+accesses along the channel dimension, preserving throughput. 
+
+The construction
 kernel maps one thread per output position; each thread tests the receptive
 field against $M_{in}$ with early exit. Within each warp,
 \texttt{\_\_ballot\_sync} produces a bitmask of active lanes and
@@ -15,10 +21,7 @@ field against $M_{in}$ with early exit. Within each warp,
 the support set $\mathcal{I}_n$ (the ordered indices of active positions)
 without a sort or prefix-sum pass. One warp-elected thread performs a
 single \texttt{atomicAdd} to reserve a contiguous worklist segment; each
-active lane writes its index at the reserved base plus its rank. The
-construction kernel also writes the output mask $M$, which the next layer
-consumes as its $M_{in}$; mask propagation is thus fused into worklist
-construction with no separate pass.
+active lane writes its index at the reserved base plus its rank.
 
 The compute kernel follows a Cutlass-style~\cite{cutlass} implicit-GEMM
 structure with double-buffered shared memory and asynchronous

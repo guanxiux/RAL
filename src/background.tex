@@ -156,29 +156,39 @@ $\hat{\rho} = \frac{1}{L}\sum_{l=1}^{L} \rho^l$,
 the average fraction of output positions that require computation across
 all layers. We characterize masked-convolution efficiency along two axes:
 \emph{throughput}, the rate of convolution operations per second (bounded by
-the dense pipeline), and \emph{useful-compute ratio}, the fraction of
-executed operations that produce needed outputs
-($\|M\|_0 / |\mathcal{C}|$). Tile skipping preserves throughput but
-sacrifices useful-compute ratio; gather-scatter achieves high useful-compute
-ratio but sacrifices throughput. Neither delivers both, so upstream sparsity
+the dense pipeline), and \emph{useful-compute ratio}
+$\eta = \|M\|_0 / |\mathcal{C}|$, the fraction of
+executed operations that produce needed outputs. Tile skipping preserves throughput but
+sacrifices $\eta$; gather-scatter achieves high $\eta$
+but sacrifices throughput. Neither delivers both, so upstream sparsity
 does not translate into proportional latency reduction.
 Figure~\ref{fig:gap} quantifies this on Jetson Orin
 running XX on YY dataset: with $\hat{\rho}$ in the range XX--YY\%,
-tile-skipping methods achieve only AA--BB\% useful-compute ratio and
+tile-skipping methods achieve only AA--BB\% $\eta$ and
 gather-scatter methods reach only CC\% of tile-skipping throughput, reducing
 convolution latency by only DD--EE\% rather than the ideal $\hat{\rho}$-linear
 scaling. This gap motivates \sysname.
 
-% TODO: figure showing active-output ratio vs actual speedup on Jetson
+% TODO: motivation figure on Jetson Orin
 \begin{figure}[t]
   \centering
   \fbox{\parbox{0.9\columnwidth}{\centering\vspace{2cm}%
-    \textbf{[TODO]} Active ratio $\hat{\rho}$ (x-axis) vs.\ actual speedup over
-    dense (y-axis) on Jetson Orin. Three mask sources, two paradigms.
-    Dashed line = ideal linear scaling.\vspace{2cm}}}
-  \caption{Active ratio vs.\ actual convolution speedup on Jetson
-  Orin for the three mask sources. The dashed line marks ideal (linear)
-  scaling. Tile skipping and gather-scatter both fall far short.}
+    \textbf{[TODO]} Grouped bar chart on Jetson Orin.
+    Three groups: Dense, Tile skipping, Gather-scatter.
+    Each group has three bars for three metrics.
+    Left y-axis: latency (ms).
+    Right y-axis 1: useful-compute ratio $\eta$ (\%).
+    Right y-axis 2: throughput (GFLOPS).
+    Dashed horizontal line at $\hat{\rho}$ on the $\eta$ axis,
+    marking the active ratio (coincides with dense $\eta$ bar top).
+    Shows: tile skipping has low $\eta$; gather-scatter has low
+    throughput; neither achieves latency proportional to
+    $\hat{\rho}$.\vspace{2cm}}}
+  \caption{Efficiency profile of existing masked-convolution paradigms on
+  Jetson Orin. Dense serves as the throughput and latency reference. Tile
+  skipping preserves throughput but suffers low $\eta$; gather-scatter
+  achieves high $\eta$ but sacrifices throughput. Neither translates
+  sparsity into proportional latency reduction.}
   \label{fig:gap}
 \end{figure}
 
