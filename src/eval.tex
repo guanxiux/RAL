@@ -76,7 +76,7 @@ hardware and inputs:
         DeltaCNN includes a delta-propagation optimization specific to
         temporal frame differences (computing and propagating only output
         deltas). We enable delta propagation for the temporal frame difference task
-        and disable it for the event-camera and learned-gating tasks.
+        and disable it for the event-camera and learned-gating tasks since they are not applicable.
   \item \textbf{Gather-scatter}: MMCV~\cite{mmcv} \texttt{MaskedConv2d}
         operator, which performs \texttt{masked\_im2col} (gather active
         patches), matrix multiply, and \texttt{masked\_col2im} (scatter
