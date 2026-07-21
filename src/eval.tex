@@ -29,7 +29,7 @@ family (Section~\ref{sec:bg:masks}).
 \label{tab:models}
 \begin{tabular}{lccc}
 \hline
- & \textbf{UNet} & \textbf{YOLO} & \textbf{ResNet} \\
+ & \textbf{FireFlowNet} & \textbf{YOLO} & \textbf{ResNet} \\
 \hline
 Task & Optical flow & Object detection & Depth estimation \\
 Mask source & EvConv & DeltaCNN & DGNet \\
@@ -41,10 +41,13 @@ Dataset size & TODO & TODO & TODO \\
 \end{tabular}
 \end{table}
 
-\textbf{Optical flow.} We use EVFlowNet~\cite{evflownet}, a UNet
-encoder-decoder, with EvConv~\cite{evconv} as the mask source. We follow
-the standard EvConv evaluation protocol on the MVSEC
-dataset~\cite{mvsec} ($346{\times}260$ resolution).
+\textbf{Optical flow.} We use FireFlowNet~\cite{fireflownet}, a lightweight
+eight-convolution optical-flow network, with EvConv~\cite{evconv} as the mask
+source. Following the EvConv protocol, each input encodes a 50-ms event window
+and consecutive inferences shift this window by 1 ms. We calibrate threshold
+and kernel-selection policies on \texttt{indoor\_flying1}, exclude that
+sequence from evaluation, and report results on the remaining available MVSEC
+sequences~\cite{mvsec}.
 
 \textbf{Object detection.} We use YOLOv11~\cite{yolov11}
 with temporal frame differences as the mask source
@@ -58,7 +61,7 @@ with DGNet~\cite{dgnet} learned spatial gating as the mask source: a
 lightweight gating module predicts task-relevant regions per frame.
 We evaluate on KITTI~\cite{kitti} ($1280{\times}384$ resolution).
 
-EVFlowNet~\cite{evflownet} and YOLOv11 % TODO: cite yolov11
+FireFlowNet~\cite{fireflownet} and YOLOv11 % TODO: cite yolov11
 use their respective official pretrained weights;
 EvConv~\cite{evconv} and DeltaCNN~\cite{deltacnn} are inference-time mask
 sources that do not modify model weights. For DGNet~\cite{dgnet}, the
@@ -92,9 +95,17 @@ We report four metrics:
 (4)~task accuracy: Average Endpoint Error (AEE, pixels) for optical flow,
 mean Average Precision (mAP, \%) for object detection, and Root Mean
 Square Error (RMSE, meters) for depth estimation.
-All latency measurements use CUDA events with device synchronization,
-averaged over 3 repetitions after 3 warm-up runs. We report standard
-deviation.
+Latency measurements use per-frame CUDA events on the compute stream. Input
+histogram construction and host-to-device transfer are excluded: pinned inputs
+are copied on a dedicated stream with one-frame look-ahead, and the start event
+is recorded after the compute stream has waited for that frame's copy. The
+timed region includes input differencing, mask and worklist construction, all
+network operators, runtime sparsity selection, and output accumulation. The
+first-frame dense initialization and all calibration/autotuning are outside the
+timed region. Events are synchronized and read in batches rather than after
+each frame, preserving asynchronous runtime behavior. We run each complete
+held-out sequence three times and report both mean and standard deviation and
+median and median absolute deviation.
 
 \subsection{End-to-End Latency}
 \label{sec:eval:latency}
