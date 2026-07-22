@@ -70,8 +70,7 @@ We evaluate on KITTI~\cite{kitti} ($1280{\times}384$ resolution).
 
 FireFlowNet~\cite{fireflownet} and YOLOv11 % TODO: cite yolov11
 use their respective official pretrained weights;
-EvConv~\cite{evconv} and DeltaCNN~\cite{deltacnn} are inference-time mask
-sources that do not modify model weights. For DGNet~\cite{dgnet}, the
+EvConv~\cite{evconv} and DeltaCNN~\cite{deltacnn} provide inference-time masks without modifying the pretrained model weights. For DGNet~\cite{dgnet}, the
 gating module is jointly trained with the backbone following the default
 DGNet configuration.
 
@@ -82,11 +81,31 @@ hardware and inputs:
 \begin{itemize}
   \item \textbf{Dense}: cuDNN~\cite{cudnn} implicit GEMM with best-algorithm selection
         via \texttt{cudnnFind}.
+%   \item \textbf{Tile skipping}: DeltaCNN~\cite{deltacnn} execution engine.
+%         DeltaCNN includes a delta-propagation optimization specific to
+%         temporal frame differences or event-camera increments (computing and propagating only output
+%         deltas). We enable delta propagation for the temporal frame difference and event-camera increment tasks
+%         and disable it for the learned-gating task since it is not applicable.
+%   \item \textbf{Tile skipping}: DeltaCNN~\cite{deltacnn} execution engine.
+%         DeltaCNN performs a dense initialization, then differences consecutive
+%         inputs, propagates sparse output deltas through cached intermediate
+%         states, and skips tiles whose receptive fields contain no active
+%         values. We use this incremental mode for both event-window increments
+%         and temporal frame differences. Learned spatial gating instead selects
+%         regions independently within each current-frame inference and does not
+%         define temporal deltas for updating cached states; for this task, we
+%         use only DeltaCNN's tile-skipping execution with the masks supplied by
+%         the gating module.
   \item \textbf{Tile skipping}: DeltaCNN~\cite{deltacnn} execution engine.
-        DeltaCNN includes a delta-propagation optimization specific to
-        temporal frame differences (computing and propagating only output
-        deltas). We enable delta propagation for the temporal frame difference task
-        and disable it for the event-camera and learned-gating tasks since they are not applicable.
+        After a dense initialization, DeltaCNN differences consecutive inputs,
+        propagates only sparse output deltas through cached intermediate states, and
+        skips tiles with inactive receptive fields. We use this incremental
+        mode optimization for event-window increments and temporal frame differences.
+        Learned spatial gating provides per-inference region masks rather than
+        temporal state updates, so we use only DeltaCNN's tile-skipping
+        execution with the supplied gating masks.
+
+
   \item \textbf{Gather-scatter}: MMCV~\cite{mmcv} \texttt{MaskedConv2d}
         operator, which performs \texttt{masked\_im2col} (gather active
         patches), matrix multiply, and \texttt{masked\_col2im} (scatter
