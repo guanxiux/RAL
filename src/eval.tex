@@ -46,8 +46,15 @@ eight-convolution optical-flow network, with EvConv~\cite{evconv} as the mask
 source. Following the EvConv protocol, each input encodes a 50-ms event window
 and consecutive inferences shift this window by 1 ms. We calibrate threshold
 and kernel-selection policies on \texttt{indoor\_flying1}, exclude that
-sequence from evaluation, and report results on the remaining available MVSEC
-sequences~\cite{mvsec}.
+sequence from evaluation, and report results on \texttt{indoor\_flying2},
+\texttt{indoor\_flying3}, and \texttt{outdoor\_day1}~\cite{mvsec}. We select
+one global sparsification threshold from three calibration regions that span
+low and high event activity. We then derive input-activity buckets and their
+per-layer kernel configurations from a streaming replay of the complete
+calibration sequence. The threshold is chosen at the knee of the aggregate
+AEE and scheduled-FLOP tradeoff; per-region accuracy remains a diagnostic
+rather than a runtime guarantee. We report per-sequence AEE on all held-out
+sequences.
 
 \textbf{Object detection.} We use YOLOv11~\cite{yolov11}
 with temporal frame differences as the mask source
@@ -95,6 +102,11 @@ We report four metrics:
 (4)~task accuracy: Average Endpoint Error (AEE, pixels) for optical flow,
 mean Average Precision (mAP, \%) for object detection, and Root Mean
 Square Error (RMSE, meters) for depth estimation.
+For optical-flow accuracy, the model processes every 1-ms window shift so that
+incremental state evolves identically to the latency experiment. We sample a
+prediction at the nearest MVSEC flow timestamp, with at most 0.5 ms alignment
+error, and scale the predicted 50-ms flow by the ratio between the
+ground-truth interval and 50 ms before computing AEE.
 Latency measurements use per-frame CUDA events on the compute stream. Input
 histogram construction and host-to-device transfer are excluded: pinned inputs
 are copied on a dedicated stream with one-frame look-ahead, and the start event
