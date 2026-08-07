@@ -7,13 +7,13 @@
 \sysname turns an upstream activity mask into the coordinate stream of a
 tiled convolution. A layer receives a dense feature tensor $\mathbf{x}$ and
 its input mask $M_{in}$. It produces the output values $\mathbf{y}$ requested
-by the mask policy, the propagated output mask $M$, and a worklist $\mathbf{q}$
+by the mask policy, the propagated output mask $M_{out}$, and a worklist $\mathbf{q}$
 of active output coordinates. The operator separates this work into two stages
 (Figure~\ref{fig:overview}):
 
 \begin{enumerate}
   \item \textbf{Construction stage.} A mask-space kernel evaluates
-        Eq.~\eqref{eq:mask}, writes $M$, and compacts its active coordinates
+        Eq.~\eqref{eq:mask}, writes $M_{out}$, and compacts its active coordinates
         into $\mathbf{q}$. It scans the output grid in spatial tiles, so each
         emitted segment retains the local traversal order of one tile.
 
@@ -54,10 +54,10 @@ Construction must determine the active output set before convolution without
 moving feature data or imposing a device-wide ordering pass. We partition the
 output grid into contiguous construction tiles $T_1,\ldots,T_N$, each with a
 fixed local traversal. For every position $p\in T_n$, the stage evaluates
-Eq.~\eqref{eq:mask} and writes the result to $M[p]$. It then selects the active
+Eq.~\eqref{eq:mask} and writes the result to $M_{out}[p]$. It then selects the active
 positions within that tile:
 \begin{equation}
-  \mathcal{I}_n = \{j : M[T_n[j]]=1\},
+  \mathcal{I}_n = \{j : M_{out}[T_n[j]]=1\},
   \label{eq:support}
 \end{equation}
 and emits their linear output coordinates in local traversal order:
@@ -70,7 +70,7 @@ Tiles execute in parallel and reserve disjoint segments of the final
 worklist. If $P$ denotes their reservation order, the resulting array is
 \begin{equation}
   \mathbf{q} = [\mathbf{q}_{P_1};\ldots;\mathbf{q}_{P_N}],
-  \qquad |\mathbf{q}|=\|M\|_0.
+  \qquad |\mathbf{q}|=\|M_{out}\|_0.
   \label{eq:worklist}
 \end{equation}
 Parallel scheduling may change the order of these segments, so \sysname does
@@ -90,12 +90,12 @@ its cost directly in Section~\ref{sec:eval:overhead}.
 \label{alg:construct}
 \begin{algorithmic}[1]
 \REQUIRE Construction tiles $T_1,\ldots,T_N$, input mask $M_{in}$
-\ENSURE Worklist $\mathbf{q}$, output mask $M$
+\ENSURE Worklist $\mathbf{q}$, output mask $M_{out}$
 \FOR{each tile $T_n$ \textbf{in parallel}}
   \FOR{each position $p\in T_n$}
-    \STATE $M[p]\leftarrow$ Eq.~\eqref{eq:mask}
+    \STATE $M_{out}[p]\leftarrow$ Eq.~\eqref{eq:mask}
   \ENDFOR
-  \STATE $\mathbf{q}_n\leftarrow(T_n[j])_{j:M[T_n[j]]=1}$
+  \STATE $\mathbf{q}_n\leftarrow(T_n[j])_{j:M_{out}[T_n[j]]=1}$
   \STATE $b_n\leftarrow\operatorname{reserve}(|\mathbf{q}_n|)$
   \STATE $\mathbf{q}[b_n:b_n+|\mathbf{q}_n|]\leftarrow\mathbf{q}_n$
 \ENDFOR
@@ -118,7 +118,7 @@ every reduction step, it derives input addresses from $\mathbf{q}'$, loads the
 corresponding input and weight tiles, and accumulates their products. It then
 writes the result to the dense output tensor at the same coordinates
 (Algorithm~\ref{alg:compute}). The worklist schedules exactly the support of
-$M$.
+$M_{out}$.
 
 The input tile in Algorithm~\ref{alg:compute} is loaded directly from
 $\mathbf{x}$ into the kernel's working storage; it is not materialized as a
