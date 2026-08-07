@@ -88,23 +88,26 @@ input in its receptive field is active,
   \end{cases}
   \label{eq:mask}
 \end{equation}
-which the next layer consumes as its own $M_{in}$. WISEConv addresses the
-execution of this mask and does not modify how it is generated.
+which the next layer consumes as its own $M_{in}$. The mask's active ratio
+$\alpha = \|M\|_0 / |\mathcal{G}|$ (the fraction of the output grid $\mathcal{G}$
+kept active, with $\|M\|_0$ counting the active coordinates) is the intrinsic
+sparsity the policy exposes, independent of how a path executes it. WISEConv
+addresses the execution of this mask and does not modify how it is generated.
 
 \subsection{The Sparsity-to-Latency Gap}
 \label{sec:bg:gap}
 
 Existing systems execute a mask along one of two paths. \emph{Tile
-skipping}~\cite{sbnet,skipconv,evconv} inherits the tile-based computation of
-the dense pipeline and skips a tile when all of its coordinates are inactive,
-but computes the entire tile once any coordinate
-is active, including inactive coordinates; DeltaCNN~\cite{deltacnn} further fuses a selective path into the kernel,
-taken when a tile is estimated to be mostly empty, cutting the wasted work while sacrficing throughput. \emph{Gather-scatter}~\cite{sai,dgnet}
-instead extracts the active coordinates exactly, computes, and scatters the results back,
-removing the inactive arithmetic but adding extraction, irregular access, and
-writeback overhead; DynConv~\cite{dynconv} further adopts a model structure suited to
-gather-scatter, where a single gather feeds several consecutive layers before the
-result is scattered to the dense tensor, amortizing that overhead.
+skipping}~\cite{sbnet,skipconv,evconv} inherits the dense pipeline's tile-based
+computation, skipping a tile only when all its coordinates are inactive and
+otherwise computing the whole tile; DeltaCNN~\cite{deltacnn} fuses a selective
+path into the kernel, taken when a tile is estimated to be mostly empty, cutting
+wasted work while degrading throughput. \emph{Gather-scatter}~\cite{sai,dgnet}
+instead extracts exactly the active coordinates, computes, and scatters them
+back, removing the inactive arithmetic but adding extraction, irregular access,
+and writeback overhead; DynConv~\cite{dynconv} adopts a model structure suited to
+gather-scatter, where one gather feeds several consecutive layers before a single
+scatter, amortizing that overhead.
 
 We measure each path by two quantities. Its useful-compute ratio is the
 fraction of computed coordinates that are active,
@@ -112,36 +115,46 @@ fraction of computed coordinates that are active,
   \eta = \frac{\|M\|_0}{|\mathcal{C}|} \le 1.
   \label{eq:useful-ratio}
 \end{equation}
-Its throughput is the rate at which it processes issued MACs,
+Its throughput is the rate at which it processes issued FLOPs,
 \begin{equation}
-  T = \frac{|\mathcal{C}|\,k^2 C_{in} C_{out}}{t},
+  T = \frac{2\,|\mathcal{C}|\,k^2 C_{in} C_{out}}{t},
   \label{eq:throughput}
 \end{equation}
-capped by the dense pipeline, where $t$ is the operator latency. Given a required
-$\|M\|_0\,k^2 C_{in} C_{out}$ MACs, the latency $t$ is set by the effective
-throughput $T_{\mathrm{eff}} = \eta T$, the rate at which a path produces needed
-outputs. Cutting latency in proportion to the mask's sparsity therefore needs
-both $\eta$ and $T$ high, yet each existing path keeps only one. Figure~\ref{fig:gap} shows the outcome on Jetson AGX Orin, where
-the mask marks 84\% of the convolution work unnecessary. Tile
-skipping keeps $T$ near the dense pipeline, but an $\eta$ of 0.49 leaves latency
-at about twice the required-work floor. Gather-scatter drives $\eta$ near one but
-sustains only 9\% of tile skipping's throughput, so its latency exceeds dense
-convolution. Neither turns the mask's sparsity into a proportional latency
-reduction.
+where $t$ is the per-frame latency and the leading factor of 2 counts each
+multiply-accumulate as two FLOPs. Measuring $t$
+per frame folds fixed mask-generation and non-convolution overhead into $T$,
+which approximates the operator rate but keeps the comparison fair since all
+paths share that overhead. For the required $2\,\|M\|_0\,k^2 C_{in} C_{out}$
+FLOPs, latency is set by the \textbf{effective throughput}
+$T_{\mathrm{eff}} = \eta T$, the rate at which a path computes needed outputs.
 
-% TODO: motivation figure on Jetson AGX Orin
+Figure~\ref{fig:gap} traces this on Jetson AGX Orin for the sparsest workload.
+The mask marks 84.4\% of the convolution work unnecessary, and the sparse paths
+discard it with negligible accuracy loss, so the remaining work sets a 9.6\,ms
+latency floor (Fig.~\ref{fig:gap}a, dashed). Neither path approaches it: tile
+skipping reaches 36.6\,ms, still 3.8$\times$ the floor, and gather-scatter, the
+path DynConv is built around, runs at 194\,ms, far slower than dense convolution
+itself. Effective throughput explains the gap. Tile skipping holds throughput
+near half of dense, but its useful-compute ratio is only $\eta=0.49$, so half of
+that serves inactive coordinates; gather-scatter drives $\eta$ to one, yet
+extraction and data movement collapse its throughput to 5\% of dense
+(Fig.~\ref{fig:gap}b). Neither path turns the mask's sparsity into a proportional
+latency reduction.
+
 \begin{figure}[t]
   \centering
-  \fbox{\parbox{0.9\columnwidth}{\centering\vspace{2cm}%
-    \textbf{[TODO]} Efficiency profile on Jetson AGX Orin. Report required
-    work, useful-compute ratio, throughput, and convolution latency
-    for Dense, Tile skipping, and Gather-scatter.\vspace{2cm}}}
-  \caption{Required work, useful-compute ratio, throughput, and convolution
-  latency of Dense, Tile skipping, and Gather-scatter on Jetson AGX Orin, for
-  the sparsest workload. Tile skipping keeps throughput high but issues
-  unnecessary work; gather-scatter reaches the required-work floor but loses
-  throughput to extraction and data movement. Neither realizes the latency
-  benefit the mask exposes.}
+  \includegraphics[width=\columnwidth]{figures/gap.pdf}
+  \caption{Statistics of DynConv~\cite{dynconv}, a pose estimator
+  with learned spatial gating, on the MPII human-pose dataset~\cite{mpii} and
+  Jetson AGX Orin, comparing the native cuDNN path (Dense) against the two
+  sparse paths.
+  (a)~End-to-end average per-frame latency (left axis; the dashed line marks the
+  dense latency scaled by the active ratio aggregated across layers) and PCKh
+  accuracy (right axis; keypoints localized within half the head size). The
+  sparse paths apply the same mask, so their accuracy coincides. (b)~Raw
+  throughput $T$ and effective throughput $T_{\mathrm{eff}}$, aggregated across
+  the model's convolution layers. The dense useful-compute ratio implies the
+  active ratio set by DynConv's spatial gating ($\alpha\approx15.6\%$).}
   \label{fig:gap}
 \end{figure}
 

@@ -1,0 +1,4 @@
+system,backend,device,tf32,frames,latency_ms_mean,latency_ms_median,latency_ms_std,eta,issued_gflop_per_frame,useful_gflop_per_frame,dense_gflop_per_frame,raw_tflops,eff_tflops,pckh,speedup_vs_dense,ideal_floor_ms,gap_to_floor_x
+Dense,dense,Jetson AGX Orin (30 W),False,2926,61.72,61.683,0.173,0.1556,12.3149,1.9162,12.3149,0.19953,0.03105,88.06,1.0,9.604,6.427
+Tile skipping,tile_skip,Jetson AGX Orin (30 W),False,2926,36.64,36.668,1.134,0.4907,3.9052,1.9162,12.3149,0.10658,0.0523,86.68,1.685,9.604,3.815
+Gather-scatter,dynconv,Jetson AGX Orin (30 W),False,2926,193.517,193.359,1.022,1.0,1.9162,1.9162,12.3149,0.0099,0.0099,86.68,0.319,9.604,20.15
