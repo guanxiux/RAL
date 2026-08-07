@@ -1,34 +1,46 @@
 \section{Implementation}
 \label{sec:impl}
 
-\sysname is implemented as a CUDA C++ library exposed to PyTorch via
-Pybind11. The core masked convolution operator serves as a drop-in
-replacement for \texttt{nn.Conv2d} with identical weights and
-hyperparameters. To support end-to-end sparse execution of complete CNN
-architectures, the library also provides mask-aware implementations of
-\texttt{ConvTranspose2d}, pooling, element-wise addition, etc. All
-operators accept and propagate the active mask; no model architecture
-modification is required and existing pretrained weights load directly.
-All tensors use the channels-last (NHWC) memory layout, so that reading
-a spatially sparse set of positions still produces contiguous memory
-accesses along the channel dimension, preserving throughput. 
+We implement \sysname as a CUDA C++ extension for PyTorch. The current backend
+executes FP32 tensors in channels-last layout and provides the mask-aware
+operators required by the evaluated networks: convolution, transposed
+convolution, pooling, pointwise activation, addition, concatenation, and
+upsampling. A model-conversion pass replaces compatible PyTorch modules while
+preserving the graph topology, convolution parameters, and learned weights.
+The upstream application continues to generate masks.
 
-The construction
-kernel maps one thread per output position; each thread tests the receptive
-field against $M_{in}$ with early exit. Within each warp,
-\texttt{\_\_ballot\_sync} produces a bitmask of active lanes and
-\texttt{\_\_popc} on masked prefixes yields each active lane's rank, giving
-the support set $\mathcal{I}_n$ (the ordered indices of active positions)
-without a sort or prefix-sum pass. One warp-elected thread performs a
-single \texttt{atomicAdd} to reserve a contiguous worklist segment; each
-active lane writes its index at the reserved base plus its rank.
+The construction kernel assigns contiguous output positions to each warp. A
+thread tests one receptive field and terminates once it finds an active input.
+A warp ballot identifies active lanes, population counts give their local
+ranks, and one atomic operation reserves a contiguous worklist segment for the
+warp. Active lanes then write their coordinates in lane order. This realizes
+the tile-local ordering in Section~\ref{sec:design:construct} without a
+device-wide prefix scan or sorting pass. An identity $1\times1$ convolution
+has the same input and output coordinate space; when its input already carries
+compatible mask and worklist metadata, the operator reuses that worklist and
+skips construction.
 
-The compute kernel follows a Cutlass-style~\cite{cutlass} implicit-GEMM
-structure with double-buffered shared memory and asynchronous
-global-to-shared loads (\texttt{cp.async} on Ampere+). Tile configurations
-($B_M$, $B_N$, $B_K$) are selected via Triton-style~\cite{triton} offline
-autotuning: for each unique
-layer shape (spatial dimensions, channels, kernel size), a one-time
-profiling sweep determines the best-performing tile, which is then reused
-across all inference calls. The \sysname output is bit-identical to dense cuDNN convolution for all
-active positions.
+The compute kernel uses a persistent, tiled implicit-GEMM organization. It
+keeps partial sums in registers and stages input and weight tiles through
+shared memory. Supported architectures use asynchronous global-to-shared
+copies, with a synchronous path for earlier GPUs. Split-$K$ exposes additional
+parallel work when the active-coordinate dimension alone cannot occupy the
+device. Transposed convolution follows the same output-driven organization,
+but partitions output coordinates by stride phase so that each phase visits
+only its valid kernel offsets.
+
+Efficient scheduling depends jointly on the GPU, layer shape, and activity.
+We therefore autotune the sparse tile shape and split-$K$ factor and cache the
+choice by device, convolution parameters, activity level, and execution
+policy. For layers whose state-update semantics permit dense evaluation, the
+candidate set can also include a cuDNN path. A sparse-only policy isolates the
+worklist-driven kernel, and the cache key distinguishes the two policies and
+the requested determinism mode. Autotuning and one-time weight preparation
+complete before the timed sequence described in Section~\ref{sec:eval:setup}.
+
+For fixed input values, weights, and mask, \sysname evaluates
+Eq.~\eqref{eq:conv} at every active output coordinate. Floating-point
+reordering may produce small numerical differences from cuDNN, so we verify
+active outputs with numerical tolerances rather than requiring bitwise
+identity. This check separates backend correctness from the task-quality
+effect of the fixed upstream mask policy.

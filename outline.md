@@ -1,159 +1,167 @@
 # WISEConv LaTeX-Derived Outline
 
-This outline is synchronized with the current LaTeX draft in `RAL/`. It is not
-an independent source of truth. If this file conflicts with `main.tex` or
-`src/*.tex`, follow the LaTeX.
+本文件只映射 `RAL/main.tex` 与 `RAL/src/*.tex` 的当前结构，不承载新的 story proposal。
+若与 LaTeX 冲突，以 LaTeX 为准；未决定的 challenge/reuse/scheduling 讨论见仓库根目录的
+`discussion.md`。
 
 ## Title
 
 **WISEConv: Worklist-driven Masked Convolution for Onboard High-Speed Robotic
 Perception**
 
-## Abstract-Level Claim
+## Abstract
 
-Onboard robotic perception relies on 2D convolutional networks that must meet
-tight latency constraints on embedded platforms. Spatial active masks are common
-in high-speed vision systems, but existing masked-convolution execution paths
-lose the sparsity benefit: tile skipping preserves dense-pipeline throughput but
-computes many unneeded outputs, while gather-scatter computes only needed
-outputs but sacrifices throughput. WISEConv uses an ordered worklist of active
-positions to drive the dense convolution datapath, aiming for both high
-useful-compute ratio and near-dense throughput.
+1. Onboard robotic perception 需要在 tight compute and power budgets 下维持高更新率。
+2. Event increments、temporal frame differences 和 learned gates 暴露 spatial masks，
+   但现有 execution paths 没有把 sparsity 充分转化为 latency reduction。
+3. Tile skipping 保留规则执行，却在 active tiles 内计算 inactive positions；
+   gather-scatter 精确选择 positions，却付出 feature materialization、irregular access 和
+   writeback 成本。
+4. WISEConv 将 active-coordinate worklist 作为 tiled convolution 的 coordinate source，
+   结合 position-level selectivity 与规则的 convolution reduction。
+5. Construction 在 mask space 内生成 tile-local worklist segments；compute 直接消费这些
+   coordinates，无需 input-patch materialization 或 global sorting。
+6. Evaluation claim 暂留数值 placeholder，最终按 fastest competing path、fixed weights 和
+   fixed upstream mask policies 报告。
 
-## Introduction Flow
+## 1. Introduction
 
-1. **Robotic deployment motivation**：onboard robots run convolutional
-   perception in the control loop for navigation, manipulation, and closed-loop
-   control. Embedded platforms have limited compute, while perception latency
-   directly affects the control path.
-2. **Masked convolution setting**：many systems concentrate compute on active
-   regions. The input remains a dense image-grid tensor, but only active output
-   positions are updated.
-3. **Dense pipeline baseline**：dense convolution partitions the output grid into
-   contiguous tiles. Coordinate-driven, tile-based execution is fast because it
-   accesses spatially contiguous data with regular memory patterns.
-4. **Existing execution paths**：tile skipping stays inside the dense pipeline
-   and skips only fully inactive tiles; gather-scatter extracts active positions
-   exactly but abandons the regular dense pipeline.
-5. **Trade-off characterization**：the bottleneck is useful-compute ratio vs.
-   throughput. Tile skipping loses useful-compute ratio, gather-scatter loses
-   throughput, and neither yields proportional latency reduction from sparsity.
-6. **WISEConv insight**：replace the dense tile's contiguous coordinate source
-   with active-position coordinates from a worklist. This gives position-level
-   selectivity while keeping the per-position dense convolution datapath.
-7. **Practical challenges**：active coordinates must be discovered before
-   compute, and worklist order must preserve spatial locality. Kernel-internal
-   scanning and global sorting are both too expensive.
-8. **WISEConv design**：a construction stage scans the mask and emits an ordered
-   worklist; a compute stage drives dense convolution with that worklist. Tiled
-   construction discovers coordinates and compacts active positions within each
-   tile into contiguous worklist segments.
-9. **Contributions**：identify the trade-off, present the worklist-driven
-   operator, and evaluate on Jetson Xavier NX and Orin across three mask sources
-   and robotic perception tasks.
+当前段落顺序：
 
-## Background Structure
+1. **Broad robotics scope.** CNNs 支撑 onboard motion/geometry estimation、detection、
+   segmentation 和 pose estimation；其 latency 限制 downstream navigation、planning 与
+   manipulation 使用新 observations 的频率。
+2. **Common operator problem.** Event-camera increments、temporal differences 和 learned
+   gates 来源不同，却都要求在 dense 2D grids 上更新 selected positions。
+3. **Dense coordinate-driven execution.** Dense GPU convolution 以 contiguous output
+   coordinates 驱动 reads/writes，并保留规则的 channel/kernel reduction。
+4. **Existing paths.** Tile skipping 以 tile 为选择粒度；gather-scatter 精确选择 positions，
+   但离开规则的 dense execution path。
+5. **Two efficiency axes.** Throughput 与 useful-compute ratio 共同决定 latency，因而
+   theoretical FLOP reduction 不等于 realized latency reduction。
+6. **Insight.** 用 active-position worklist 替换 contiguous coordinate source，可以改变
+   computed outputs 而不物化 receptive-field patches。
+7. **当前临时 challenge.** Coordinate discovery 必须在 compute 前完成；worklist ordering
+   又要保留 spatial structure，不能依赖 arbitrary order 或 global sorting。
+8. **Solution.** Construction 融合 output-mask propagation 与 per-tile compaction；compute
+   直接消费 tile-local segments，保留规则 reduction。
+9. **Contributions.** 提出 two-axis framing、worklist-driven design，以及跨三类 masks、
+   四个模型和多类 GPU 的 full-model evaluation。
 
-### 2D Dense Convolution on Embedded Platforms
+第 7 点是安全基线，不代表 challenge 已最终确定。任何 construction amortization、
+conservative reuse 或 short-worklist scheduling 扩展都必须先在 `discussion.md` 中完成证据与
+Design 义务审查。
 
-CNN-based depth estimation, optical flow, detection, segmentation, and pose
-estimation remain central to real-time onboard perception. The section defines a
-single 2D convolution layer, output positions, receptive fields, and a tiled
-output index grid. Dense convolution computes all output positions
-unconditionally, which can exceed embedded latency budgets.
+## 2. Background and Motivation
 
-### Masked Convolution for Onboard Perception
+### 2.1 Latency-Critical Onboard Perception
 
-The paper defines an input active mask `M_in` and an output active mask `M`. An
-output position is active when its receptive field contains at least one active
-input position. In multi-layer networks, masks propagate layer by layer.
+- Robotic perception 位于 online sensing-to-action loop。
+- Latency 同时影响 observation age 与 effective feedback frequency。
+- Onboard processor 还需与 sensing、planning 和 control 共享 power/thermal budget。
+- 因此 deployment objective 是 target device 上的 full-model latency，而非孤立 FLOPs。
 
-Mask sources in the current draft:
+### 2.2 Dense-Grid Convolution
 
-- **Event-camera increments** for high-speed event-camera inference.
-- **Temporal frame differences** for continuous video perception.
-- **Learned spatial gating** for adaptive perception.
+- 定义 dense 2D convolution、output coordinate grid 与 computed coordinate set。
+- GPU kernel 将 output coordinates/channels 分块，并利用规则 reduction 和 overlapping
+  receptive fields 获得 throughput。
+- Dense path 每次 invocation 都计算 full output grid。
 
-### Execution Paradigms
+### 2.3 Masked Convolution
 
-Tile skipping executes a tile if any position inside it is active. It preserves
-throughput but computes inactive positions inside active tiles.
+- 输入仍是 dense tensor，upstream policy 提供 spatial active mask。
+- 对传播型 mask，output active position 由 receptive-field intersection 决定。
+- Mask generation 与 accuracy tradeoff 属于 upstream policy，不属于 WISEConv contribution。
 
-Gather-scatter extracts active positions exactly and computes only those
-outputs. It avoids wasted computation but pays gather, scatter, indexing, and
-irregular-memory overhead.
+Mask sources 由 prior work 支撑：event-camera increments、temporal differences、learned
+spatial gating。
 
-### Sparsity-to-Latency Gap
+### 2.4 Existing Execution Paradigms
 
-The draft defines the layer active ratio and the network-level average active
-ratio. It then uses throughput and useful-compute ratio to explain why high
-upstream sparsity does not automatically yield proportional latency speedup.
+- **Tile skipping:** regular execution，较低 useful-compute ratio。
+- **Gather-scatter:** exact active set，较低 throughput 与较高 non-convolution overhead。
 
-### 3D Sparse Convolution Positioning
+### 2.5 Sparsity-to-Latency Gap
 
-3D sparse convolution targets irregular point-cloud workloads. WISEConv targets
-regular dense 2D grids and skips inactive outputs without leaving the dense
-pipeline. This distinction belongs in background or evaluation, not the main
-intro story.
+- 定义 required work、executed work、useful-compute ratio 与 sustained throughput。
+- 用 `t approximately W_req / (eta * Theta) + t_oh` 解释 latency。
+- 用 MAC-weighted required-work ratio 代替无权 layer-average activity。
 
-## Design Structure
+### 2.6 Relation to 3D Sparse Convolution
 
-### Overview
+SpConv/TorchSparse++ 面向 irregular point-cloud coordinates；WISEConv 面向保留 dense
+2D representation、由 changing spatial masks 选择 outputs 的执行问题。
 
-WISEConv has two stages:
+## 3. WISEConv Design
 
-- **Construction stage**：scan `M_in`, evaluate the output active mask, and emit
-  the worklist `q` of active output indices.
-- **Compute stage**：consume `q` as the coordinate source, read receptive fields
-  from the dense input grid, accumulate convolution identically to the dense
-  datapath, and write active outputs back.
+### 3.1 Overview
 
-The computed set contains only active positions, while the per-position datapath
-remains dense.
+- Input：dense feature tensor 与 input mask。
+- Output：requested dense output values、propagated output mask 与 active-coordinate worklist。
+- Construction 将 coordinate discovery 移出 convolution critical path。
+- Compute 保留 dense feature/weight representation 与规则 reduction。
 
-### Worklist Construction
+### 3.2 Tiled Worklist Construction
 
-The construction stage operates on the tile partition defined in the background.
-For each output position, it evaluates receptive-field intersection with the
-input mask. Within each tile, active indices are gathered in row-major order.
-The final worklist concatenates per-tile active subsequences. The draft allows
-inter-tile order to depend on parallel block scheduling, while preserving
-tile-local order.
+- 按 contiguous construction tiles 扫描 output grid。
+- 每个 position 计算 output mask；每个 tile compact active positions。
+- Per-tile segment 保持该 tile 的 local traversal order。
+- Parallel reservation 可改变 segment 间顺序，因此不承诺 global raster order。
+- Construction work 为 `O(H_out * W_out * k^2)`，并计入 measured operator latency。
 
-Construction cost is independent of channel dimensions. The paper models this
-cost as mask reads and integer writes, then compares it against active-output
-convolution cost.
+### 3.3 Worklist-Driven Convolution
 
-### Worklist-Driven Convolution
+- 在 implicit-GEMM interpretation 中，以 worklist coordinates 替换 dense row-coordinate
+  enumeration；output-channel 与 reduction dimensions 仍规则。
+- Compute tiles 读取 coordinate blocks，直接从 dense input 加载对应 neighborhoods，并将
+  results 写回相同 output coordinates。
+- 当前 Design 中 worklist 是 exact mask support，不包含 conservative candidate semantics。
 
-The compute stage divides the worklist into compute tiles and output channels
-into channel segments. Each compute tile loads a chunk of worklist entries,
-uses those coordinates to gather the corresponding dense-grid input slices,
-loads weights, accumulates, and writes results to the dense output addresses.
+## 4. Implementation
 
-Locality comes from the tiled construction: consecutive entries within each
-per-tile worklist segment are spatial neighbors with overlapping receptive
-fields. The claim is tile-local spatial locality, not global sorted order.
+- CUDA C++ extension for PyTorch，FP32 channels-last tensors。
+- Model-conversion pass 替换 compatible mask-aware operators，不修改 graph topology、
+  convolution parameters 或 learned weights。
+- Construction kernel 以 warp ballot、population counts 和一次 segment reservation 完成
+  tile-local compaction，不做 device-wide prefix scan 或 sort。
+- Identity `1x1` convolution 可在 compatible metadata 已存在时复用 worklist，但当前没有
+  将该实现事实提升为主 Design contribution。
+- Compute 使用 persistent tiled implicit GEMM、register accumulators、shared-memory staging、
+  split-K 与 device/shape/activity-aware autotuning。
+- Correctness 对 active outputs 使用 numerical tolerance，不宣称 bitwise identity。
 
-## Implementation Structure
+## 5. Evaluation
 
-The implementation section currently sketches a CUDA C++ extension exposed to
-PyTorch through Pybind11. It uses NHWC tensors, a construction kernel that maps
-threads to output positions, warp-level ballot and prefix counting to compact
-active lanes, and a Cutlass-style implicit-GEMM compute kernel with offline
-autotuning.
+### 5.1 Experimental Setup（已写，当前冻结）
 
-## Evaluation Plan
+- **Platforms:** Jetson Xavier NX、Jetson AGX Orin、RTX 4070 Laptop、RTX 3080。
+  NX 的 slot 保留，但现有异常 logs 在受控复测前不得进入 claims。
+- **Models/tasks:** FireFlowNet optical flow、YOLOv8n/m detection、DynConv human pose。
+- **Mask sources:** Ev-Conv、DeltaCNN、DynConv learned gates。
+- **Datasets:** MVSEC、MOT16、MPII。
+- **Baselines:** native dense PyTorch/cuDNN、prior-work-backed tile skipping、
+  gather-scatter。
+- **Primary metric:** complete held-out sequences 上的 full-model GPU latency，timed region
+  包含 mask propagation、construction、all network operators 和 output update。
+- **Analysis metrics:** required-work ratio、useful-compute ratio、sustained convolution
+  throughput、construction fraction、task quality 与 operator correctness。
 
-The LaTeX currently references evaluation but the full evaluation section is not
-yet written. The intended evaluation should cover:
+### 5.2 Result Sections（结构已建，正文待填）
 
-- Jetson Xavier NX and Jetson Orin as primary robotic embedded platforms.
-- Dense cuDNN, tile skipping, and gather-scatter as primary baselines.
-- Event-camera increments, temporal frame differences, and learned spatial
-  gating as representative mask sources.
-- On-device latency, active-ratio to latency scaling, perception frequency,
-  task accuracy, and construction vs. compute breakdown.
+1. Full-Model Latency
+2. Efficiency Analysis
+3. Construction Overhead
+4. Task Accuracy
 
-Numeric placeholders such as `XX--YY%`, `AA--BB%`, and `DD--EE%` remain in the
-current LaTeX and should be filled only from measured results.
+这些小节只从正式 logs 与已冻结 protocol 填数。最终 challenge 产生的 ablation 是否进入
+Section 5，取决于 `discussion.md` 中的决策实验。
+
+## Remaining Placeholders
+
+- Abstract、Introduction 与 contributions 中的 speedup/range 数字。
+- Background efficiency figure。
+- Design overview figure。
+- Platform software/power/clock details。
+- Evaluation result figures、tables 与 prose。
+- Related Work、Conclusion 与 Acknowledgments。

@@ -1,211 +1,159 @@
 \section{Background and Motivation}
 \label{sec:background}
 
-\subsection{2D Dense Convolution on Embedded Platforms}
+\subsection{Latency-Critical Onboard Perception}
+\label{sec:bg:robotics}
+
+Robotic perception runs inside an online sensing-to-action
+loop~\cite{percsurvey,navsurvey}. Optical flow supplies motion estimates and
+depth supplies obstacle geometry for navigation~\cite{nanoflownet,fastdepth},
+segmentation supplies scene state for planning~\cite{bisenet}, and object pose
+and grasp proposals guide manipulation~\cite{densefusion,contactgraspnet}. In
+each case the inference output feeds a downstream component whose next decision
+depends on the freshness of that estimate~\cite{pampc,perclatency}. Because
+freshness is set by latency, a lower perception latency is always preferable:
+where a task imposes a latency budget, a lower latency makes that budget easier
+to meet; where none is fixed, it still lets the controller react to the
+environment sooner~\cite{eventavoid,dronerace}. Thus, we target latency minimization rather than a preset deadline in
+this paper. Offloading to remote compute could provide greater compute, but doing so
+is an open problem bounded by communication delay and by connectivity~\cite{cloudrobotics}, and lies outside our scope. We instead close the loop onboard under a limited power and
+compute budget~\cite{onboardsensing}, where the operative objective is to
+minimize end-to-end perception latency on the target device.
+
+\subsection{Dense-Grid Convolution}
 \label{sec:bg:dense}
 
-Convolutional neural networks (CNNs) are the computational backbone of onboard
-robotic visual perception. CNN-based depth estimation and optical
-flow~\cite{fastdepth,raft,nanoflownet} feed obstacle avoidance and path
-planning; object detection~\cite{yolov7} and semantic
-segmentation~\cite{bisenet} provide scene understanding for navigation; and
-pose estimation~\cite{densefusion,contactgraspnet} enables closed-loop
-manipulation. While vision transformers~\cite{vit} have achieved strong
-accuracy on these tasks, their quadratic attention cost makes them
-impractical under the tight latency and power budgets of embedded platforms;
-CNN-based models remain the dominant deployed choice for real-time onboard
-visual inference. Across these models, convolutional layers operating on
-image-grid feature maps dominate the inference workload and sit directly on
-the control-critical path.
-
-On embedded platforms (Jetson Xavier NX, Orin, edge TPUs), power and thermal
-budgets limit available compute to a fraction of server-class GPUs, yet the
-closed control loop imposes a hard latency ceiling: perception must complete
-within the sensor frame interval (typically tens of milliseconds) to feed
-downstream planning and control in time.
-
-Consider a CNN with $L$ convolution layers. We describe the operation of a
-single layer $l$; all per-layer quantities ($H_{out}$, $W_{out}$, $C_{in}$,
-$C_{out}$, $k$, $M$, etc.) are implicitly indexed by $l$ but we omit the
-superscript for clarity unless comparing across layers.
-
-A 2D convolution layer transforms an input feature map
-$\mathbf{x} \in \mathbb{R}^{H_{in} \times W_{in} \times C_{in}}$ into an
-output $\mathbf{y} \in \mathbb{R}^{H_{out} \times W_{out} \times C_{out}}$
-using a weight tensor
-$\mathbf{w} \in \mathbb{R}^{C_{out} \times C_{in} \times k \times k}$,
-where $k$ is the kernel size and $k \times k$ is the receptive field size.
-The computation is defined per spatial position $p = (h, w)$ in the output:
-for each $p$, let $\mathcal{N}(p)$ denote the $k^2$ input positions in the
-receptive field of $p$. The layer computes:
+These perception models share a computational core: they keep features on a
+dense image grid and use convolution as their principal spatial operator. A 2D
+convolution maps an input feature tensor
+$\mathbf{x}\in\mathbb{R}^{H_{in}\times W_{in}\times C_{in}}$ to an output
+$\mathbf{y}\in\mathbb{R}^{H_{out}\times W_{out}\times C_{out}}$ through a weight
+tensor $\mathbf{w}\in\mathbb{R}^{k\times k\times C_{in}\times C_{out}}$ with
+kernel size $k$. For an output coordinate $p=(h,w)$, it computes
 \begin{equation}
-  \mathbf{y}[p] = \sum_{i=1}^{k^2} \mathbf{w}_i \; \mathbf{x}[\mathcal{N}_i(p)],
+  \mathbf{y}[p] = \sum_{i=1}^{k^2}
+  \mathbf{w}_i\,\mathbf{x}[\mathcal{N}_i(p)],
   \label{eq:conv}
 \end{equation}
 where $\mathcal{N}_i(p)$ is the $i$-th position in the receptive field and
-$\mathbf{w}_i \in \mathbb{R}^{C_{out} \times C_{in}}$ is the corresponding
-weight slice. The output at each position is thus an accumulation of
-$k^2$ weighted contributions from the input.
+$\mathbf{w}_i\in\mathbb{R}^{C_{in}\times C_{out}}$ is the corresponding weight
+slice. Let $\mathcal{G}=\{1,\ldots,H_{out}W_{out}\}$ denote the output
+coordinate grid and $\mathcal{C}\subseteq\mathcal{G}$ the coordinates an
+implementation actually computes. Dense convolution sets $\mathcal{C}=\mathcal{G}$
+on every invocation, computing every position whether or not it is relevant to
+the current decision.
 
-To formalize the GPU execution model, we define the \emph{output index grid}
-$G_{out} \in \mathbb{Z}^{H_{out} \times W_{out}}$ with entries
-$G_{out}[h,w] = h \cdot W_{out} + w$, assigning each output spatial position
-a unique row-major linear index. The GPU partitions this grid into
-$N = N_h \cdot N_w$ disjoint tiles of size $t_h \times t_w$, where
-$N_h = \lceil H_{out}/t_h \rceil$ and $N_w = \lceil W_{out}/t_w \rceil$.
-Tiles are enumerated in row-major order as $T_1, \ldots, T_N$. The $n$-th
-tile occupies row $i_n = \lfloor (n{-}1) / N_w \rfloor$ and column
-$j_n = (n{-}1) \bmod N_w$ of the tile grid, and is defined as the
-row-major flattening of its slice:
-\begin{equation}
-  T_n = \mathrm{vec}\!\bigl(
-    G_{out}[i_n t_h{:}(i_n{+}1)t_h,\; j_n t_w{:}(j_n{+}1)t_w]^\top
-  \bigr),
-  \label{eq:tile}
-\end{equation}
-yielding a vector of $t_h \cdot t_w$ linear indices.
-Tiles are processed in parallel; within each tile, consecutive entries
-correspond to spatially adjacent positions whose receptive fields overlap and
-lie in contiguous memory. This regularity enables
-cuDNN-class~\cite{cudnn} throughput. We denote by $\mathcal{C}$ the set of
-positions actually computed by a given execution strategy. Dense convolution
-computes all $H_{out} \times W_{out}$ positions unconditionally, which on
-embedded platforms often exceeds the latency budget.
-
-\subsection{Masked Convolution for Onboard Perception}
+\subsection{Masked Convolution}
 \label{sec:bg:masked}
+
+Masked convolution preserves dense tensors and weights while restricting
+updates to the positions an upstream policy marks active. The policy supplies an
+input mask $M_{in}\in\{0,1\}^{H_{in}\times W_{in}}$, and the operator computes
+only the requested outputs, so the policy alone determines the resulting
+accuracy and the amount of required work.
 
 \subsubsection{Mask Sources}
 \label{sec:bg:masks}
 
-Many onboard vision systems exploit the fact that only a subset of the
-input changes between inference calls or is relevant to the current
-decision. These systems identify an input active mask
-$M_{in} \in \{0,1\}^{H_{in} \times W_{in}}$ marking positions where the
-input has changed or is task-relevant. An output position $p$ must be
-recomputed whenever its receptive field contains an active input position,
-giving the output active mask $M \in \{0,1\}^{H_{out} \times W_{out}}$:
+Prior work establishes three mask sources relevant to high-rate robotic
+perception.
+
+\noindent\textbf{Event-camera increments.}
+Event cameras report brightness changes asynchronously, producing activity at
+the pixels affected by scene or sensor motion~\cite{eventsurvey}. Async Sparse
+CNNs~\cite{asyncsparse} and Ev-Conv~\cite{evconv} exploit increments between
+event representations to identify the spatial regions that require an update.
+
+\noindent\textbf{Temporal differences.}
+CBinfer~\cite{cbinfer}, Skip-Convolutions~\cite{skipconv}, and
+DeltaCNN~\cite{deltacnn} reuse state across video inputs and derive activity
+from pixel or activation residuals. Regions whose residual remains below the
+policy threshold do not request new convolution outputs.
+
+\noindent\textbf{Learned spatial gating.}
+SACT~\cite{sact}, SAI~\cite{sai}, DGNet~\cite{dgnet}, and DynConv~\cite{dynconv}
+learn input-dependent gates that allocate computation to task-relevant regions.
+Unlike temporal masks, these gates can select different regions for inputs
+without a shared history.
+
+These mechanisms differ in sensing modality and policy, but all supply a spatial
+active mask over a dense 2D feature grid. Typically, the mask enters as $M_{in}$ and propagates through each
+convolution's receptive field. An output coordinate stays active whenever any
+input in its receptive field is active,
 \begin{equation}
-  M[p] = \begin{cases}
-    1 & \text{if } \exists\, r \in \mathcal{N}(p) \text{ s.t.\ } M_{in}[r] = 1, \\
-    0 & \text{otherwise.}
+  M[p] =
+  \begin{cases}
+    1, & \exists\, r\in\mathcal{N}(p)\ \text{s.t.}\ M_{in}[r]=1,\\
+    0, & \text{otherwise,}
   \end{cases}
   \label{eq:mask}
 \end{equation}
-In a multi-layer network, the output mask of layer $l$ becomes the input
-mask of layer $l{+}1$, propagating sparsity through the model. Three
-families of mask sources produce the initial $M_{in}$:
+which the next layer consumes as its own $M_{in}$. WISEConv addresses the
+execution of this mask and does not modify how it is generated.
 
-% PLACEHOLDER_REST
-
-\paragraph{Event-camera increments.}
-Event cameras~\cite{eventsurvey} are bio-inspired sensors in which each
-pixel independently fires when its brightness change exceeds a threshold,
-generating data only where intensity varies. They offer microsecond temporal
-resolution, high dynamic range, and negligible motion blur, making them
-widely used on UAVs and high-speed platforms. Events accumulated over a
-temporal window are differenced to reveal which positions received new
-activity, producing a naturally sparse
-mask~\cite{asyncsparse,evconv}.
-
-\paragraph{Temporal frame differences.}
-Standard frame-based cameras on mobile robots and autonomous vehicles
-capture video at a fixed rate. Between consecutive frames most of the scene
-remains static, especially under moderate ego-motion. Temporal differencing
-methods~\cite{cbinfer,deltacnn} compare consecutive frames (or
-motion-compensated histories) and identify positions where pixel differences
-exceed a threshold; only outputs affected by these positions need
-recomputation.
-
-\paragraph{Learned spatial gating.}
-Rather than relying on temporal change, dynamic networks~\cite{dgnet} train
-a lightweight gating module that examines the current input and predicts,
-per spatial region, whether computation is needed for the downstream task.
-Regions classified as low-value are masked out, adapting the compute budget
-to task-relevant content per frame.
-
-
-\subsubsection{Execution Paradigms}
-\label{sec:bg:paradigms}
-
-Given a mask $M$, the system must compute $\mathbf{y}[p]$ only for
-positions where $M[p] = 1$. Existing methods follow one of two paradigms:
-
-\paragraph{Tile skipping.}
-A tile $T_n$ is executed if and only if it contains at least one active
-position; otherwise it is skipped entirely. The computed set is
-$\mathcal{C} = \bigcup_{\{n:\, \exists\, g \in T_n,\, M[g]=1\}} T_n$.
-Representative systems include SBNet~\cite{sbnet},
-Skip-Convolutions~\cite{skipconv}, Ev-Conv~\cite{evconv}, and
-DeltaCNN~\cite{deltacnn}.
-
-\paragraph{Gather-scatter.}
-Active positions are extracted exactly: the computed set
-$\mathcal{C} = \{g : M[g] = 1\}$ contains only active positions.
-DGNet~\cite{dgnet} and SAI~\cite{sai} follow this paradigm.
-
-\subsection{The Gap: Sparsity Does Not Become Speedup}
+\subsection{The Sparsity-to-Latency Gap}
 \label{sec:bg:gap}
 
-For a network with $L$ convolution layers, let $\|M^l\|_0$ denote the
-number of active positions (nonzeros) in layer $l$'s output mask. We define
-layer $l$'s \emph{active ratio}
-$\rho^l = \|M^l\|_0 / (H_{out}^l W_{out}^l)$
-and the network-level active ratio
-$\hat{\rho} = \frac{1}{L}\sum_{l=1}^{L} \rho^l$,
-the average fraction of output positions that require computation across
-all layers. We characterize masked-convolution efficiency along two axes:
-\emph{throughput}, the rate of convolution operations per second (bounded by
-the dense pipeline), and \emph{useful-compute ratio}
-$\eta = \|M\|_0 / |\mathcal{C}|$, the fraction of
-executed operations that produce needed outputs. Tile skipping preserves throughput but
-sacrifices $\eta$; gather-scatter achieves high $\eta$
-but sacrifices throughput. Neither delivers both, so upstream sparsity
-does not translate into proportional latency reduction.
-Figure~\ref{fig:gap} quantifies this on Jetson Orin
-running XX on YY dataset: with $\hat{\rho}$ in the range XX--YY\%,
-tile-skipping methods achieve only AA--BB\% $\eta$ and
-gather-scatter methods reach only CC\% of tile-skipping throughput, reducing
-convolution latency by only DD--EE\% rather than the ideal $\hat{\rho}$-linear
-scaling. This gap motivates \sysname.
+Existing systems execute a mask along one of two paths. \emph{Tile
+skipping}~\cite{sbnet,skipconv,evconv} inherits the tile-based computation of
+the dense pipeline and skips a tile when all of its coordinates are inactive,
+but computes the entire tile once any coordinate
+is active, including inactive coordinates; DeltaCNN~\cite{deltacnn} further fuses a selective path into the kernel,
+taken when a tile is estimated to be mostly empty, cutting the wasted work while sacrficing throughput. \emph{Gather-scatter}~\cite{sai,dgnet}
+instead extracts the active coordinates exactly, computes, and scatters the results back,
+removing the inactive arithmetic but adding extraction, irregular access, and
+writeback overhead; DynConv~\cite{dynconv} further adopts a model structure suited to
+gather-scatter, where a single gather feeds several consecutive layers before the
+result is scattered to the dense tensor, amortizing that overhead.
 
-% TODO: motivation figure on Jetson Orin
+We measure each path by two quantities. Its useful-compute ratio is the
+fraction of computed coordinates that are active,
+\begin{equation}
+  \eta = \frac{\|M\|_0}{|\mathcal{C}|} \le 1.
+  \label{eq:useful-ratio}
+\end{equation}
+Its throughput is the rate at which it processes issued MACs,
+\begin{equation}
+  T = \frac{|\mathcal{C}|\,k^2 C_{in} C_{out}}{t},
+  \label{eq:throughput}
+\end{equation}
+capped by the dense pipeline, where $t$ is the operator latency. Given a required
+$\|M\|_0\,k^2 C_{in} C_{out}$ MACs, the latency $t$ is set by the effective
+throughput $T_{\mathrm{eff}} = \eta T$, the rate at which a path produces needed
+outputs. Cutting latency in proportion to the mask's sparsity therefore needs
+both $\eta$ and $T$ high, yet each existing path keeps only one. Figure~\ref{fig:gap} shows the outcome on Jetson AGX Orin, where
+the mask marks 84\% of the convolution work unnecessary. Tile
+skipping keeps $T$ near the dense pipeline, but an $\eta$ of 0.49 leaves latency
+at about twice the required-work floor. Gather-scatter drives $\eta$ near one but
+sustains only 9\% of tile skipping's throughput, so its latency exceeds dense
+convolution. Neither turns the mask's sparsity into a proportional latency
+reduction.
+
+% TODO: motivation figure on Jetson AGX Orin
 \begin{figure}[t]
   \centering
   \fbox{\parbox{0.9\columnwidth}{\centering\vspace{2cm}%
-    \textbf{[TODO]} Grouped bar chart on Jetson Orin.
-    Three groups: Dense, Tile skipping, Gather-scatter.
-    Each group has three bars for three metrics.
-    Left y-axis: latency (ms).
-    Right y-axis 1: useful-compute ratio $\eta$ (\%).
-    Right y-axis 2: throughput (GFLOPS).
-    Dashed horizontal line at $\hat{\rho}$ on the $\eta$ axis,
-    marking the active ratio (coincides with dense $\eta$ bar top).
-    Shows: tile skipping has low $\eta$; gather-scatter has low
-    throughput; neither achieves latency proportional to
-    $\hat{\rho}$.\vspace{2cm}}}
-  \caption{Efficiency profile of existing masked-convolution paradigms on
-  Jetson Orin. Dense serves as the throughput and latency reference. Tile
-  skipping preserves throughput but suffers low $\eta$; gather-scatter
-  achieves high $\eta$ but sacrifices throughput. Neither translates
-  sparsity into proportional latency reduction.}
+    \textbf{[TODO]} Efficiency profile on Jetson AGX Orin. Report required
+    work, useful-compute ratio, throughput, and convolution latency
+    for Dense, Tile skipping, and Gather-scatter.\vspace{2cm}}}
+  \caption{Required work, useful-compute ratio, throughput, and convolution
+  latency of Dense, Tile skipping, and Gather-scatter on Jetson AGX Orin, for
+  the sparsest workload. Tile skipping keeps throughput high but issues
+  unnecessary work; gather-scatter reaches the required-work floor but loses
+  throughput to extraction and data movement. Neither realizes the latency
+  benefit the mask exposes.}
   \label{fig:gap}
 \end{figure}
 
-\subsection{3D Sparse Convolution: A Different Problem}
+\subsection{Relation to 3D Sparse Convolution}
 \label{sec:bg:3d}
 
-3D sparse convolution (SpConv~v2~\cite{spconv2},
-TorchSparse++~\cite{torchsparsepp}) targets point-cloud workloads where
-input data is inherently irregular and the core challenge is imposing
-computational structure on scattered voxels. \sysname faces a fundamentally
-different problem: the input resides on a regular dense grid with
-structured, stride-based access; the challenge is how to skip inactive
-outputs without leaving the dense pipeline's already-efficient execution.
-Applying 3D sparse convolution directly to this 2D scenario performs poorly
-because it requires building coordinate hash tables and neighbor maps with
-mandatory GPU synchronization, and the per-frame mask changes prevent
-amortizing this cost across layers. On Jetson Orin, SpConv~v2 applied to a
-2D masked convolution with $\rho^l = \text{XX}\%$ runs XX$\times$ slower than
-the dense baseline due to construction overhead alone
-(Section~\ref{sec:eval}).
+SpConv~v2 and TorchSparse++ target point clouds represented by irregular voxel
+coordinates~\cite{spconv2,torchsparsepp}. Their execution begins by building
+coordinate maps and neighbor relationships for data that is sparse by
+representation. Our setting instead retains dense 2D tensors and receives a
+changing spatial mask from an upstream vision policy. The relevant challenge
+is to skip inactive outputs without converting an otherwise regular image-grid
+pipeline into an irregular representation. We therefore treat 3D sparse
+convolution as related infrastructure rather than a primary execution
+baseline.

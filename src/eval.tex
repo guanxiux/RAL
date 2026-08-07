@@ -4,141 +4,136 @@
 \subsection{Experimental Setup}
 \label{sec:eval:setup}
 
-We evaluate \sysname on four GPU platforms, three robotic perception tasks
-with distinct mask sources, and three baselines representing the dense,
-tile-skipping, and gather-scatter paradigms.
+We evaluate \sysname across four perception models, three mask sources, four
+GPU platforms, and three competing execution paradigms. The evaluation asks
+four questions: (1)~does \sysname reduce full-model latency relative to the
+fastest available path, (2)~how effectively does it convert required-work
+reduction into latency reduction, (3)~what overhead does worklist construction
+add, and (4)~does replacing the masked-convolution backend change task output
+or accuracy?
 
 \subsubsection{Platforms}
-Experiments run on two embedded platforms representative of onboard robotic
-deployment and two desktop-class GPUs that test generality:
-Jetson Xavier NX (8\,GB, CUDA~11.4),
-Jetson AGX Orin (64\,GB, CUDA~11.4),
-RTX~4070 Laptop (CUDA~12.1), and
-RTX~3080 Desktop (CUDA~12.1).
-% TODO: Jetson power mode, clock settings if fixed.
+
+We evaluate four representative GPU platforms: two embedded SoCs (Jetson
+Xavier NX and Jetson AGX Orin), a laptop-class mobile GPU (RTX~4070 Laptop),
+and a desktop GPU (RTX~3080). These devices cover the hardware classes
+commonly used for onboard deployment and robotics development. The two Jetson
+systems anchor our target deployment setting, while the discrete GPUs test
+whether \sysname generalizes beyond embedded SoCs.
+% TODO: memory capacity, CUDA version, power mode, and fixed-clock settings.
 
 \subsubsection{Models, Tasks, and Mask Sources}
+Our selected workloads span three robotic perception tasks:
+\begin{itemize}
+  \item \textbf{Event-based optical flow.}
+        We evaluate FireFlowNet~\cite{fireflownet}, a lightweight event-based
+        optical-flow model that delivers high inference rates while retaining
+        competitive accuracy, on MVSEC~\cite{mvsec}. MVSEC contains event-camera
+        sequences and corresponding ground-truth flow from indoor quadrotor
+        flight and outdoor driving. Following Ev-Conv~\cite{evconv},
+        consecutive 50-ms windows advance by 1~ms; events entering or leaving
+        the window form the sparse increment from which we derive layer masks.
+        We calibrate the sparsification policy on
+        \texttt{indoor\_flying1} and evaluate on the other three sequences.
 
-Table~\ref{tab:models} summarizes the three evaluation workloads. Each
-pairs a robotic perception task with a mask source drawn from a different
-family (Section~\ref{sec:bg:masks}).
+  \item \textbf{Video object detection.}
+        We evaluate YOLOv8n and YOLOv8m~\cite{yolov8} on MOT16~\cite{mot16}, a
+        collection of crowded pedestrian videos with annotated person boxes.
+        Both models produce bounding boxes and confidence scores, while their
+        different scales expose how model size affects sparse-execution
+        efficiency. DeltaCNN~\cite{deltacnn} supplies the temporal mask
+        mechanism by propagating thresholded activation deltas between
+        successive frames.
 
-\begin{table}[t]
+  \item \textbf{Human pose estimation.}
+        We use the DynConv pose model~\cite{dynconv} on MPII~\cite{mpii}, which
+        depicts people performing diverse activities and annotates their 2D
+        body joints. The model predicts joint heatmaps; its learned spatial
+        gates provide input-dependent masks at gated blocks.
+\end{itemize}
+
+Table~\ref{tab:models} summarizes their models and evaluation scales.
+We use official weights for all four models~\cite{fireflownet,yolov8,dynconv}. 
+For each workload, we fix these weights, inputs, and upstream mask
+policy; the sparse paths receive the same resulting layer masks and differ
+only in their masked-convolution backend.
+
+\begin{table}[!ht]
 \centering
 \caption{Evaluation workloads.}
 \label{tab:models}
-\begin{tabular}{lccc}
+\footnotesize
+\setlength{\tabcolsep}{3pt}
+\renewcommand{\arraystretch}{1.08}
+\begin{tabular}{@{}
+  >{\raggedright\arraybackslash}p{0.19\columnwidth}
+  >{\centering\arraybackslash}p{0.22\columnwidth}
+  >{\centering\arraybackslash}p{0.22\columnwidth}
+  >{\centering\arraybackslash}p{0.22\columnwidth}@{}}
 \hline
- & \textbf{FireFlowNet} & \textbf{YOLO} & \textbf{ResNet} \\
+ & \textbf{FireFlowNet} \cite{fireflownet}
+ & \textbf{YOLOv8n/m} \cite{yolov8}
+ & \textbf{DynConv Pose} \cite{dynconv} \\
 \hline
-Task & Optical flow & Object detection & Depth estimation \\
-Mask source & EvConv & DeltaCNN & DGNet \\
-Dataset & MVSEC & MOT16 & KITTI \\
-Resolution & $346{\times}260$ & $640{\times}640$ & $1280{\times}384$ \\
-\#Parameters & TODO & TODO & TODO \\
-Dataset size & TODO & TODO & TODO \\
+Task & Optical flow & Detection & Human pose \\
+Mask source & Ev-Conv~\cite{evconv} & DeltaCNN~\cite{deltacnn}
+            & DynConv~\cite{dynconv} \\
+Dataset & MVSEC~\cite{mvsec} & MOT16~\cite{mot16} & MPII~\cite{mpii} \\
+Input size & $256{\times}256$ & $640{\times}640$ & $256{\times}256$ \\
+Parameters & 0.056M & 3.16M~/~25.9M & 6.89M \\
+Eval. samples & 196.8K & 2,575 & 2,958 \\
 \hline
 \end{tabular}
 \end{table}
 
-\textbf{Optical flow.} We use FireFlowNet~\cite{fireflownet}, a lightweight
-eight-convolution optical-flow network, with EvConv~\cite{evconv} as the mask
-source. Following the EvConv protocol, each input encodes a 50-ms event window
-and consecutive inferences shift this window by 1 ms. We calibrate threshold
-and kernel-selection policies on \texttt{indoor\_flying1}, exclude that
-sequence from evaluation, and report results on \texttt{indoor\_flying2},
-\texttt{indoor\_flying3}, and \texttt{outdoor\_day1}~\cite{mvsec}. We select
-one global sparsification threshold from three calibration regions that span
-low and high event activity. We then derive input-activity buckets and their
-per-layer kernel configurations from a streaming replay of the complete
-calibration sequence. The threshold is chosen at the knee of the aggregate
-AEE and scheduled-FLOP tradeoff; per-region accuracy remains a diagnostic
-rather than a runtime guarantee. We report per-sequence AEE on all held-out
-sequences.
+\subsubsection{Execution Baselines}
 
-\textbf{Object detection.} We use YOLOv11~\cite{yolov11}
-with temporal frame differences as the mask source
-(DeltaCNN~\cite{deltacnn}): consecutive frames are differenced and
-positions exceeding a threshold % TODO: threshold value
-are marked active. We evaluate on the MOT16 dataset~\cite{mot16} with
-$640{\times}640$ input resolution.
+We compare \sysname against three FP32 execution paths established by prior
+work.
 
-\textbf{Depth estimation.} We use a ResNet-34 encoder-decoder~\cite{monodepth2}
-with DGNet~\cite{dgnet} learned spatial gating as the mask source: a
-lightweight gating module predicts task-relevant regions per frame.
-We evaluate on KITTI~\cite{kitti} ($1280{\times}384$ resolution).
-
-FireFlowNet~\cite{fireflownet} and YOLOv11 % TODO: cite yolov11
-use their respective official pretrained weights;
-EvConv~\cite{evconv} and DeltaCNN~\cite{deltacnn} provide inference-time masks without modifying the pretrained model weights. For DGNet~\cite{dgnet}, the
-gating module is jointly trained with the backbone following the default
-DGNet configuration.
-
-\subsubsection{Baselines}
-
-We compare against three baselines, all running in FP32 on identical
-hardware and inputs:
 \begin{itemize}
-  \item \textbf{Dense}: cuDNN~\cite{cudnn} implicit GEMM with best-algorithm selection
-        via \texttt{cudnnFind}.
-%   \item \textbf{Tile skipping}: DeltaCNN~\cite{deltacnn} execution engine.
-%         DeltaCNN includes a delta-propagation optimization specific to
-%         temporal frame differences or event-camera increments (computing and propagating only output
-%         deltas). We enable delta propagation for the temporal frame difference and event-camera increment tasks
-%         and disable it for the learned-gating task since it is not applicable.
-%   \item \textbf{Tile skipping}: DeltaCNN~\cite{deltacnn} execution engine.
-%         DeltaCNN performs a dense initialization, then differences consecutive
-%         inputs, propagates sparse output deltas through cached intermediate
-%         states, and skips tiles whose receptive fields contain no active
-%         values. We use this incremental mode for both event-window increments
-%         and temporal frame differences. Learned spatial gating instead selects
-%         regions independently within each current-frame inference and does not
-%         define temporal deltas for updating cached states; for this task, we
-%         use only DeltaCNN's tile-skipping execution with the masks supplied by
-%         the gating module.
-  \item \textbf{Tile skipping}: DeltaCNN~\cite{deltacnn} execution engine.
-        After a dense initialization, DeltaCNN differences consecutive inputs,
-        propagates only sparse output deltas through cached intermediate states, and
-        skips tiles with inactive receptive fields. We use this incremental
-        mode optimization for event-window increments and temporal frame differences.
-        Learned spatial gating provides per-inference region masks rather than
-        temporal state updates, so we use only DeltaCNN's tile-skipping
-        execution with the supplied gating masks.
+  \item \textbf{Dense} uses the native PyTorch/cuDNN backend~\cite{cudnn}.
 
+  \item \textbf{Tile skipping} follows the tile-sparse execution established
+        by SBNet, Ev-Conv, and DeltaCNN~\cite{sbnet,evconv,deltacnn}.
 
-  \item \textbf{Gather-scatter}: MMCV~\cite{mmcv} \texttt{MaskedConv2d}
-        operator, which performs \texttt{masked\_im2col} (gather active
-        patches), matrix multiply, and \texttt{masked\_col2im} (scatter
-        back).
+  \item \textbf{Gather-scatter} uses the original DynConv CUDA backend for
+        human pose~\cite{dynconv} and an implementation equivalent to MMCV
+        \texttt{MaskedConv2d} for FireFlowNet and YOLO~\cite{mmcv}.
 \end{itemize}
 
 \subsubsection{Metrics and Methodology}
 
-We report four metrics:
-(1)~end-to-end latency (ms),
-(2)~useful-compute ratio $\eta$ (Section~\ref{sec:bg:gap}),
-(3)~throughput (GFLOPS, giga floating-point operations per second), and
-(4)~task accuracy: Average Endpoint Error (AEE, pixels) for optical flow,
-mean Average Precision (mAP, \%) for object detection, and Root Mean
-Square Error (RMSE, meters) for depth estimation.
-For optical-flow accuracy, the model processes every 1-ms window shift so that
-incremental state evolves identically to the latency experiment. We sample a
-prediction at the nearest MVSEC flow timestamp, with at most 0.5 ms alignment
-error, and scale the predicted 50-ms flow by the ratio between the
-ground-truth interval and 50 ms before computing AEE.
-Latency measurements use per-frame CUDA events on the compute stream. Input
-histogram construction and host-to-device transfer are excluded: pinned inputs
-are copied on a dedicated stream with one-frame look-ahead, and the start event
-is recorded after the compute stream has waited for that frame's copy. The
-timed region includes input differencing, mask and worklist construction, all
-network operators, runtime sparsity selection, and output accumulation. The
-first-frame dense initialization and all calibration/autotuning are outside the
-timed region. Events are synchronized and read in batches rather than after
-each frame, preserving asynchronous runtime behavior. We run each complete
-held-out sequence three times and report both mean and standard deviation and
-median and median absolute deviation.
+Our primary metric is full-model GPU latency. The timed region includes mask
+propagation, worklist construction, all network operators, and output update,
+but excludes host-to-device input transfer, calibration, autotuning, and the
+one-time dense state initialization required by incremental models. We use
+CUDA events on the model's compute stream and process complete held-out
+sequences rather than isolated synthetic frames. Each sequence is repeated
+three times; we retain per-frame samples and report both aggregate latency and
+dispersion.
 
-\subsection{End-to-End Latency}
+To explain latency, we report the required-work ratio $\rho_{\mathrm{work}}$,
+useful-compute ratio $\eta$, convolution throughput, and the construction
+fraction of operator latency. Because layers differ in cost, an unweighted
+average of layer activities misstates the work a mask removes, so we weight each
+layer by its dense MAC count,
+\begin{equation}
+  \rho_{\mathrm{work}} =
+  \frac{\sum_l \rho^l W^l_{\mathrm{dense}}}
+       {\sum_l W^l_{\mathrm{dense}}},
+  \qquad
+  \rho^l=\frac{\|M^l\|_0}{H^l_{out}W^l_{out}},
+  \label{eq:work-ratio}
+\end{equation}
+where $W^l_{\mathrm{dense}}$ is the dense MAC count of layer $l$. Task quality is measured with
+Average Endpoint Error (AEE) for optical flow, detection AP against the fixed
+evaluation references for YOLO, and PCKh for human pose. Accuracy comparisons
+use the same masks and operating point as latency measurements; they evaluate
+the upstream policy, while operator correctness is checked separately against
+dense convolution at every requested output.
+
+\subsection{Full-Model Latency}
 \label{sec:eval:latency}
 
 % TODO

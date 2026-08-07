@@ -12,7 +12,7 @@
 \usepackage{cite}
 \hyphenation{op-tical net-works semi-conduc-tor IEEE-Xplore}
 
-\newcommand{\sysname}{WISEConv\xspace}
+\newcommand{\sysname}{\mbox{WISEConv}\xspace}
 \usepackage{xspace}
 
 \begin{document}
@@ -30,22 +30,26 @@ for Onboard High-Speed Robotic Perception}
 \maketitle
 
 \begin{abstract}
-Onboard robotic perception relies on 2D convolutional networks that must
-meet hard latency constraints under the limited compute of embedded
-platforms. Many high-speed vision systems exploit spatial sparsity by
-producing an active mask and updating only the affected convolution outputs.
-However, existing approaches face a fundamental trade-off: tile skipping
-preserves the dense pipeline's throughput but computes many unneeded
-outputs, while gather-scatter computes only needed outputs but sacrifices
-throughput. Neither converts high sparsity into proportional latency
-reduction. We present \sysname, a masked convolution operator that achieves
-both high useful-compute ratio and near-dense throughput by fusing
-position-level selectivity into the dense pipeline itself. \sysname first
-scans the mask to build a spatially compact worklist of active positions,
-then drives the standard convolution datapath using only those positions. On
-Jetson Xavier NX and Orin, across three mask sources and three robotic perception
-tasks, \sysname achieves near-linear latency scaling with the active ratio,
-outperforming state-of-the-art baselines while preserving task accuracy.
+Onboard robotic perception must sustain high update rates under tight compute
+and power budgets. Masking policies from event increments, temporal frame
+differences, and learned gates expose where computation is unnecessary, yet
+existing execution paths do not convert this sparsity into commensurate latency
+reduction. Tile skipping keeps the throughput of the dense pipeline but
+recomputes inactive positions at tile granularity; gather-scatter selects active
+positions exactly but loses throughput to feature materialization, irregular
+access, and writeback. We present \sysname, a worklist-driven masked convolution
+operator that drives tiled convolution from an active-output worklist rather than
+a contiguous coordinate block, evaluating only active outputs while leaving the
+per-position reduction and dense tensor layout intact. Selectivity thus becomes
+exact without surrendering the regularity that gives the dense pipeline its
+throughput. A single mask-space pass fuses output-mask propagation with per-tile
+compaction and reuses coordinate metadata across compatible operators, keeping
+construction cheap and infrequent. The worklist emits tile-local segments in
+dense traversal order and decomposes work adaptively over the spatial and
+reduction dimensions, sustaining near-dense throughput without input-patch
+materialization or a global coordinate sort. Across various GPU platforms and
+perception tasks, \sysname reduces full-model latency by 22--46\% relative to the
+fastest competing path and per-frame energy by 28--60\% over dense convolution.
 \end{abstract}
 
 \begin{IEEEkeywords}
