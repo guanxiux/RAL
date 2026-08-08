@@ -17,12 +17,11 @@ to meet; where none is fixed, it still lets the controller react to the
 environment sooner~\cite{eventavoid,dronerace}. We therefore target latency
 minimization rather than a preset deadline. Offloading to remote compute could
 add capacity but is bounded by communication delay and
-connectivity~\cite{cloudrobotics}, so we close the loop onboard under a limited
-power and compute budget~\cite{onboardsensing}, minimizing end-to-end perception
-latency on the target device.
+connectivity~\cite{cloudrobotics}, so the loop must close onboard under a limited
+power and compute budget~\cite{onboardsensing}.
 
-One line of work is targeted to lower this latency by computing only the active region of each
-frame, delivered as a spatial mask. The mask derives from event-camera
+Sparse-inference methods aim to cut this latency by computing only the active
+region of each frame, delivered as a spatial mask. The mask derives from event-camera
 increments~\cite{asyncsparse,evconv}, temporal residuals between video
 frames~\cite{cbinfer,skipconv,deltacnn}, or learned input-dependent
 gates~\cite{sact,sai,dgnet,dynconv}. These sources differ in sensing modality
@@ -81,8 +80,8 @@ Existing systems execute a mask along one of two paths. \emph{Tile
 skipping}~\cite{sbnet,skipconv,evconv} inherits the dense pipeline's tile-based
 computation, skipping a tile only when all its coordinates are inactive and
 otherwise computing the whole tile; DeltaCNN~\cite{deltacnn} fuses a selective
-path into the kernel, taken when a tile is estimated to be mostly empty, cutting
-wasted work while degrading throughput. \emph{Gather-scatter}~\cite{sai,dgnet}
+path into the kernel, taken when a tile is estimated to be mostly empty, to cut
+wasted work. \emph{Gather-scatter}~\cite{sai,dgnet}
 instead extracts exactly the active coordinates, computes, and scatters them
 back, removing the inactive arithmetic but adding extraction, irregular access,
 and writeback overhead; DynConv~\cite{dynconv} adopts a model structure suited to
@@ -110,9 +109,9 @@ Figure~\ref{fig:gap} traces this on Jetson AGX Orin for the sparsest workload in
 The policy marks 84.4\% of the convolution work unnecessary, and the sparse paths
 discard it with negligible accuracy loss, so the remaining work sets a 9.6\,ms
 latency floor (Fig.~\ref{fig:gap}a, dashed). Neither path approaches it: tile
-skipping (DeltaCNN~\cite{deltacnn}) reaches 36.6\,ms, still 3.8$\times$ the floor, and gather-scatter, the
-path DynConv is built around, runs at 194\,ms, far slower than dense convolution
-itself. That is due to their low effective throughput from different causes. Tile skipping holds
+skipping (DeltaCNN~\cite{deltacnn}) reaches 36.6\,ms, still 3.8$\times$ the floor,
+and gather-scatter, even with DynConv built to amortize its overhead, runs at
+194\,ms, far slower than dense convolution itself. That is due to their low effective throughput from different causes. Tile skipping holds
 throughput near half of dense but at a useful-compute ratio of only 0.49;
 gather-scatter lifts the useful-compute ratio to one, yet extraction and data
 movement collapse its throughput to 5\% of dense (Fig.~\ref{fig:gap}b). Neither

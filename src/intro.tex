@@ -9,23 +9,21 @@ latency limits how often downstream components can incorporate new
 observations~\cite{contactgraspnet}. Meeting this latency demand is difficult
 on board-level processors with constrained compute and power, because dense
 convolution recomputes every spatial position on every invocation. Prior
-systems avoid part of this work by deriving active masks from event-camera
-increments, temporal frame differences, or learned spatial
-gates~\cite{evconv,asyncsparse,deltacnn,dgnet,dynconv}. Although these policies
-arise from different sensing modalities and tasks, they expose the same
-operator-level problem: update selected positions on dense 2D feature grids
-without computing inactive outputs.
+systems compute only the active region of each frame, marked by a mask derived
+from event-camera increments, temporal frame differences, or learned spatial
+gates~\cite{evconv,asyncsparse,deltacnn,dgnet,dynconv}. Whatever the source, the
+mask poses the same operator-level problem: compute the convolution only at the
+active positions of a dense 2D feature grid.
 
 Dense GPU convolution obtains high throughput from tiled, coordinate-driven
 execution. Each tile enumerates a contiguous block of output coordinates; those
 coordinates determine the input reads and output writes, while the reduction
 over channels and kernel offsets follows a regular datapath. Neighboring
-coordinates consequently share predictable memory access and data reuse. This
-regularity, not merely the arithmetic count, is what a masked operator must
-preserve.
+coordinates consequently share predictable memory access and data reuse. A
+masked operator must preserve this regularity, not just cut the arithmetic count.
 
-Existing masked-convolution systems sacrifice one part of this structure or the
-other. \emph{Tile skipping}~\cite{sbnet,skipconv,evconv,deltacnn} retains the
+Existing masked-convolution systems preserve this regularity or eliminate wasted
+work, but not both. \emph{Tile skipping}~\cite{sbnet,skipconv,evconv,deltacnn} retains the
 dense pipeline and suppresses a tile only when all its outputs are inactive, so
 a single active position triggers computation for the entire tile.
 \emph{Gather-scatter}~\cite{sai,dgnet,dynconv} instead extracts active
@@ -40,7 +38,7 @@ needed outputs). Tile skipping preserves throughput but sacrifices useful-comput
 ratio; gather-scatter attains a useful-compute ratio near one but sacrifices
 throughput and pays for extraction and writeback. Neither delivers both, so
 upstream sparsity does not translate into proportional latency reduction. In our
-sparsest workload, the masks render 84\% of the convolution work they govern
+sparsest workload~\cite{dynconv}, the masks render 84.4\% of the convolution work
 unnecessary. State-of-the-art tile skipping~\cite{deltacnn} still spends half of
 its executed operations on unneeded outputs (a useful-compute ratio of 0.49) and
 cuts latency by at most 41\%. Gather-scatter drives the useful-compute ratio close
@@ -52,57 +50,55 @@ the dense convolution pipeline. A dense tile already derives its reads and
 writes from output coordinates, so replacing its contiguous coordinate block
 with an active-output worklist changes which outputs are evaluated without
 changing the per-position reduction, the dense tensor layout, or the weight
-layout. Selectivity then becomes exact by construction, pinning the
-useful-compute ratio near one with no input-patch materialization. A high
-useful-compute ratio alone does not yield latency reduction, however, since
-gather-scatter also attains one and still loses. What a worklist operator must
-additionally control is the cost of constructing the worklist and the throughput
-at which it is consumed.
+layout. With only the coordinate source changed, the operator still runs as a dense tiled
+pipeline, pinning the useful-compute ratio near one without input-patch
+materialization.
 
-Two challenges follow. First, \emph{worklist-construction overhead}: constructing the worklist requires scanning the mask, and incurs cost that scales with the layer's spatial grid, not with the
-active count or the channel widths, while the compute the worklist enables shrinks with
-both the active count and the channel widths. 
-Construction's share of latency therefore grows as activity falls
-and channels thin, and accumulates per operator when every layer rebuilds.
+Translating this into latency reduction requires handling two
+challenges.
+% : the worklist must be cheap to build and fast to consume.
+First,
+\emph{worklist-construction overhead}: building the
+worklist scans the mask, so its cost scales with the layer's spatial grid, not
+with the active count or channel widths, while the compute it enables shrinks with
+both. Construction's share of latency therefore grows as activity falls and
+channels thin, and accumulates across operators when every layer rebuilds.
 Second, \emph{end-to-end worklist efficiency}: the worklist's order and length both
-affect its consumption throughput, and sparsity worsens each.
+affect its consumption throughput.
 An unordered worklist scatters the input neighborhoods that adjacent work
 touches, lowering locality; its length falls below the dense grid and shifts with
 layer and input, so no fixed tiling keeps the GPU full. Both effects sharpen
 as activity falls.
 
-We present \sysname, a \emph{Worklist-driven Masked Convolution} operator that
-answers both challenges by co-designing worklist construction and convolution.
+We present \sysname (\textbf{W}orklist-dr\textbf{I}ven ma\textbf{S}k\textbf{E}d
+\textbf{Conv}o\-lu\-tion), an execution model for masked convolution that fuses
+position-level selectivity into the dense tiled pipeline, securing both a high
+useful-compute ratio and high throughput by co-designing worklist construction
+and consumption.
 Construction is made cheap and infrequent: a single mask-space pass fuses
 output-mask propagation with per-tile compaction, moving only mask and
 coordinate metadata, and compatible operators propagate and reuse valid
 coordinate metadata instead of reconstructing it. Consumption is made
-dense-like: construction emits contiguous per-tile segments whose order follows
-the dense tile traversal, giving compute tile-local spatial structure without a
-global sort, and compute organizes parallel work adaptively over the spatial and
-reduction dimensions according to device, layer shape, and activity, while each
-selected position retains the regular reduction over channels and kernel
-offsets.
+dense-like: construction emits contiguous per-tile segments ordered by the dense
+tile traversal, giving compute tile-local spatial structure without a global sort.
+Compute then decomposes parallel work adaptively over the spatial and reduction
+dimensions by device, layer shape, and activity, while each selected position
+keeps the regular reduction over channels and kernel offsets.
 
 This paper makes three contributions:
 \begin{itemize}
   \item We characterize masked-convolution latency along two axes,
-        useful-compute ratio and throughput, and show that tile skipping and
-        gather-scatter each secure one at the other's expense, explaining the
-        measured gap between required work and realized latency.
+        useful-compute ratio and throughput, exposing why upstream sparsity
+        does not translate into proportional latency reduction for existing work.
 
   \item We design \sysname, which fuses position-level selectivity into tiled
-        dense convolution to secure both axes at once: an exact worklist pins
-        the useful-compute ratio near one, fused mask-space construction with
-        cross-operator metadata reuse bounds construction cost, and tile-local
-        segment ordering with adaptive work decomposition keeps throughput close
-        to the dense pipeline.
+        dense convolution and co-designs worklist construction and consumption
+        to secure both axes simultaneously.
 
-  \item We evaluate \sysname on four perception models spanning event
-        increments, temporal frame differences, and learned spatial gating,
-        across two Jetson embedded platforms and discrete laptop and desktop
-        GPUs. \sysname reduces full-model latency relative to the fastest baseline by
-        22--39\% on the Jetson platforms and 34--46\% on the discrete GPUs, and
-        cuts per-frame energy over dense convolution by 28--60\% on the Jetson
+  \item We evaluate \sysname on four perception models across two Jetson
+        embedded platforms and discrete laptop and desktop GPUs, reducing
+        full-model latency relative to the fastest baseline by 22--39\% on the
+        Jetson platforms and 34--46\% on the discrete GPUs, and cutting
+        per-frame energy over dense convolution by 28--60\% on the Jetson
         platforms.
 \end{itemize}
