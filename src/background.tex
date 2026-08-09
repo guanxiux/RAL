@@ -1,35 +1,46 @@
 \section{Background and Motivation}
 \label{sec:background}
 
-\subsection{Latency-Critical Onboard Perception}
-\label{sec:bg:robotics}
-
-Robotic perception runs inside an online sensing-to-action
-loop~\cite{percsurvey,navsurvey}. Optical flow supplies motion estimates and
-depth supplies obstacle geometry for navigation~\cite{nanoflownet,fastdepth},
-segmentation supplies scene state for planning~\cite{bisenet}, and object pose
-and grasp proposals guide manipulation~\cite{densefusion,contactgraspnet}. In
-each case the inference output feeds a downstream component whose next decision
-depends on the freshness of that estimate~\cite{pampc,perclatency}. Because
-freshness is set by latency, a lower perception latency is always preferable:
-where a task imposes a latency budget, a lower latency makes that budget easier
-to meet; where none is fixed, it still lets the controller react to the
-environment sooner~\cite{eventavoid,dronerace}. We therefore target latency
-minimization rather than a preset deadline. Offloading to remote compute could
-add capacity but is bounded by communication delay and
-connectivity~\cite{cloudrobotics}, so the loop must close onboard under a limited
-power and compute budget~\cite{onboardsensing}.
-
-Sparse-inference methods aim to cut this latency by computing only the active
-region of each frame, delivered as a spatial mask. The mask derives from event-camera
-increments~\cite{asyncsparse,evconv}, temporal residuals between video
-frames~\cite{cbinfer,skipconv,deltacnn}, or learned input-dependent
-gates~\cite{sact,sai,dgnet,dynconv}. These sources differ in sensing modality
-and policy, but all expose the same spatial sparsity on a dense 2D feature grid
-for the convolution operator to exploit.
-
-\subsection{Masked Convolution}
+% ORIG (RAL/robotics framing):
+% \subsection{Latency-Critical Onboard Perception}
+% \label{sec:bg:robotics}
+%
+% Robotic perception runs inside an online sensing-to-action
+% loop~\cite{percsurvey,navsurvey}. Optical flow supplies motion estimates and
+% depth supplies obstacle geometry for navigation~\cite{nanoflownet,fastdepth},
+% segmentation supplies scene state for planning~\cite{bisenet}, and object pose
+% and grasp proposals guide manipulation~\cite{densefusion,contactgraspnet}. In
+% each case the inference output feeds a downstream component whose next decision
+% depends on the freshness of that estimate~\cite{pampc,perclatency}. Because
+% freshness is set by latency, a lower perception latency is always preferable:
+% where a task imposes a latency budget, a lower latency makes that budget easier
+% to meet; where none is fixed, it still lets the controller react to the
+% environment sooner~\cite{eventavoid,dronerace}. We therefore target latency
+% minimization rather than a preset deadline. Offloading to remote compute could
+% add capacity but is bounded by communication delay and
+% connectivity~\cite{cloudrobotics}, so the loop must close onboard under a limited
+% power and compute budget~\cite{onboardsensing}.
+%
+% Sparse-inference methods aim to cut this latency by computing only the active
+% region of each frame, delivered as a spatial mask. The mask derives from event-camera
+% increments~\cite{asyncsparse,evconv}, temporal residuals between video
+% frames~\cite{cbinfer,skipconv,deltacnn}, or learned input-dependent
+% gates~\cite{sact,sai,dgnet,dynconv}. These sources differ in sensing modality
+% and policy, but all expose the same spatial sparsity on a dense 2D feature grid
+% for the convolution operator to exploit.
+\subsection{Masked Convolution over Dynamic Spatial Sparsity}
 \label{sec:bg:masked}
+
+Exploiting dynamic spatial sparsity is a common way to accelerate convolutional
+inference: an upstream policy emits a spatial mask, and the operator updates only
+the marked positions. The mask comes from sources including event-camera
+increments~\cite{asyncsparse,evconv}, temporal residuals between video
+frames~\cite{cbinfer,skipconv,deltacnn,motiondelta,sparsetem}, learned input-dependent
+gates~\cite{sact,sai,dgnet,dynconv}, etc. The event and temporal
+policies mark positions that changed since the previous frame; the learned gates
+mark positions the task treats as relevant. These sources differ in sensing
+modality and policy, but all expose the same dynamic spatial sparsity on a dense 2D
+feature grid, so a single masked-convolution runtime serves them all.
 
 Masked convolution keeps the dense tensors and arithmetic of a dense convolution
 and restricts only which output coordinates it evaluates. It operates on an input
@@ -76,8 +87,24 @@ required work, while the choice of $\mathcal{C}$ is determined by the path.
 \subsection{The Sparsity-to-Latency Gap}
 \label{sec:bg:gap}
 
+\begin{figure}[tb]
+  \centering
+  \includegraphics[width=\columnwidth]{figures/gap.pdf}
+  \caption{Statistics of DynConv~\cite{dynconv}, a pose estimator
+  with learned spatial gating, on the MPII human-pose dataset~\cite{mpii} and
+  Jetson AGX Orin, comparing the native cuDNN path (Dense) against the two
+  sparse paths.
+  (a)~End-to-end average per-frame latency (left axis; the dashed line marks the
+  dense latency scaled by the active ratio aggregated across layers) and PCKh
+  accuracy (right axis; PCKh evaluates the percentage of keypoints localized within half the head size). The
+  sparse paths apply the same mask, so their accuracy coincides. (b)~Raw
+  throughput $T$ and effective throughput $T_{\mathrm{eff}}$, aggregated across
+  the model's convolution layers. The dense useful-compute ratio implies the
+  active ratio set by DynConv's spatial gating ($\alpha\approx15.6\%$).}
+  \label{fig:gap}
+\end{figure}
 Existing systems execute a mask along one of two paths. \emph{Tile
-skipping}~\cite{sbnet,skipconv,evconv} inherits the dense pipeline's tile-based
+skipping}~\cite{sbnet,skipconv,evconv,dynaspa,motiondelta,sparsetem} inherits the dense pipeline's tile-based
 computation, skipping a tile only when all its coordinates are inactive and
 otherwise computing the whole tile; DeltaCNN~\cite{deltacnn} fuses a selective
 path into the kernel, taken when a tile is estimated to be mostly empty, to cut
@@ -117,30 +144,27 @@ gather-scatter lifts the useful-compute ratio to one, yet extraction and data
 movement collapse its throughput to 5\% of dense (Fig.~\ref{fig:gap}b). Neither
 path efficiently converts the GPU's capability into effective throughput.
 
-\begin{figure}[t]
-  \centering
-  \includegraphics[width=\columnwidth]{figures/gap.pdf}
-  \caption{Statistics of DynConv~\cite{dynconv}, a pose estimator
-  with learned spatial gating, on the MPII human-pose dataset~\cite{mpii} and
-  Jetson AGX Orin, comparing the native cuDNN path (Dense) against the two
-  sparse paths.
-  (a)~End-to-end average per-frame latency (left axis; the dashed line marks the
-  dense latency scaled by the active ratio aggregated across layers) and PCKh
-  accuracy (right axis; keypoints localized within half the head size). The
-  sparse paths apply the same mask, so their accuracy coincides. (b)~Raw
-  throughput $T$ and effective throughput $T_{\mathrm{eff}}$, aggregated across
-  the model's convolution layers. The dense useful-compute ratio implies the
-  active ratio set by DynConv's spatial gating ($\alpha\approx15.6\%$).}
-  \label{fig:gap}
-\end{figure}
 
-\subsection{Relation to 3D Sparse Convolution}
-\label{sec:bg:3d}
+\subsection{Distinction from Related Sparse Execution}
+\label{sec:bg:related}
 
-SpConv~v2 and TorchSparse++ target point clouds that are sparse by
-representation, building coordinate maps over irregular voxel
-coordinates~\cite{spconv2,torchsparsepp}. Our setting instead keeps dense 2D
-tensors under a changing spatial mask, where the challenge is to skip inactive
-outputs without turning a regular image-grid pipeline into an irregular one. We
-therefore treat 3D sparse convolution as related infrastructure rather than a
-primary baseline.
+Related sparse-execution work differs from WISEConv's masked convolution in
+representation, operator, sparsity type, or platform. 3D sparse convolution
+(SpConv~v2~\cite{spconv2}, Torch\-Sparse++~\cite{torchsparsepp,torchsparse}, Minuet~\cite{minuet},
+Minkowski\-Engine~\cite{minkowski}, sub\-manifold sparse
+convolution~\cite{submanifold}) is built to organize com\-putation over
+an unordered list of active voxels, constructing coordinate maps that route
+irregular input coordinates to outputs; its input
+is sparse by construction rather than a dense grid under a runtime mask, so it is
+related infrastructure rather than a baseline. Sparse matrix multiplication
+(DTC-SpMM~\cite{dtcspmm}, MaxK-GNN~\cite{maxkgnn}, Sputnik~\cite{sputnik})
+reorganizes a sparse matrix operand so the dense
+datapath can consume it; its sparsity lives in the
+matrix structure of a different operator, not in a spatial mask over a
+convolution grid. % ORIG: ... exploit sparsity fixed at compile time in the weights or a known format, a static, structural sparsity type rather than a mask discovered at runtime over the spatial grid.
+Structured weight sparsity (2:4 tensor cores~\cite{sparse24}) and sparse-format
+compilers (TACO~\cite{taco}, SparseTIR~\cite{sparsetir}) exploit a static structural
+sparsity fixed at compile time in the weights or a known format, rather than a mask
+discovered at runtime over the spatial grid. DPACS~\cite{dpacs} resolves similar dynamic spatial
+sparsity in CNN feature maps, but on a custom accelerator instead of a commodity
+GPU.

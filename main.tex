@@ -17,8 +17,10 @@
 
 \begin{document}
 
-\title{\sysname: Worklist-driven Masked Convolution\\
-for Onboard High-Speed Robotic Perception}
+% ORIG (RAL/robotics framing):
+% \title{\sysname: Worklist-driven Masked Convolution\\
+% for Onboard High-Speed Robotic Perception}
+\title{\sysname: A Worklist-driven Masked-Convolution Runtime for GPUs}
 
 \author{Anonymous Authors% <-this % stops a space
 \thanks{Manuscript received Month DD, YYYY.}}
@@ -30,15 +32,20 @@ for Onboard High-Speed Robotic Perception}
 \maketitle
 
 \begin{abstract}
-Onboard robotic perception must sustain high update rates under tight compute
-and power budgets. Masking policies from event increments, temporal frame
-differences, and learned gates expose where computation is unnecessary, yet
-existing masked-convolution paths do not convert this sparsity into commensurate latency
-reduction. Tile skipping runs the dense pipeline while skipping empty tiles, keeping
+% ORIG (RAL/robotics framing):
+% Onboard robotic perception must sustain high update rates under tight compute
+% and power budgets. Masking policies from event increments, temporal frame
+% differences, and learned gates expose where computation is unnecessary, yet
+% existing masked-convolution paths do not convert this sparsity into proportional
+% latency reduction.
+Masked convolution accelerates grid-structured vision models by evaluating only
+the positions an upstream policy marks active. Yet existing masked-convolution
+paths do not convert this sparsity into proportional latency reduction. Tile skipping runs the dense pipeline while skipping empty tiles, keeping
 throughput high but computing inactive positions within retained tiles, suffering
 a low useful-compute ratio; gather-scatter raises the useful-compute ratio to
 near one but loses throughput to feature materialization, irregular access, and
-writeback. We present \sysname, an execution model for masked convolution that fuses
+writeback. We present \sysname, a runtime% ORIG word: an execution model
+ for masked convolution that fuses
 selectivity into the dense pipeline to achieve both a high useful-compute ratio
 and high throughput. Specifically, \sysname constructs an active-output worklist,
 which drives the dense pipeline to compute only the active positions. To bound the
@@ -53,8 +60,11 @@ by 22--46\% relative to the fastest competing path and per-frame energy by
 \end{abstract}
 
 \begin{IEEEkeywords}
-Computer architecture for robotic and automation, software, deep learning
-methods, sparse convolution, embedded perception.
+% ORIG (RAL/robotics framing):
+% Computer architecture for robotic and automation, software, deep learning
+% methods, sparse convolution, embedded perception.
+Sparse convolution, dynamic spatial sparsity, GPU runtime, deep learning
+systems, efficient inference.
 \end{IEEEkeywords}
 
 \input{src/intro}

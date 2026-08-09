@@ -1,19 +1,29 @@
 \section{Introduction}
 \label{sec:intro}
 
-\IEEEPARstart{C}{onvolutional} networks support a broad range of onboard
-robotic perception workloads, from high-rate motion and geometry estimation to
-detection and pose estimation~\cite{fastdepth,nanoflownet,bisenet,densefusion}.
-Their outputs feed online navigation, planning, and manipulation, so inference
-latency limits how often downstream components can incorporate new
-observations~\cite{contactgraspnet}. Meeting this latency demand is difficult
-on board-level processors with constrained compute and power, because dense
-convolution recomputes every spatial position on every invocation. Prior
-systems compute only the active region of each frame, marked by a mask derived
-from event-camera increments, temporal frame differences, or learned spatial
-gates~\cite{evconv,asyncsparse,deltacnn,dgnet,dynconv}. Whatever the source, the
-mask poses the same operator-level problem: compute the convolution only at the
-active positions of a dense 2D feature grid.
+% ORIG (RAL/robotics framing):
+% \IEEEPARstart{C}{onvolutional} networks support a broad range of onboard
+% robotic perception workloads, from high-rate motion and geometry estimation to
+% detection and pose estimation~\cite{fastdepth,nanoflownet,bisenet,densefusion}.
+% Their outputs feed online navigation, planning, and manipulation, so inference
+% latency limits how often downstream components can incorporate new
+% observations~\cite{contactgraspnet}. Meeting this latency demand is difficult
+% on board-level processors with constrained compute and power, because dense
+% convolution recomputes every spatial position on every invocation. Prior
+% systems compute only the active region of each frame, marked by a mask derived
+% from event-camera increments, temporal frame differences, or learned spatial
+% gates~\cite{evconv,asyncsparse,deltacnn,dgnet,dynconv}. Whatever the source, the
+% mask poses the same operator-level problem: compute the convolution only at the
+% active positions of a dense 2D feature grid.
+\IEEEPARstart{D}{ense} convolution dominates the inference cost of many vision
+models, yet on a given input much of that computation is spatially redundant. A
+common remedy is masked convolution: an upstream policy marks the active
+positions of the feature grid, and the operator evaluates only those. The mask
+comes from sources including event-camera increments~\cite{evconv,asyncsparse},
+temporal differences between video frames~\cite{deltacnn,skipconv}, and learned
+spatial gates~\cite{dynconv,dgnet}. However the mask is produced, it
+poses one operator-level problem: compute the convolution only at the active
+positions of a dense 2D feature grid.
 
 Dense GPU convolution obtains high throughput from tiled, coordinate-driven
 execution. Each tile enumerates a contiguous block of output coordinates; those
@@ -71,7 +81,8 @@ layer and input, so no fixed tiling keeps the GPU full. Both effects sharpen
 as activity falls.
 
 We present \sysname (\textbf{W}orklist-dr\textbf{I}ven ma\textbf{S}k\textbf{E}d
-\textbf{Conv}o\-lu\-tion), an execution model for masked convolution that fuses
+\textbf{Conv}o\-lu\-tion), a runtime% ORIG word: an execution model
+ for masked convolution that fuses
 position-level selectivity into the dense tiled pipeline, securing both a high
 useful-compute ratio and high throughput by co-designing worklist construction
 and consumption.
@@ -85,11 +96,11 @@ Compute then decomposes parallel work adaptively over the spatial and reduction
 dimensions by device, layer shape, and activity, while each selected position
 keeps the regular reduction over channels and kernel offsets.
 
-This paper makes three contributions:
+This paper makes the following contributions:
 \begin{itemize}
   \item We characterize masked-convolution latency along two axes,
-        useful-compute ratio and throughput, exposing why upstream sparsity
-        does not translate into proportional latency reduction for existing work.
+        useful-compute ratio and throughput, exposing why existing work does
+        not translate upstream sparsity into proportional latency reduction.
 
   \item We design \sysname, which fuses position-level selectivity into tiled
         dense convolution and co-designs worklist construction and consumption

@@ -92,7 +92,7 @@ We compare \sysname against three FP32 execution paths established by prior
 work.
 
 \begin{itemize}
-  \item \textbf{Dense} uses the native PyTorch/cuDNN backend~\cite{cudnn}.
+  \item \textbf{Dense} uses the native PyTorch/cuDNN backend~\cite{cudnn} with sparse execution disabled.
 
   \item \textbf{Tile skipping} follows the tile-sparse execution established
         by SBNet, Ev-Conv, and DeltaCNN~\cite{sbnet,evconv,deltacnn}.
