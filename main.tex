@@ -44,17 +44,17 @@ paths do not convert this sparsity into proportional latency reduction. Tile ski
 throughput high but computing inactive positions within retained tiles, suffering
 a low useful-compute ratio; gather-scatter raises the useful-compute ratio to
 near one but loses throughput to feature materialization, irregular access, and
-writeback. We present \sysname, a runtime% ORIG word: an execution model
- for masked convolution that fuses
+% ORIG word "runtime": an execution model
+writeback. We present \sysname, a runtime for masked convolution that fuses
 selectivity into the dense pipeline to achieve both a high useful-compute ratio
-and high throughput. Specifically, \sysname constructs an active-output worklist,
+and high throughput. \sysname constructs an active-output worklist,
 which drives the dense pipeline to compute only the active positions. To bound the
 overhead of building this worklist and to keep the GPU full despite its short,
 input-dependent length, \sysname co-designs its construction and consumption:
 it reuses the constructed worklist across compatible operators, emits the worklist in dense
 traversal order, and decomposes work adaptively over the spatial and reduction
 dimensions. Across
-four perception models and four GPU platforms, \sysname reduces full-model latency
+four perception models and six GPU platforms, \sysname reduces full-model latency
 by 22--46\% relative to the fastest competing path and per-frame energy by
 28--60\% over dense convolution on the embedded platforms.
 \end{abstract}

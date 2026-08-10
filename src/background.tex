@@ -31,12 +31,20 @@
 \subsection{Masked Convolution over Dynamic Spatial Sparsity}
 \label{sec:bg:masked}
 
-Exploiting dynamic spatial sparsity is a common way to accelerate convolutional
-inference: an upstream policy emits a spatial mask, and the operator updates only
-the marked positions. The mask comes from sources including event-camera
+Convolution runs inside the perception-action loop of many vision
+applications~\cite{nanoflownet,fastdepth,bisenet,densefusion,contactgraspnet},
+where per-frame inference latency bounds system
+responsiveness~\cite{pampc,perclatency,eventavoid,dronerace}.
+% TODO: move scope statement to overview
+% In this paper, we target per-frame inference latency, whether a frame from a sequence runs alone or batched
+% with other sequences.
+
+To cut this latency, masked convolution exploits dynamic spatial sparsity: an
+upstream policy emits a spatial mask, and the operator updates only the marked
+positions. The mask comes from sources including event-camera
 increments~\cite{asyncsparse,evconv}, temporal residuals between video
 frames~\cite{cbinfer,skipconv,deltacnn,motiondelta,sparsetem}, learned input-dependent
-gates~\cite{sact,sai,dgnet,dynconv}, etc. The event and temporal
+gates~\cite{sact,sai,dgnet,dynconv}. The event and temporal
 policies mark positions that changed since the previous frame; the learned gates
 mark positions the task treats as relevant. These sources differ in sensing
 modality and policy, but all expose the same dynamic spatial sparsity on a dense 2D
@@ -138,7 +146,8 @@ discard it with negligible accuracy loss, so the remaining work sets a 9.6\,ms
 latency floor (Fig.~\ref{fig:gap}a, dashed). Neither path approaches it: tile
 skipping (DeltaCNN~\cite{deltacnn}) reaches 36.6\,ms, still 3.8$\times$ the floor,
 and gather-scatter, even with DynConv built to amortize its overhead, runs at
-194\,ms, far slower than dense convolution itself. That is due to their low effective throughput from different causes. Tile skipping holds
+194\,ms, far slower than dense convolution itself. The gap traces to low
+effective throughput on both paths. Tile skipping holds
 throughput near half of dense but at a useful-compute ratio of only 0.49;
 gather-scatter lifts the useful-compute ratio to one, yet extraction and data
 movement collapse its throughput to 5\% of dense (Fig.~\ref{fig:gap}b). Neither
