@@ -18,11 +18,11 @@
 Dense convolution dominates the per-frame inference latency of many
 latency-critical vision tasks~\cite{nanoflownet,fastdepth,perclatency}, yet on a given input much of that computation is
 spatially redundant. A
-common remedy is masked convolution: an upstream policy marks the active
-positions, and the operator evaluates only those. The mask
-comes from sources including event-camera increments~\cite{evconv,asyncsparse},
-temporal differences between video frames~\cite{deltacnn,skipconv}, and learned
-spatial gates~\cite{dynconv,dgnet}. Regardless of the source, it poses one
+common remedy is masked convolution: an upstream policy marks active
+positions, and the operator computes only those. The mask may derive from event-camera
+increments~\cite{evconv,asyncsparse},
+temporal differences~\cite{deltacnn,skipconv}, or learned
+spatial gates~\cite{dynconv,dgnet}. Regardless of source, it poses one
 operator-level problem: compute the convolution only at the active positions of
 the dense feature grid.
 
@@ -30,10 +30,12 @@ Dense GPU convolution obtains high throughput from tiled, coordinate-driven
 execution. Each tile enumerates a contiguous block of output coordinates; those
 coordinates fix each output position's receptive field and write location, while the reduction
 over channels and kernel offsets follows a regular datapath. Neighboring
-coordinates consequently share overlapping receptive fields, yielding predictable
-memory access and data reuse.
+coordinates share overlapping receptive fields, yielding
+predictable memory access and data reuse.
 However, unlike static sparsity in matrix multiplication, masked convolution
-selects positions at runtime per frame, requiring the operator to access scattered, irregularly-overlapping neighborhoods and handle a workload that varies per frame, seemingly conflicting with tile-level execution.
+selects positions at runtime per frame, requiring the operator to access
+scattered, irregularly-overlapping neighborhoods and handle a varying workload,
+conflicting with tiled execution.
 
 Existing masked-convolution systems preserve this regularity or eliminate wasted
 work, but not both. \emph{Tile skipping}~\cite{sbnet,skipconv,evconv,deltacnn} retains the
@@ -46,19 +48,18 @@ irregular access, and writeback overhead.
 
 We characterize this trade-off along two axes (\S\ref{sec:bg:gap}):
 \emph{throughput} (operations per second) and
-\emph{useful-compute ratio} (the fraction of executed operations that produce
+\emph{useful-compute ratio} (the fraction of issued operations that produce
 needed outputs). In our sparsest workload~\cite{dynconv} (\S\ref{sec:eval:latency}), the masks render 84.4\%
 of the convolution work unnecessary, yet neither approach turns this into
 proportional latency reduction. Tile skipping~\cite{deltacnn}
-suffers a useful-compute ratio of only 0.49 and cuts latency by at most 40.6\%.
+suffers a useful-compute ratio of only 49\% and cuts latency by at most 40.6\%.
 Gather-scatter drives the useful-compute ratio near one but sustains only 9.3\% of
-tile skipping's throughput, running 3.1$\times$ slower than dense
-convolution.
+tile skipping's throughput, running 3.1$\times$ slower than the dense path.
 
 Our key insight is that position-level selectivity does not require abandoning
 the dense convolution pipeline. A dense tile already derives its reads and
 writes from output coordinates, so replacing its contiguous coordinate block
-with an active-output worklist changes which outputs are evaluated without
+with an active-output worklist changes which outputs are computed without
 changing the per-position reduction, the dense tensor layout, or the weight
 layout. With this substitution, the operator runs as a dense tiled pipeline,
 pinning the useful-compute ratio near one without materializing input patches.
@@ -67,8 +68,7 @@ Translating this into latency reduction requires handling two
 challenges.
 % : the worklist must be cheap to build and fast to consume.
 First,
-\emph{worklist-construction overhead}: building the
-worklist scans the mask, so its cost scales with the layer's spatial grid, not
+\emph{worklist-construction overhead}: construction scans the mask, so its cost scales with the layer's spatial grid, not
 with the active count or channel widths, while the compute it enables shrinks with
 both. Construction's share of latency therefore grows as activity falls and
 channels thin, and accumulates across operators when every layer rebuilds.
@@ -101,8 +101,8 @@ This paper makes the following contributions:
         useful-compute ratio and throughput, exposing why existing work does
         not translate upstream sparsity into proportional latency reduction.
 
-  \item We design \sysname, which fuses position-level selectivity into tiled
-        dense convolution and co-designs worklist construction and consumption
+  \item We design \sysname, which fuses position-level selectivity into the
+        dense tiled convolution pipeline and co-designs worklist construction and consumption
         to secure both axes jointly.
 
   \item We evaluate \sysname on four perception models across four discrete GPUs

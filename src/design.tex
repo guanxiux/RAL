@@ -48,14 +48,14 @@ Beyond launch sizing, the parallel decomposition that best utilizes the GPU
 changes with the activity level: the tradeoff between per-tile compute
 efficiency and device occupancy shifts as the number of active positions
 varies (e.g., low activity may require additional parallelism to keep the device
-occupied). Searching for such a decomposition online is too expensive, and
+occupied). Searching for such a decomposition per frame is too expensive, and
 reading per-layer activity to select it would reintroduce the
 synchronization. \sysname adopts a data-driven
 approach, exploiting the temporal correlation of streaming inputs: it reads
 back the input activity once per frame via an asynchronous device-to-host copy,
 lagged by one frame but never blocking. That single readback selects a
-pre-calibrated activity bucket; a per-layer mapping derived from data-driven
-offline calibration then supplies every operator's configuration without
+pre-calibrated activity bucket; a per-layer mapping derived from offline
+calibration then supplies every operator's configuration without
 additional kernel launches or synchronization (\S\ref{sec:design:adaptive}).
 
 % TODO: overview figure (double column)

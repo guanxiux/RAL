@@ -28,7 +28,7 @@
 % gates~\cite{sact,sai,dgnet,dynconv}. These sources differ in sensing modality
 % and policy, but all expose the same spatial sparsity on a dense 2D feature grid
 % for the convolution operator to exploit.
-\subsection{Masked Convolution over Dynamic Spatial Sparsity}
+\subsection{Masked Convolution}
 \label{sec:bg:masked}
 
 Convolution runs inside the perception-action loop of many vision
@@ -36,7 +36,7 @@ applications~\cite{nanoflownet,fastdepth,bisenet,densefusion,contactgraspnet},
 where per-frame inference latency bounds system
 responsiveness~\cite{pampc,perclatency,eventavoid,dronerace}.
 To cut this latency, masked convolution exploits dynamic spatial sparsity: an
-upstream policy emits a spatial mask, and the operator updates only the marked
+upstream policy emits a spatial mask, and the operator computes only the marked
 positions. The mask comes from sources including event-camera
 increments~\cite{asyncsparse,evconv}, temporal residuals between video
 frames~\cite{cbinfer,skipconv,deltacnn,motiondelta,sparsetem}, learned input-dependent
@@ -46,8 +46,8 @@ mark positions the task treats as relevant. These sources differ in sensing
 modality and policy, but all expose the same dynamic spatial sparsity on a dense 2D
 feature grid, so a single masked-convolution runtime serves them all.
 
-Masked convolution keeps the dense tensors and arithmetic of a dense convolution
-and restricts only which output coordinates it evaluates. It operates on an input
+Masked convolution keeps the tensors and arithmetic of dense convolution
+and restricts only which output coordinates it computes. It operates on an input
 feature tensor $\mathbf{x}\in\mathbb{R}^{H_{in}\times W_{in}\times C_{in}}$, a
 weight tensor $\mathbf{w}\in\mathbb{R}^{k\times k\times C_{in}\times C_{out}}$ of
 kernel size $k$, and an output
@@ -68,7 +68,7 @@ $\mathcal{N}(p)$ is active,
   \end{cases}
   \label{eq:mask}
 \end{equation}
-$M_{out}$ thus fixes which positions of $\mathbf{y}$ the operator updates, each
+$M_{out}$ thus fixes which positions of $\mathbf{y}$ the operator computes, each
 by aggregating $\mathbf{x}$ over $\mathcal{N}(p)$ with the weights $\mathbf{w}$.
 The active ratio $\alpha = \|M_{out}\|_0 / |\mathcal{G}|$, the active fraction of
 the grid, is the intrinsic sparsity the policy exposes.
@@ -85,8 +85,8 @@ where $\mathcal{N}_i(p)$ is the $i$-th position in $\mathcal{N}(p)$ and
 $\mathbf{w}_i\in\mathbb{R}^{C_{in}\times C_{out}}$ the corresponding weight
 slice. The path must compute every active coordinate to avoid dropping a
 requested output but may also compute inactive ones; dense convolution is the
-extreme $\mathcal{C}=\mathcal{G}$. The policy alone fixes the accuracy and the
-required work, while the choice of $\mathcal{C}$ is determined by the path.
+extreme $\mathcal{C}=\mathcal{G}$. The policy fixes the accuracy and the
+required work, while $\mathcal{C}$ is determined by the path.
 
 \subsection{The Sparsity-to-Latency Gap}
 \label{sec:bg:gap}
@@ -144,10 +144,10 @@ skipping (DeltaCNN~\cite{deltacnn}) reaches 36.6\,ms, still 3.8$\times$ the floo
 and gather-scatter, even with DynConv built to amortize its overhead, runs at
 194\,ms, far slower than dense convolution itself. The gap traces to low
 effective throughput on both paths. Tile skipping holds
-throughput near half of dense but at a useful-compute ratio of only 0.49;
+throughput near half of dense but at a useful-compute ratio of only 49\%;
 gather-scatter lifts the useful-compute ratio to one, yet extraction and data
 movement collapse its throughput to 5.0\% of dense (Fig.~\ref{fig:gap}b). Neither
-path efficiently converts the GPU's capability into effective throughput.
+path efficiently converts the GPU's capability into effective throughput for masked convolution.
 
 
 \subsection{Distinction from Related Sparse Execution}
