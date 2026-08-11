@@ -82,7 +82,7 @@ as activity falls.
 
 We present \sysname (\textbf{W}orklist-dr\textbf{I}ven ma\textbf{S}k\textbf{E}d
 % ORIG word "runtime": an execution model
-\textbf{Conv}o\-lu\-tion), a runtime for masked convolution that fuses
+\textbf{Conv}o\-lu\-tion), a masked convolution runtime that fuses
 position-level selectivity into the dense tiled pipeline, securing both a high
 useful-compute ratio and high throughput by co-designing worklist construction
 and consumption.
@@ -92,9 +92,10 @@ coordinate metadata; compatible operators propagate and reuse valid
 metadata instead of reconstructing it. Consumption is made
 dense-like: construction emits contiguous per-tile segments ordered by the dense
 tile traversal, giving compute tile-local spatial structure without a global sort.
-Compute then decomposes parallel work adaptively over the spatial and reduction
-dimensions according to device, layer shape, and activity, while each selected position
-keeps the regular reduction over channels and kernel offsets.
+Compute then decomposes parallel work adaptively according to device, layer
+shape, and activity via a data-driven configuration that exploits the temporal
+correlation of streaming inputs, keeping the GPU fully utilized without host
+synchronization.
 
 This paper makes the following contributions:
 \begin{itemize}
