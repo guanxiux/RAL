@@ -52,7 +52,7 @@ feature tensor $\mathbf{x}\in\mathbb{R}^{H_{in}\times W_{in}\times C_{in}}$, a
 weight tensor $\mathbf{w}\in\mathbb{R}^{k\times k\times C_{in}\times C_{out}}$ of
 kernel size $k$, and an output
 $\mathbf{y}\in\mathbb{R}^{H_{out}\times W_{out}\times C_{out}}$ on a coordinate
-grid $\mathcal{G}=\{1,\ldots,H_{out}W_{out}\}$, where each coordinate $p$ has a
+grid $\mathcal{G}=\{1,\ldots,H_{out}W_{out}\}$, where each coordinate $p\in\mathcal{G}$ has a
 $k\times k$ receptive field $\mathcal{N}(p)$ in $\mathbf{x}$. An upstream policy
 marks the coordinates to compute in an output mask
 $M_{out}\in\{0,1\}^{H_{out}\times W_{out}}$. Spatial gating predicts $M_{out}$
@@ -146,7 +146,7 @@ and gather-scatter, even with DynConv built to amortize its overhead, runs at
 effective throughput on both paths. Tile skipping holds
 throughput near half of dense but at a useful-compute ratio of only 0.49;
 gather-scatter lifts the useful-compute ratio to one, yet extraction and data
-movement collapse its throughput to 5\% of dense (Fig.~\ref{fig:gap}b). Neither
+movement collapse its throughput to 5.0\% of dense (Fig.~\ref{fig:gap}b). Neither
 path efficiently converts the GPU's capability into effective throughput.
 
 
