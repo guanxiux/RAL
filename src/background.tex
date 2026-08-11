@@ -142,9 +142,9 @@ discard it with negligible accuracy loss, so the remaining work sets a 9.6\,ms
 latency floor (Fig.~\ref{fig:gap}a, dashed). Neither path approaches it: tile
 skipping (DeltaCNN~\cite{deltacnn}) reaches 36.6\,ms, still 3.8$\times$ the floor,
 and gather-scatter, even with DynConv built to amortize its overhead, runs at
-194\,ms, far slower than dense convolution itself. The gap traces to low
+193.5\,ms, far slower than dense convolution itself. The gap traces to low
 effective throughput on both paths. Tile skipping holds
-throughput near half of dense but at a useful-compute ratio of only 49\%;
+throughput near half of dense but at a useful-compute ratio of only 49.1\%;
 gather-scatter lifts the useful-compute ratio to one, yet extraction and data
 movement collapse its throughput to 5.0\% of dense (Fig.~\ref{fig:gap}b). Neither
 path efficiently converts the GPU's capability into effective throughput for masked convolution.
