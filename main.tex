@@ -1,35 +1,19 @@
-\documentclass[letterpaper,journal]{IEEEtran}
+\documentclass[sigplan,anonymous,review]{acmart}
+
 \usepackage{amsmath,amsfonts}
-\usepackage{algorithmic}
 \usepackage{algorithm}
+\usepackage{algorithmic}
 \usepackage{array}
-\usepackage[caption=false,font=normalsize,labelfont=sf,textfont=sf]{subfig}
-\usepackage{textcomp}
-\usepackage{stfloats}
-\usepackage{url}
-\usepackage{verbatim}
 \usepackage{graphicx}
-\usepackage{cite}
-\hyphenation{op-tical net-works semi-conduc-tor IEEE-Xplore}
+\usepackage{xspace}
 
 \newcommand{\sysname}{\mbox{WISEConv}\xspace}
-\usepackage{xspace}
 
 \begin{document}
 
-% ORIG (RAL/robotics framing):
-% \title{\sysname: Worklist-driven Masked Convolution\\
-% for Onboard High-Speed Robotic Perception}
 \title{\sysname: A Worklist-driven Masked-Convolution Runtime for GPUs}
 
-\author{Anonymous Authors% <-this % stops a space
-\thanks{Manuscript received Month DD, YYYY.}}
-
-% The paper headers
-\markboth{IEEE Robotics and Automation Letters. Preprint Version.}%
-{Author \MakeLowercase{\textit{et al.}}: \sysname: Worklist-driven Masked Convolution}
-
-\maketitle
+\author{Anonymous Authors}
 
 \begin{abstract}
 % ORIG (RAL/robotics framing):
@@ -57,13 +41,10 @@ four perception models and six GPU platforms (four discrete, two embedded),
 path and per-frame energy by 28--60\% on the embedded platforms.
 \end{abstract}
 
-\begin{IEEEkeywords}
-% ORIG (RAL/robotics framing):
-% Computer architecture for robotic and automation, software, deep learning
-% methods, sparse convolution, embedded perception.
-Sparse convolution, dynamic spatial sparsity, GPU runtime, deep learning
-systems, efficient inference.
-\end{IEEEkeywords}
+\keywords{Sparse convolution, dynamic spatial sparsity, GPU runtime, deep learning
+systems, efficient inference}
+
+\maketitle
 
 \input{src/intro}
 \input{src/background}
@@ -77,10 +58,11 @@ systems, efficient inference.
 % \input{src/conclusion}
 % ---------------------------------------------------------------------------
 
-\section*{Acknowledgments}
+\begin{acks}
 % TODO
+\end{acks}
 
-\bibliographystyle{IEEEtran}
+\bibliographystyle{ACM-Reference-Format}
 \bibliography{refs}
 
 \end{document}
