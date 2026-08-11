@@ -35,10 +35,6 @@ Convolution runs inside the perception-action loop of many vision
 applications~\cite{nanoflownet,fastdepth,bisenet,densefusion,contactgraspnet},
 where per-frame inference latency bounds system
 responsiveness~\cite{pampc,perclatency,eventavoid,dronerace}.
-% TODO: move scope statement to overview
-% In this paper, we target per-frame inference latency, whether a frame from a sequence runs alone or batched
-% with other sequences.
-
 To cut this latency, masked convolution exploits dynamic spatial sparsity: an
 upstream policy emits a spatial mask, and the operator updates only the marked
 positions. The mask comes from sources including event-camera

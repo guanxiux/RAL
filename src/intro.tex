@@ -15,7 +15,7 @@
 % gates~\cite{evconv,asyncsparse,deltacnn,dgnet,dynconv}. Whatever the source, the
 % mask poses the same operator-level problem: compute the convolution only at the
 % active positions of a dense 2D feature grid.
-\IEEEPARstart{D}{ense} convolution dominates the per-frame latency of many
+Dense convolution dominates the per-frame inference latency of many
 latency-critical vision tasks~\cite{nanoflownet,fastdepth,perclatency}, yet on a given input much of that computation is
 spatially redundant. A
 common remedy is masked convolution: an upstream policy marks the active

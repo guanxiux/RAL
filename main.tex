@@ -38,25 +38,23 @@
 % differences, and learned gates expose where computation is unnecessary, yet
 % existing masked-convolution paths do not convert this sparsity into proportional
 % latency reduction.
-Masked convolution accelerates grid-structured vision models by evaluating only
-the positions an upstream policy marks active. Yet existing masked-convolution
-paths do not convert this sparsity into proportional latency reduction. Tile skipping runs the dense pipeline while skipping empty tiles, keeping
-throughput high but computing inactive positions within retained tiles, suffering
-a low useful-compute ratio; gather-scatter raises the useful-compute ratio to
-near one but loses throughput to feature materialization, irregular access, and
-% ORIG word "runtime": an execution model
-writeback. We present \sysname, a runtime for masked convolution that fuses
-selectivity into the dense pipeline to achieve both a high useful-compute ratio
-and high throughput. \sysname constructs an active-output worklist,
-which drives the dense pipeline to compute only the active positions. To bound the
-overhead of building this worklist and to keep the GPU full despite its short,
-input-dependent length, \sysname co-designs its construction and consumption:
-it reuses the constructed worklist across compatible operators, emits the worklist in dense
-traversal order, and decomposes work adaptively over the spatial and reduction
-dimensions. Across
-four perception models and six GPU platforms, \sysname reduces full-model latency
-by 22--46\% relative to the fastest competing path and per-frame energy by
-28--60\% over dense convolution on the embedded platforms.
+Masked convolution promises to cut the per-frame inference latency of vision models by
+evaluating only positions an upstream policy marks active, yet existing paths
+sacrifice either throughput or useful-compute ratio and fail to convert sparsity
+into proportional latency reduction. We present \sysname, a masked-convolution
+runtime that derives an active-output worklist from the upstream mask and uses it
+to drive the dense tiled pipeline, securing both a high useful-compute ratio and
+high throughput by computing only needed positions while executing active positions
+through the regular dense datapath.
+To amortize construction overhead and keep the compute
+pipeline fully utilized despite per-frame-varying worklist lengths, \sysname
+co-designs construction and consumption: compatible operators reuse the
+constructed worklist without reconstruction, the worklist emission order
+preserves tile-local spatial reuse, and a data-driven adaptive decomposition
+adjusts parallel work to the activity level without host synchronization. Across
+four perception models and six GPU platforms (four discrete, two embedded),
+\sysname reduces full-model latency by 22--46\% relative to the fastest competing
+path and per-frame energy by 28--60\% on the embedded platforms.
 \end{abstract}
 
 \begin{IEEEkeywords}
