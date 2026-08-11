@@ -1,62 +1,36 @@
 \section{\sysname Design}
 \label{sec:design}
 
+\sysname co-designs worklist construction and consumption so that selective
+execution retains the dense pipeline's throughput while computing only active
+outputs. This section first states the design thesis and overviews the
+two-stage pipeline (\S\ref{sec:design:overview}), then describes construction
+(\S\ref{sec:design:construct}) and computation (\S\ref{sec:design:compute}).
+
 \subsection{Overview}
 \label{sec:design:overview}
 
+As characterized in \S\ref{sec:bg:gap}, masked-convolution latency is governed
+by effective throughput $\eta T$, the product of the datapath's raw
+throughput~$T$ and the useful-compute ratio~$\eta$. No existing approach
+secures both axes: tile skipping preserves~$T$ but sacrifices~$\eta$;
+gather-scatter drives~$\eta$ near one but collapses~$T$. The design thesis of
+\sysname is that a worklist-driven operator can secure both jointly through
+co-design of construction and consumption.
+
 \sysname replaces the coordinate source of a dense tiled convolution with an
 active-output worklist derived from the upstream mask. The operator runs in two
-stages: a \emph{construction stage} that turns the mask into a worklist of
+stages: a \emph{construction stage} that converts the mask into a worklist of
 active output coordinates, and a \emph{compute stage} that drives a tiled
 convolution from that worklist. Because our target is per-frame inference
-latency (whether a frame runs alone or is batched across independent
-sequences), every design decision below is driven by minimizing per-frame
-overhead.
+latency, every design decision is driven by minimizing single-frame overhead.
 
-To translate position-level selectivity into latency reduction, construction
-must be cheap to perform and the worklist must be efficient to consume. The
-design addresses both through the following choices.
-
-\paragraph{Construction.}
-Construction scans the mask to discover active coordinates before compute can
-begin. To recover spatial locality for compute without a separate sorting pass,
-construction traverses the output grid in fixed tiles and compacts each tile's
-active coordinates in place. Each emitted segment inherits the tile's dense
-traversal order, so coordinates within a segment address nearby positions whose
-receptive fields overlap. Compute can therefore exploit tile-local data reuse
-without requiring a globally sorted worklist (\S\ref{sec:design:construct}).
-
-Because construction cost is fixed for a given grid size, repeating it at
-every operator accumulates overhead that grows relative to the compute it
-enables. Consecutive operators that preserve the spatial grid (1$\times$1
-convolutions, activations, normalization) produce an identical worklist, so
-reconstruction is redundant. \sysname lets these operators inherit the upstream
-worklist directly; construction executes only at geometry-change boundaries,
-amortizing its cost across compatible segments
-(\S\ref{sec:design:reuse}).
-
-\paragraph{Consumption.}
-The worklist is shorter than the dense grid and its length varies across frames
-and layers. The compute path must adapt to this variation without host
-synchronization, since a device-to-host sync per frame would stall the
-streaming inference pipeline. \sysname launches a fixed, occupancy-sized
-persistent grid; each kernel reads the active count from device memory at entry
-and iterates over the worklist with a grid-stride loop, handling any length
-without a host-side launch decision (\S\ref{sec:design:compute}).
-
-Beyond launch sizing, the parallel decomposition that best utilizes the GPU
-changes with the activity level: the tradeoff between per-tile compute
-efficiency and device occupancy shifts as the number of active positions
-varies (e.g., low activity may require additional parallelism to keep the device
-occupied). Searching for such a decomposition per frame is too expensive, and
-reading per-layer activity to select it would reintroduce the
-synchronization. \sysname adopts a data-driven
-approach, exploiting the temporal correlation of streaming inputs: it reads
-back the input activity once per frame via an asynchronous device-to-host copy,
-lagged by one frame but never blocking. That single readback selects a
-pre-calibrated activity bucket; a per-layer mapping derived from offline
-calibration then supplies every operator's configuration without
-additional kernel launches or synchronization (\S\ref{sec:design:adaptive}).
+Construction targets~$\eta$ and its own amortization: it must produce a
+worklist cheaply, preserve spatial locality for compute, and avoid redundant
+rebuilds across compatible operators (\S\ref{sec:design:construct}). Compute
+targets~$T$: it must consume the worklist at dense-pipeline throughput across
+varying lengths, without host synchronization or a fixed decomposition that
+under-utilizes the device (\S\ref{sec:design:compute}).
 
 % TODO: overview figure (double column)
 \begin{figure*}[t]
@@ -69,7 +43,312 @@ additional kernel launches or synchronization (\S\ref{sec:design:adaptive}).
     \vspace{2.5cm}}}
   \caption{The \sysname two-stage pipeline. Construction discovers active
   output coordinates and compacts each spatial tile into a worklist segment.
-  Compute uses the resulting coordinates to drive a tiled convolution while
-  retaining its regular channel and kernel reduction.}
+  Compute drives a tiled convolution from the worklist while retaining regular
+  channel and kernel reduction.}
   \label{fig:overview}
 \end{figure*}
+
+%% ----------------------------------------------------------------
+\subsection{Construction}
+\label{sec:design:construct}
+
+Construction converts the upstream mask into a worklist before compute begins.
+The following subsections describe the two key mechanisms: tile-local compaction
+that produces spatially ordered segments without global sorting
+(\S\ref{sec:design:construct:compact}), and a cross-operator reuse protocol
+that amortizes construction across compatible operator sequences
+(\S\ref{sec:design:reuse}).
+
+\subsubsection{Tile-Local Worklist Compaction}
+\label{sec:design:construct:compact}
+
+A na\"ive approach to worklist construction would scan the mask globally,
+collect all active coordinates, and then sort them to restore spatial locality.
+The sorting cost is $O(\alpha HW\log(\alpha HW))$ for an active ratio $\alpha$,
+which adds a data-dependent overhead that partially offsets the compute savings
+the worklist enables. An alternative is to extract active positions along with
+their input neighborhoods (gather-scatter extraction), but this materializes
+$O(\alpha HW \cdot k^2 C_{in})$ data, far exceeding a metadata-only pass.
+
+\sysname avoids both costs by exploiting the tiled structure already present in
+the dense pipeline. Construction partitions the output grid into fixed spatial
+tiles and processes each tile independently. Within a tile, every output
+position checks whether any input in its $k\times k$ receptive field is active
+(the predicate of Eq.~\ref{eq:mask}). Active positions are then compacted into
+a contiguous segment of the global worklist using warp-level ballot and atomic
+reservation: each warp counts its active lanes, the warp leader reserves a
+contiguous range in the worklist via an atomic counter, and each active lane
+writes its linearized output coordinate into the reserved range. The process
+simultaneously produces the output mask for downstream propagation.
+
+The worklist buffer is pre-allocated at initialization to the output grid upper
+bound $|\mathcal{G}| = H_{out} W_{out}$ entries (one int32 coordinate each,
+totalling $4|\mathcal{G}|$ bytes). This avoids a two-pass scan (count then
+allocate) or a host-side allocation decision, both of which would require
+knowing the active count before construction writes. The additional memory per
+construction point equals the output feature map size along one channel,
+a fixed overhead independent of activity.
+
+Algorithm~\ref{alg:construct} summarizes this procedure. The resulting worklist
+consists of per-tile contiguous segments whose internal order follows the
+spatial traversal within each tile. Cross-tile order is determined by the GPU's
+tile dispatch (approximately raster order) but is not globally sorted.
+Within each tile, threads are mapped to positions in row-major spatial order, so
+the ballot-based compaction preserves spatial adjacency in the output segment.
+Adjacent segment entries therefore address output positions whose $k\times k$
+receptive fields overlap, enabling a single shared-memory load to service
+multiple outputs. Without this locality, each output would pull from a
+disjoint region of the feature tensor, exhausting cache capacity and replaying
+global memory loads.
+
+\begin{algorithm}[t]
+\caption{Tiled Worklist Construction}
+\label{alg:construct}
+\begin{algorithmic}[1]
+\REQUIRE Input mask $M_{in}$, output grid $\mathcal{G}$, tile size $B$
+\ENSURE Worklist $\mathcal{W}$, output mask $M_{out}$, active count $n$
+\STATE $n \leftarrow 0$
+\FOR{each spatial tile $T$ of $B \times B$ positions \textbf{in parallel}}
+  \FOR{each position $p \in T$ \textbf{in parallel within warp}}
+    \STATE $\mathrm{active}(p) \leftarrow \exists\, r \in \mathcal{N}(p): M_{in}[r] = 1$
+    \STATE $M_{out}[p] \leftarrow \mathrm{active}(p)$
+  \ENDFOR
+  \STATE $\mathrm{count} \leftarrow$ number of active positions in warp \hfill\COMMENT{ballot}
+  \STATE $\mathrm{base} \leftarrow \textsc{AtomicReserve}(n,\; \mathrm{count})$ \hfill\COMMENT{warp leader}
+  \FOR{each active $p$ at intra-warp rank $r$}
+    \STATE $\mathcal{W}[\mathrm{base} + r] \leftarrow \mathrm{linearize}(p)$
+  \ENDFOR
+\ENDFOR
+\end{algorithmic}
+\end{algorithm}
+
+\paragraph{Cost model.}
+Construction visits every output position once to evaluate the receptive-field
+predicate, yielding a cost of $O(H_{out} W_{out} \cdot k^2)$. This cost is
+independent of the channel dimensions $C_{in}$ and $C_{out}$: construction
+operates on mask metadata alone and never touches the feature or weight tensors.
+For a fixed spatial shape, the cost is also independent of the active ratio,
+because every position must be checked regardless of the outcome.
+The formal consequence matches the intuition established in \S\ref{sec:intro}:
+construction's share of total operator latency grows as channels thin or
+activity falls, and accumulates linearly with layer count when every operator
+reconstructs. This motivates the reuse mechanism below.
+
+\subsubsection{Cross-Operator Worklist Reuse}
+\label{sec:design:reuse}
+
+Construction cost is channel-independent and precedes compute, so consecutive
+operators that each rebuild the worklist pay the same spatial-scan cost
+regardless of the compute they enable. In a model with many convolution layers
+at the same spatial resolution, this cost accumulates. Yet many of these
+rebuilds are redundant: any operator whose output grid coincides spatially with
+its input grid and whose active set is unchanged produces an identical worklist.
+
+\paragraph{Compatible operators.}
+A $1\times 1$ convolution with unit stride, zero padding, and unit dilation
+maps each input position to exactly one output at the same spatial coordinate;
+it preserves both the grid geometry and the active set. Elementwise operators
+(activations, normalization) are pointwise by definition and satisfy the same
+conditions. Because such an operator must compute at exactly the positions
+where its input was written (the active set), and these positions are precisely
+those encoded in the upstream worklist, the worklist remains valid without
+modification.
+
+\paragraph{Metadata protocol.}
+\sysname propagates worklist metadata across operators via a fixed tuple: the
+feature tensor, the spatial mask, the worklist buffer (an \texttt{int32}
+coordinate array), and a scalar active count (a single \texttt{int32} on
+device). When an operator is marked reuse-compatible at initialization, its
+forward path receives the upstream worklist buffer and active count directly and
+drives its compute kernel from them; no construction pass executes.
+
+Activation and normalization layers participate by forwarding the received
+metadata unchanged: they compute their pointwise function at worklist positions
+and pass both the worklist buffer and active count to the next operator.
+Construction thus executes only at \emph{segment boundaries} where the geometry
+changes (stride $> 1$, kernel $k > 1$, or spatial resize); all operators
+within a compatible segment inherit the worklist from the segment's first
+construction.
+
+\paragraph{Coverage.}
+In a ResNet-style residual block, the typical sequence is: $3\times 3$ conv
+(construction) $\rightarrow$ BN $\rightarrow$ ReLU $\rightarrow$ $1\times 1$
+conv $\rightarrow$ BN $\rightarrow$ ReLU $\rightarrow$ $1\times 1$ conv. A
+single construction pass serves the entire block. The same pattern holds for
+bottleneck blocks and inverted residuals, where the $3\times 3$ depthwise
+convolution triggers construction and all surrounding $1\times 1$ projections
+reuse it.
+
+%% ----------------------------------------------------------------
+\subsection{Computation}
+\label{sec:design:compute}
+
+Construction delivers a worklist that pins~$\eta$ near one; the compute stage
+must now sustain high~$T$ while consuming it. Two properties of the worklist
+complicate this: its length is determined on device and varies per frame, and no
+single parallel decomposition keeps the GPU fully utilized across all activity
+levels. The following subsections address each in turn.
+
+\subsubsection{Persistent Worklist-Driven Convolution}
+\label{sec:design:compute:persistent}
+
+In a standard dense convolution, the host knows the output size at launch time
+and dimensions the kernel grid accordingly. With a worklist, the output count
+becomes known only on the device after construction completes. A na\"ive
+approach would read the count back to the host before each launch, but this
+inserts a device-to-host synchronization per operator, stalling the streaming
+inference pipeline.
+
+\sysname eliminates this synchronization with a persistent kernel design. At
+module initialization, the runtime queries the device for the maximum number of
+thread blocks that can co-reside on each streaming multiprocessor (SM) given
+the kernel's resource usage (registers, shared memory). The launch grid is
+fixed to $\mathrm{num\_SMs} \times \mathrm{blocks\_per\_SM}$ for the lifetime
+of the module. At kernel entry, thread~0 of each block reads the active count
+from device memory (written by the preceding construction). If the count is
+zero, all blocks return immediately; otherwise, each block iterates over work
+items in a grid-stride loop until the worklist is exhausted.
+
+The compute kernel tiles work along three dimensions: $B_M$ output positions
+per tile (drawn from the worklist), $B_N$ output channels per tile, and $B_K$
+input channels per reduction step. When the worklist is short, output tiles
+alone may not fill the device; \emph{split-K} partitions the channel reduction
+across $S_k$ independent blocks that accumulate partial results via atomic
+writeback, trading additional parallelism for a per-position atomic cost. The
+total work is therefore $\lceil n/B_M \rceil \times \lceil C_{out}/B_N \rceil
+\times S_k$ items, distributed across the persistent grid.
+
+\paragraph{Gather-at-load.}
+For each output tile, the kernel reads output coordinates from the worklist,
+decomposes each into batch, row, and column indices, and computes the
+receptive-field base address. During the channel and kernel reduction, the
+kernel gathers input values directly from the dense feature tensor using these
+addresses (implicit GEMM), identical to how a dense tiled convolution accesses
+its inputs. No intermediate im2col buffer is materialized; the only additional
+cost per position is a few integer operations for index decomposition.
+
+Algorithm~\ref{alg:compute} summarizes the persistent compute model. The
+structure mirrors a standard tiled implicit-GEMM convolution (outer loop over
+output$\times$channel tiles, inner loop over spatial and channel reduction),
+with two differences: the outer loop is grid-stride rather than one-to-one with
+blocks, and the M-dimension indices come from the worklist rather than a
+contiguous range.
+
+\begin{algorithm}[t]
+\caption{Persistent Worklist-Driven Convolution}
+\label{alg:compute}
+\begin{algorithmic}[1]
+\REQUIRE Worklist $\mathcal{W}$, active count $n$, input $\mathbf{x}$, weights $\mathbf{w}$
+\ENSURE Output $\mathbf{y}$ (updated at worklist positions)
+\STATE $n \leftarrow$ \textbf{read} active count from device memory
+\STATE $N_{\mathrm{work}} \leftarrow \lceil n / B_M \rceil \times \lceil C_{out} / B_N \rceil \times S_k$
+\FOR{$\mathrm{tile} = \mathrm{block\_id},\; \mathrm{block\_id} + \mathrm{grid\_size},\; \ldots < N_{\mathrm{work}}$ }
+  \STATE $(b_m, b_n, s) \leftarrow$ decompose $\mathrm{tile}$
+  \STATE Load worklist entries $\mathcal{W}[b_m \cdot B_M \ldots (b_m{+}1) \cdot B_M]$
+  \STATE Decode each entry to $(b, h_{\mathrm{base}}, w_{\mathrm{base}})$
+  \STATE Initialize accumulator $\mathbf{Y} \leftarrow \mathbf{0}_{B_M \times B_N}$
+  \FOR{$r = 0, \ldots, k{-}1$;\quad $c = 0, \ldots, k{-}1$}
+    \FOR{$t = 0, B_K, \ldots < C_{in}$}
+      \STATE $\mathbf{X} \leftarrow$ gather from $\mathbf{x}$ at $(h_{\mathrm{base}}{+}r,\; w_{\mathrm{base}}{+}c,\; t)$
+      \STATE $\mathbf{W} \leftarrow$ load $\mathbf{w}[r, c, t\!:\!t{+}B_K,\; b_n]$
+      \STATE $\mathbf{Y} \leftarrow \mathbf{Y} + \mathbf{X} \cdot \mathbf{W}$
+    \ENDFOR
+  \ENDFOR
+  \STATE Scatter $\mathbf{Y}$ to $\mathbf{y}$ at worklist positions
+\ENDFOR
+\end{algorithmic}
+\end{algorithm}
+
+\paragraph{Properties.}
+The persistent design ensures that the entire compute path operates without
+host involvement: the launch grid is fixed, the work bound is read on-device,
+and all output positions are determined by the worklist. The per-position
+reduction (lines 8--13) is identical to dense convolution: the same channel
+and spatial loops, the same memory access pattern within a tile, and the same
+arithmetic. Position-level selectivity changes only \emph{which} positions are
+computed, not \emph{how} each position is computed, preserving~$T$.
+
+The persistent grid eliminates host synchronization but still uses a fixed tile
+configuration. As the worklist shortens, this fixed decomposition leaves the
+device under-utilized; the next subsection introduces a data-driven adaptation
+that complements the persistent grid.
+
+\subsubsection{Adaptive Workload Decomposition}
+\label{sec:design:adaptive}
+
+The tile configuration $(B_M, B_N, S_k)$ determines how work is decomposed: a
+larger output tile amortizes shared-memory loads but produces fewer tiles from a
+short worklist, lowering occupancy; conversely, a higher split-K factor adds
+parallelism along the reduction dimension at the cost of atomic accumulation per
+position. The optimal tradeoff shifts with the worklist length. At low activity,
+few output tiles exist and split-K is needed to fill the device; at high
+activity, output tiles alone provide sufficient parallelism and split-K's atomic
+cost becomes a net loss. A single fixed configuration cannot serve both regimes
+without sacrificing~$T$ at one end.
+
+Selecting the optimal configuration at runtime requires knowing the activity
+level, yet reading it from the device per layer would reintroduce the
+synchronization the persistent design eliminates. \sysname resolves this
+tension through offline calibration combined with a sync-free online feedback
+loop.
+
+\paragraph{Offline calibration.}
+The activity range is discretized into $N_\ell$ levels (we use $N_\ell=10$,
+spanning density from 100\% to ${\sim}$10\%). For each convolution shape in
+the model and each activity level, a one-time calibration pass generates a
+synthetic worklist of the corresponding length, sweeps all candidate tile
+configurations and split-K values, and records the fastest combination. The
+result is a per-shape, per-level lookup table mapping activity to the optimal
+$(B_M, B_N, B_K, S_k)$. This table is computed once at deployment and
+persisted to disk; at inference time, configuration selection reduces to a
+single table lookup indexed by the current activity level.
+
+\paragraph{Sync-free activity feedback.}
+\sysname delivers the current activity level to the host without stalling the
+compute stream via an asynchronous readback on a dedicated copy stream. After
+each frame's construction writes the active count to device memory, the runtime
+enqueues an asynchronous device-to-host transfer of that count, gated by an
+event so the copy waits until construction completes. A ring buffer of $N_s$
+slots ($N_s=4$) absorbs variation in transfer latency; if all slots are in
+flight, the current frame's count is dropped without blocking.
+
+At the start of the next frame, completed slots are polled without
+synchronization. The most recent available count maps to the nearest calibrated
+activity level via binary search, and each convolution module's tile
+configuration is updated accordingly.
+
+Algorithm~\ref{alg:adaptive} summarizes the per-frame feedback loop. The
+applied configuration is lagged by at least one frame relative to the current
+input. This lag does not affect correctness: the configuration determines only
+the parallel decomposition, not the computed values. In streaming video,
+scene changes are dominated by continuous object motion and smooth illumination
+shifts, so frame-to-frame activity variation is small relative to the
+calibration bin width. The lagged configuration therefore remains near-optimal;
+\S\ref{sec:eval} quantifies this empirically.
+
+\begin{algorithm}[t]
+\caption{Per-Frame Adaptive Configuration}
+\label{alg:adaptive}
+\begin{algorithmic}[1]
+\REQUIRE Ring buffer $\mathcal{R}$ ($N_s$ slots), calibration table $\mathcal{L}$, convolution modules $\{m_i\}$
+\STATE $\mathrm{count} \leftarrow \textsc{AsyncPoll}(\mathcal{R})$ \hfill\COMMENT{non-blocking event query}
+\IF{count is available}
+  \STATE $\alpha \leftarrow \mathrm{count}\, /\, |\mathcal{G}|$
+  \STATE $\ell \leftarrow \textsc{NearestLevel}(\alpha)$
+  \FOR{each convolution module $m_i$}
+    \STATE $(B_M, B_N, S_k) \leftarrow \mathcal{L}[m_i.\mathrm{shape},\; \ell]$
+    \STATE $m_i.\textsc{SetConfig}(B_M, B_N, S_k)$
+  \ENDFOR
+\ENDIF
+\end{algorithmic}
+\end{algorithm}
+
+\paragraph{Design rationale.}
+Two alternatives fail under the constraints of streaming inference. A fixed
+configuration forces a single compromise: over-decomposing at high activity
+(paying unnecessary atomic overhead) or under-utilizing the device at low
+activity. Per-layer host-side selection requires a device-to-host transfer and
+synchronization for each layer, stalling the compute pipeline proportionally to
+layer count. Offline calibration absorbs the profiling cost once; the async
+ring-buffer readback provides frame-level adaptation with zero compute-stream
+interference, maintaining~$T$ across the full activity range.
