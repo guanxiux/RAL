@@ -542,7 +542,13 @@ ratio $T_{\mathrm{dense}}/T_{\mathrm{wl}}$ does not follow from the shape, so
 \sysname locates the crossover by measurement rather than by a cost model.
 
 \paragraph{Application mapping.}
-A second offline pass profiles the deployed model on representative sequences,
+The feedback loop requires two conditions. The policy must supply an input mask
+whose active positions propagate along receptive fields (Eq.~\ref{eq:mask}), so
+that each module's scheduled density follows from that mask rather than from an
+independent per-layer prediction. Successive
+inputs must also be temporally correlated, so that an observation lagged by one
+or more frames still approximates the current density. Under both conditions, a
+second offline pass profiles the deployed model on representative sequences,
 recording per-module scheduled density as a function of the input-activity bucket.
 Because this pass runs the model with its reuse decisions already fixed, the
 densities it records are the scheduled densities compute will actually see,
@@ -566,15 +572,18 @@ observation is dropped without blocking.
 
 At the start of the next frame, completed slots are polled without
 synchronization. The most recent completed observation maps to an input-activity
-bucket, whose offline mapping supplies a density level for each module;
-different layer shapes may receive different levels from the same input-activity bucket. If no
+bucket, whose offline mapping supplies a density level for each module. If no
 new observation has completed, execution proceeds with the current configuration
 rather than waiting.
 
-Algorithm~\ref{alg:adaptive} summarizes the feedback loop for temporal
-workloads (FireFlowNet, YOLOv8). Learned spatial
-gating~\cite{dynconv,dgnet} uses fixed per-layer levels calibrated from the
-gate distributions and does not require runtime feedback. The applied
+Algorithm~\ref{alg:adaptive} summarizes the feedback loop for the event and
+temporal workloads (FireFlowNet, YOLOv8), which satisfy both conditions. Learned
+spatial gating~\cite{dynconv} fails the first regardless of the input: each gated
+block predicts its own mask from its own features, and the network input stays
+fully dense, so the count the loop would read is constant across frames.
+\sysname therefore selects fixed per-layer levels for gated models from the
+calibrated gate distributions, rather than tracking each module's own density,
+which would replace one readback per frame with one per module. The applied
 configuration is lagged by one or more frames relative to the current input.
 This lag does not affect correctness: every candidate in the calibrated set
 satisfies the coverage contract (\S\ref{sec:bg:masked}) independently of the
