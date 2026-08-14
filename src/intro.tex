@@ -94,9 +94,9 @@ coordinate metadata; compatible operators reuse valid
 metadata instead of reconstructing it. Consumption is dense-like: construction emits contiguous per-tile segments ordered by the dense
 tile traversal, giving the compute stage tile-local structure without global sorting.
 Compute then decomposes parallel work adaptively according to device, layer
-shape, and activity via a data-driven configuration that exploits the temporal
-correlation of streaming inputs, sustaining GPU utilization without host
-synchronization.
+shape, and activity, choosing each operator's configuration from offline
+calibration. For temporally correlated inputs, it tracks activity across frames
+and sustains GPU utilization without host synchronization.
 
 This paper makes the following contributions:
 \begin{itemize}

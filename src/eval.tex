@@ -115,15 +115,20 @@ dispersion.
 
 To explain latency, we report the required-work ratio $\rho_{\mathrm{work}}$,
 useful-compute ratio $\eta$, convolution throughput, and the construction
-fraction of operator latency. Because layers differ in cost, an unweighted
+fraction of operator latency. Throughput here isolates the compute kernel;
+construction is reported separately as a fraction of operator latency, so
+readers can reconstruct the inclusive $T$ of
+\S\ref{sec:bg:gap}. We aggregate $\eta$ as total active FLOPs over total
+scheduled FLOPs across all convolution layers, so each layer contributes in
+proportion to the work it actually schedules. Because layers differ in cost, an unweighted
 average of layer activities misstates the work a mask removes, so we weight each
 layer by its dense MAC count,
 \begin{equation}
   \rho_{\mathrm{work}} =
-  \frac{\sum_l \rho^l W^l_{\mathrm{dense}}}
+  \frac{\sum_l \alpha^l W^l_{\mathrm{dense}}}
        {\sum_l W^l_{\mathrm{dense}}},
   \qquad
-  \rho^l=\frac{\|M^l\|_0}{H^l_{out}W^l_{out}},
+  \alpha^l=\frac{\|M^l\|_0}{H^l_{out}W^l_{out}},
   \label{eq:work-ratio}
 \end{equation}
 where $W^l_{\mathrm{dense}}$ is the dense MAC count of layer $l$. Task quality is measured with
@@ -131,7 +136,7 @@ Average Endpoint Error (AEE) for optical flow, detection AP against the fixed
 evaluation references for YOLO, and PCKh for human pose. Accuracy comparisons
 use the same masks and operating point as latency measurements; they evaluate
 the upstream policy, while operator correctness is checked separately against
-dense convolution at every requested output.
+dense convolution at every active output.
 
 \subsection{Full-Model Latency}
 \label{sec:eval:latency}
