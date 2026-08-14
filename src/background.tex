@@ -69,8 +69,9 @@ $\mathcal{N}(p)$ is active,
   \end{cases}
   \label{eq:mask}
 \end{equation}
-$M_{out}$ thus fixes which positions of $\mathbf{y}$ the operator computes, each
-by aggregating $\mathbf{x}$ over $\mathcal{N}(p)$ with the weights $\mathbf{w}$.
+$M_{out}$ thus identifies the output positions that the execution path is required
+to compute, each by aggregating $\mathbf{x}$ over $\mathcal{N}(p)$ with the weights
+$\mathbf{w}$.
 The active ratio $\alpha = \|M_{out}\|_0 / |\mathcal{G}|$, the active fraction of
 the grid, is the intrinsic sparsity the policy exposes.
 
@@ -135,10 +136,11 @@ We measure each path by two quantities. Its useful-compute ratio is the
 fraction of issued position slots (including $\bot$) that carry an active
 output,
 \begin{equation}
-  \eta = \frac{\|M_{out}\|_0}{|\mathcal{C}|} \le 1.
+  \eta = \frac{\|M_{out}\|_0}{|\mathcal{C}|} \le 1,
   \label{eq:useful-ratio}
 \end{equation}
-Its throughput is the rate at which it processes issued FLOPs,
+defined for $|\mathcal{C}|>0$; an operator whose mask is empty issues no slots and
+carries no ratio. Its throughput is the rate at which it processes issued FLOPs,
 \begin{equation}
   T = \frac{2\,|\mathcal{C}|\,k^2 C_{in} C_{out}}{t},
   \label{eq:throughput}
