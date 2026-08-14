@@ -39,7 +39,7 @@ To cut this latency, masked convolution exploits dynamic spatial sparsity: an
 upstream policy emits a spatial mask, and the operator computes only the marked
 positions. The mask comes from sources including event-camera
 increments~\cite{asyncsparse,evconv}, temporal residuals between video
-frames~\cite{cbinfer,skipconv,deltacnn,motiondelta,sparsetem}, learned input-dependent
+frames~\cite{cbinfer,skipconv,deltacnn,motiondelta,sparsetem}, or learned input-dependent
 gates~\cite{sact,sai,dgnet,dynconv}. The event and temporal
 policies mark positions that changed since the previous frame; the learned gates
 mark positions the task treats as relevant. These sources differ in sensing
@@ -52,7 +52,8 @@ feature tensor $\mathbf{x}\in\mathbb{R}^{H_{in}\times W_{in}\times C_{in}}$, a
 weight tensor $\mathbf{w}\in\mathbb{R}^{k\times k\times C_{in}\times C_{out}}$ of
 kernel size $k$, and an output
 $\mathbf{y}\in\mathbb{R}^{H_{out}\times W_{out}\times C_{out}}$ on a coordinate
-grid $\mathcal{G}=\{1,\ldots,H_{out}W_{out}\}$, where each coordinate $p\in\mathcal{G}$ has a
+grid $\mathcal{G}=\{1,\ldots,H_{out}W_{out}\}$, where each coordinate
+$p\in\mathcal{G}$ indexes a spatial position $(h,w)$ and has a
 $k\times k$ receptive field $\mathcal{N}(p)$ in $\mathbf{x}$. An upstream policy
 marks the coordinates to compute in an output mask
 $M_{out}\in\{0,1\}^{H_{out}\times W_{out}}$. Spatial gating predicts $M_{out}$
@@ -73,9 +74,13 @@ by aggregating $\mathbf{x}$ over $\mathcal{N}(p)$ with the weights $\mathbf{w}$.
 The active ratio $\alpha = \|M_{out}\|_0 / |\mathcal{G}|$, the active fraction of
 the grid, is the intrinsic sparsity the policy exposes.
 
-An execution path realizes this mask over a compute set $\mathcal{C}$ bounded by
-$\{p : M_{out}[p]=1\}\subseteq\mathcal{C}\subseteq\mathcal{G}$; for each
-$p\in\mathcal{C}$ it computes
+An execution path issues computation over a sequence of position slots
+$\mathcal{C}$, where each slot is drawn from
+$\mathcal{G}\cup\{\bot\}$; $\bot$ denotes a padding slot that carries no
+output coordinate. The path must satisfy the \emph{coverage contract}: every
+active coordinate is included,
+$\{p : M_{out}[p]=1\}\subseteq\{c\in\mathcal{C}:c\ne\bot\}$.
+For each non-$\bot$ slot $p\in\mathcal{C}$ it computes
 \begin{equation}
   \mathbf{y}[p] = \sum_{i=1}^{k^2}
   \mathbf{w}_i\,\mathbf{x}[\mathcal{N}_i(p)],
@@ -83,10 +88,17 @@ $p\in\mathcal{C}$ it computes
 \end{equation}
 where $\mathcal{N}_i(p)$ is the $i$-th position in $\mathcal{N}(p)$ and
 $\mathbf{w}_i\in\mathbb{R}^{C_{in}\times C_{out}}$ the corresponding weight
-slice. The path must compute every active coordinate to avoid dropping a
-requested output but may also compute inactive ones; dense convolution is the
-extreme $\mathcal{C}=\mathcal{G}$. The policy fixes the accuracy and the
-required work, while $\mathcal{C}$ is determined by the path.
+slice. Positions the path does not compute retain their existing value in
+$\mathbf{y}$: masked convolution updates the output in place, so
+$\mathbf{y}[p]$ for $p\notin\{c\in\mathcal{C}:c\ne\bot\}$ carries over from
+the previous frame (event and temporal policies) or from a one-time dense
+initialization (spatial gating). Coverage is therefore the correctness
+condition: every position the policy marks as changed is recomputed, and every
+other position is already correct by construction.
+Beyond coverage, a path may issue inactive or $\bot$ slots; dense
+convolution is the extreme where
+$\{c\in\mathcal{C}:c\ne\bot\}=\mathcal{G}$. The policy fixes the accuracy
+and the required work, while $\mathcal{C}$ is determined by the path.
 
 \subsection{The Sparsity-to-Latency Gap}
 \label{sec:bg:gap}
@@ -103,7 +115,7 @@ required work, while $\mathcal{C}$ is determined by the path.
   accuracy (right axis; PCKh evaluates the percentage of keypoints localized within half the head size). The
   sparse paths apply the same mask, so their accuracy coincides. (b)~Raw
   throughput $T$ and effective throughput $T_{\mathrm{eff}}$, aggregated across
-  the model's convolution layers. The dense useful-compute ratio implies the
+  the model's convolution layers. The dense useful-compute ratio equals the
   active ratio set by DynConv's spatial gating ($\alpha\approx15.6\%$).}
   \label{fig:gap}
 \end{figure}
@@ -120,7 +132,8 @@ gather-scatter, where one gather feeds several consecutive layers before a singl
 scatter, amortizing that overhead.
 
 We measure each path by two quantities. Its useful-compute ratio is the
-fraction of computed coordinates that are active,
+fraction of issued position slots (including $\bot$) that carry an active
+output,
 \begin{equation}
   \eta = \frac{\|M_{out}\|_0}{|\mathcal{C}|} \le 1.
   \label{eq:useful-ratio}
@@ -130,7 +143,11 @@ Its throughput is the rate at which it processes issued FLOPs,
   T = \frac{2\,|\mathcal{C}|\,k^2 C_{in} C_{out}}{t},
   \label{eq:throughput}
 \end{equation}
-where $t$ is the per-frame latency and the leading factor of 2 counts each
+where $t$ is the per-frame latency, including all auxiliary work the path
+performs to enable computation (mask processing, coordinate generation,
+auxiliary passes). Because $|\mathcal{C}|$ counts only the convolution's
+issued position slots, auxiliary costs reduce~$T$ without changing~$\eta$.
+The leading factor of 2 counts each
 multiply-accumulate as two FLOPs. For the required
 $2\,\|M_{out}\|_0\,k^2 C_{in} C_{out}$ FLOPs, latency is set by the \textbf{effective
 throughput} $T_{\mathrm{eff}} = \eta T$, the rate at which a path computes needed
@@ -145,7 +162,7 @@ and gather-scatter, even with DynConv built to amortize its overhead, runs at
 193.5\,ms, far slower than dense convolution itself. The gap traces to low
 effective throughput on both paths. Tile skipping holds
 throughput near half of dense but at a useful-compute ratio of only 49.1\%;
-gather-scatter lifts the useful-compute ratio to one, yet extraction and data
+gather-scatter lifts the useful-compute ratio near one, yet extraction and data
 movement collapse its throughput to 5.0\% of dense (Fig.~\ref{fig:gap}b). Neither
 path efficiently converts the GPU's capability into effective throughput for masked convolution.
 
@@ -153,7 +170,7 @@ path efficiently converts the GPU's capability into effective throughput for mas
 \subsection{Distinction from Related Sparse Execution}
 \label{sec:bg:related}
 
-Related sparse-execution work differs from WISEConv's masked convolution in
+Related sparse-execution work differs from \sysname's masked convolution in
 representation, operator, sparsity type, or platform. 3D sparse convolution
 (SpConv~v2~\cite{spconv2}, Torch\-Sparse++~\cite{torchsparsepp,torchsparse}, Minuet~\cite{minuet},
 Minkowski\-Engine~\cite{minkowski}, sub\-manifold sparse

@@ -41,7 +41,7 @@ Existing masked-convolution systems preserve this regularity or eliminate wasted
 work, but not both. \emph{Tile skipping}~\cite{sbnet,skipconv,evconv,deltacnn} retains the
 dense pipeline and suppresses a tile only when all its outputs are inactive, so
 a single active position triggers computation for the entire tile.
-\emph{Gather-scatter}~\cite{sai,dgnet,dynconv} instead extracts active
+\emph{Gather-scatter}~\cite{sai,dgnet,dynconv} (as an execution path) instead extracts active
 positions exactly, materializes receptive fields, and scatters the computation results
 to the dense grid, sacrificing regularity and incurring extraction,
 irregular access, and writeback overhead.
@@ -49,7 +49,7 @@ irregular access, and writeback overhead.
 We characterize this trade-off along two axes (\S\ref{sec:bg:gap}):
 \emph{throughput} (operations per second) and
 \emph{useful-compute ratio} (the fraction of issued operations that produce
-needed outputs). In our sparsest workload~\cite{dynconv} (\S\ref{sec:eval:latency}), the masks render 84.4\%
+needed outputs). In our sparsest workload (the DynConv-gated model, \S\ref{sec:eval:latency}), the masks render 84.4\%
 of the convolution work unnecessary, yet neither approach turns this into
 proportional latency reduction. Tile skipping~\cite{deltacnn}
 suffers a useful-compute ratio of only 49.1\% and cuts latency by at most 40.6\%.
@@ -62,21 +62,24 @@ writes from output coordinates, so replacing its contiguous coordinate block
 with an active-output worklist changes which outputs are computed without
 changing the per-position reduction, the dense tensor layout, or the weight
 layout. With this substitution, the operator runs as a dense tiled pipeline,
-pinning the useful-compute ratio near one without materializing input patches.
+raising the useful-compute ratio toward one without materializing input patches.
 
 Translating this into latency reduction requires handling two
 challenges.
 % : the worklist must be cheap to build and fast to consume.
 First,
-\emph{worklist-construction overhead}: construction scans the mask, so its cost scales with the layer's spatial grid, not
+\emph{construction efficiency}: construction scans the mask, so its cost scales with the layer's spatial grid, not
 with the active count or channel widths, while the compute it enables shrinks with
 both. Construction's share of latency therefore grows as activity falls and
-channels thin, and accumulates across operators when every layer rebuilds.
+channels thin (while enough positions remain active to keep the pipeline full),
+and accumulates across operators when every layer rebuilds.
 Second, \emph{end-to-end worklist efficiency}: the worklist's order and length both
 affect its consumption throughput.
 An unordered worklist scatters the input neighborhoods that adjacent work
 touches, lowering locality; its length falls below the dense grid and shifts with
-layer and input, so no fixed tiling keeps the GPU full. Both effects sharpen
+layer and input, so no fixed tiling keeps the GPU full, and because the length
+is device-resident, any host-side decision that depends on it costs a
+synchronization on the per-frame path. Both effects sharpen
 as activity falls.
 
 We present \sysname (\textbf{W}orklist-dr\textbf{I}ven ma\textbf{S}k\textbf{E}d
@@ -89,10 +92,10 @@ Construction is cheap and infrequent: a single mask-space pass fuses
 output-mask propagation with per-tile compaction, operating on only mask and
 coordinate metadata; compatible operators reuse valid
 metadata instead of reconstructing it. Consumption is dense-like: construction emits contiguous per-tile segments ordered by the dense
-tile traversal, giving compute tile-local structure without global sorting.
+tile traversal, giving the compute stage tile-local structure without global sorting.
 Compute then decomposes parallel work adaptively according to device, layer
 shape, and activity via a data-driven configuration that exploits the temporal
-correlation of streaming inputs, keeping the GPU fully utilized without host
+correlation of streaming inputs, sustaining GPU utilization without host
 synchronization.
 
 This paper makes the following contributions:
