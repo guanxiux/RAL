@@ -1,0 +1,152 @@
+% ---------------------------------------------------------------------------
+% 中文逐句主旨（与下方英文正文一一对应）
+%
+% Setup paragraph
+% 1. Dense tiled convolution 本来就由 output-coordinate stream 驱动：output
+%    coordinates 决定 input reads 与 output writes，而每个 position 内仍执行规则的
+%    channel/kernel reduction。
+% 2. WISEConv 利用这一性质，将 dense coordinate sequence 替换为 requested output
+%    positions 的 worklist，从而把 position-level selectivity 接入现有的 tiled
+%    convolution pipeline。
+% 3. Worklist 可以从 schedule 中排除大量不需要的 output positions，并由此提高
+%    useful-compute ratio，但减少 scheduled computation 本身并不保证 latency reduction。
+% 4. 要将这种 selectivity 真正转化为 latency reduction，worklist 必须以足够低的成本
+%    构造，并在 high useful-compute ratio 和 high throughput 下被消费。
+% 5. WISEConv 因而围绕这些相互依赖的 performance requirements，共同设计
+%    construction stage 与 compute stage，Figure overview 对此进行总结。
+%
+% Construction-stage paragraphs
+% 1. 为避免 worklist construction cost 抵消 selective compute 节省的时间，WISEConv
+%    让 construction 完全运行在 mask and coordinate metadata space，只读取 mask 并
+%    生成 mask/coordinates，不访问 feature 或 weight tensors。
+% 2. WISEConv 在一次 mask-space pass 中融合 Background Eq.~\ref{eq:mask} 的
+%    output-mask propagation 与 tile-local compaction，同时生成 M_out 和 worklist W；
+%    每个 spatial tile 的 requested coordinates 在 W 中形成一个按局部 dense traversal
+%    order 排列的 segment，从而不经 global ordering 而保留 spatial grouping。
+% 3. WISEConv 将 W 写入按静态 output-grid upper bound
+%    |G|=H_out W_out 个 coordinates 预分配的 buffer，并由 device-resident counter 记录
+%    worklist length n_W=|W|；construction 因而不依赖 host-visible active count 或 runtime
+%    allocation。
+% 4. 即使这样的 metadata-only pass 仍必须扫描当前 layer 的 mask grid，因此
+%    compatible operators 继续传播并复用已有的合法 mask/worklist metadata，将一次
+%    construction 的成本 amortize 到整个 compatible operator sequence。
+% 5. Single-pass mask-space construction 降低每次 worklist construction 的成本，
+%    cross-operator reuse 减少 construction 的发生次数，两者共同解决 Construction
+%    Efficiency and Amortization。
+%
+% Compute-stage paragraphs
+% 1. Worklist length 随 layer 和 input 变化，并且当前 n_W 只在 device 上可见；同步
+%    获取这一 execution bound 会阻塞 per-frame path，但 workload decomposition 又必须
+%    适应它，因为 padded work 和 exposed parallelism 分别影响 useful-compute ratio 与
+%    GPU throughput。
+% 2. 为在 host 不知道 execution bound 时完成当前工作，WISEConv 只启动足以填满 GPU
+%    concurrent residency 的一组 persistent thread blocks，并让这些 blocks 根据
+%    device-resident n_W 以 grid-stride 方式消费 worklist，从而将 launch footprint 限制
+%    在 resident capacity，而不随完整 dense output grid 扩张。
+% 3. 为在不查询精确 n_W 的情况下选择合适的 workload decomposition，WISEConv 在
+%    representative temporal traces 上建立 input-activity level 到兼顾 throughput 与
+%    padding 的 configuration table，并在 runtime 用滞后一帧或更多帧、已经完成传回的
+%    最新 input-activity observation 索引该表；相邻 inputs 的 temporal correlation 使
+%    这个 lagged signal 仍有预测力，而 completed-only polling 避免 runtime 为它等待。
+% 4. 因而，device-resident count 决定当前执行多少工作，data-driven signal 决定这些
+%    工作如何分解；两者结合，使 WISEConv 能够以 synchronization-free 的 per-frame
+%    path 消费 variable-length worklists，同时维持 high useful-compute ratio 和 high
+%    GPU throughput。
+%
+% Synthesis paragraph
+% 1. Low-cost construction 与 efficient consumption 缺一不可：过高的 worklist
+%    construction cost，或较低的 useful-compute ratio 与 compute throughput，都可能抵消
+%    减少 scheduled computation 带来的收益。
+% 2. 通过共同控制 worklist construction cost、useful-compute ratio 与 consumption
+%    throughput，WISEConv 将 upstream spatial sparsity 转化为 end-to-end latency
+%    reduction。
+% ---------------------------------------------------------------------------
+
+\section{\sysname Overview}
+\label{sec:overview}
+
+Dense tiled convolution already consumes a stream of output coordinates: each
+coordinate determines the receptive-field reads and output write, while its
+reduction over channels and kernel offsets remains regular. \sysname
+exploits this interface by replacing the dense coordinate sequence with a
+worklist of requested output positions, thereby introducing position-level
+selectivity into the tiled pipeline. Removing unrequested positions from the
+schedule raises the useful-compute ratio, but issuing fewer operations alone
+does not guarantee lower latency. To translate selectivity into latency
+reduction, the worklist must be inexpensive to construct and must be consumed with
+both a high useful-compute ratio and high throughput. \sysname therefore
+co-designs a construction stage and a compute stage around these interdependent
+requirements, as Figure~\ref{fig:overview} summarizes.
+
+% TODO: Replace this placeholder with the final two-stage overview figure.
+\begin{figure*}[t]
+  \centering
+  \fbox{\parbox{0.9\textwidth}{\centering\vspace{2.5cm}%
+    \textbf{[TODO]} \sysname overview. Left: the mask-space construction stage
+    propagates the output mask, emits tile-local worklist segments into a
+    preallocated buffer, and records the worklist length on the device;
+    compatible operators reuse this metadata. Right: an occupancy-sized
+    persistent grid consumes the device-bounded worklist, while the most recent
+    completed input-activity observation from an earlier frame selects a
+    high-throughput, low-padding workload decomposition.
+    \vspace{2.5cm}}}
+  \caption{The \sysname two-stage pipeline. Construction operates only on mask
+  and coordinate metadata, emits tile-locally ordered worklist segments, and
+  reuses the resulting metadata across compatible operators. Compute bounds persistent
+  work on the device and uses a completed, temporally lagged input-activity
+  observation to adapt the workload decomposition without host synchronization.}
+  \Description{Placeholder for the \sysname overview figure. The construction
+  stage emits and reuses mask and worklist metadata. The compute stage consumes
+  a device-bounded worklist with persistent blocks and selects its workload
+  decomposition from a completed input-activity observation from an earlier
+  frame.}
+  \label{fig:overview}
+\end{figure*}
+
+\paragraph{Construction stage.}
+To prevent worklist construction from erasing the savings of selective compute,
+\sysname confines construction to mask and coordinate metadata, never reading
+feature or weight tensors. In one mask-space pass, it fuses the output-mask
+propagation in Eq.~\ref{eq:mask} with tile-local compaction, producing $M_{out}$
+and a worklist $\mathcal{W}$; the requested coordinates from each spatial tile
+form a segment in local dense-traversal order, preserving spatial grouping
+without global ordering.
+\sysname stores $\mathcal{W}$ in a buffer preallocated for
+$|\mathcal{G}|=H_{out}W_{out}$ coordinates, the static upper bound on
+$|\mathcal{W}|$. A device-resident counter records
+$n_{\mathcal{W}}=|\mathcal{W}|$, so the host neither reads the active count nor
+allocates storage at runtime.
+
+Even this metadata-only pass must scan the layer's mask grid. \sysname therefore
+propagates and reuses the resulting mask and worklist metadata across compatible
+operators instead of reconstructing it, amortizing one construction across the
+compatible operator sequence. The fused pass lowers the cost of each
+construction, while cross-operator reuse reduces how often it occurs; together,
+they address Construction Efficiency and Amortization.
+
+\paragraph{Compute stage.}
+The worklist length varies across layers and inputs and remains device-resident;
+synchronizing its current value to the host would stall the per-frame path, yet
+the workload decomposition must adapt because its padded work and exposed
+parallelism govern useful-compute ratio and GPU throughput. To execute without a
+host-visible bound, \sysname launches only enough persistent thread blocks to
+fill the GPU's concurrent block residency and lets them consume $\mathcal{W}$
+through a grid-stride loop bounded by device-resident $n_{\mathcal{W}}$, so the
+launch footprint tracks resident capacity rather than the full dense output
+grid.
+
+To choose a decomposition without querying the exact $n_{\mathcal{W}}$,
+\sysname builds from representative temporal traces a table
+that maps input-activity levels to configurations that sustain throughput while
+limiting padding, then indexes it with the most recent completed observation
+from one or more frames earlier; temporal correlation keeps this lagged signal
+informative, while completed-only polling prevents selection from blocking. The
+device count thus bounds the current work, while the data-driven signal chooses
+its decomposition; together, they sustain useful-compute ratio and GPU
+throughput as the worklist length varies without synchronizing the per-frame
+path.
+
+Neither stage suffices alone: excessive construction cost, a low useful-compute
+ratio, or low consumption throughput can each erase the benefit of issuing less
+convolution work. By controlling all three jointly, \sysname converts upstream
+spatial sparsity into end-to-end latency reduction.

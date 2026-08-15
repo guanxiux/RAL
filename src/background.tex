@@ -139,8 +139,9 @@ output,
   \eta = \frac{\|M_{out}\|_0}{|\mathcal{C}|} \le 1,
   \label{eq:useful-ratio}
 \end{equation}
-defined for $|\mathcal{C}|>0$; an operator whose mask is empty issues no slots and
-carries no ratio. Its throughput is the rate at which it processes issued FLOPs,
+defined for $|\mathcal{C}|>0$. A path that issues no slots carries no ratio. An
+empty mask has $\eta=0$ whenever the path nevertheless issues slots. Throughput
+is the rate at which a path processes issued FLOPs,
 \begin{equation}
   T = \frac{2\,|\mathcal{C}|\,k^2 C_{in} C_{out}}{t},
   \label{eq:throughput}
@@ -149,9 +150,9 @@ where $t$ is the per-frame latency, including all auxiliary work the path
 performs to enable computation (mask processing, coordinate generation,
 auxiliary passes). Because $|\mathcal{C}|$ counts only the convolution's
 issued position slots, auxiliary costs reduce~$T$ without changing~$\eta$.
-The leading factor of 2 counts each
-multiply-accumulate as two FLOPs. For the required
-$2\,\|M_{out}\|_0\,k^2 C_{in} C_{out}$ FLOPs, latency is set by the \textbf{effective
+The leading factor of 2 counts each multiply-accumulate as two FLOPs. When the
+required set is nonempty, latency for its
+$2\,\|M_{out}\|_0\,k^2 C_{in} C_{out}$ FLOPs is set by the \textbf{effective
 throughput} $T_{\mathrm{eff}} = \eta T$, the rate at which a path computes needed
 outputs.
 
