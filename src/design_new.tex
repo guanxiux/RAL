@@ -31,30 +31,24 @@ $|\mathcal{W}|$, and initializes a device-resident counter for
 $n_{\mathcal{W}}$. The pass then partitions the output grid into
 $B_\tau\times B_\tau$ construction
 tiles $\tau$. Within each tile, it applies the activity test of
-Eq.~\ref{eq:mask}, writes the corresponding entries of $M_{out}$, and obtains a
-local active count $n_\tau$. The tile reserves
-$[\mathrm{base},\mathrm{base}+n_\tau)$ from the counter and fills that interval
-with its active coordinates in local dense-traversal order
-(Algorithm~\ref{alg:construct}). After all tiles complete, the reserved
+Eq.~\ref{eq:mask}, writes the corresponding entries of $M_{out}$, and compacts
+the active coordinates into a local sequence $\mathcal{P}_\tau$ in dense-traversal
+order. When a learned gate supplies $M_{out}$ directly~\cite{dynconv,dgnet}, the
+pass skips the activity test and compacts the supplied mask. With
+$n_\tau=|\mathcal{P}_\tau|$, the tile reserves
+$[\mathrm{base},\mathrm{base}+n_\tau)$ from the counter and copies
+$\mathcal{P}_\tau$ into that interval (Algorithm~\ref{alg:construct}). After all
+tiles complete, the reserved
 intervals collectively store $\mathcal{W}$, and the counter records
 $n_{\mathcal{W}}$. The layer shape statically determines both the buffer
 capacity and the construction launch geometry, while only the device observes
 the data-dependent worklist length. Construction therefore needs neither
 runtime allocation nor a host-visible active count.
 
-The resulting device-resident metadata separates semantic demand from the
-execution schedule: $M_{out}$ identifies the required positions, whereas
-$\mathcal{W}$ orders the coordinates scheduled by the worklist path. Reuse may
-make the scheduled-coordinate set a strict superset of the required set, but
-the coverage contract of \S\ref{sec:bg:masked} requires it to include every
-position marked by $M_{out}$.
-
-This separation exposes where non-useful slots enter the worklist path.
-Construction and reuse determine how tightly $\mathcal{W}$ covers the required
-set, while compute may pad $\mathcal{W}$ when mapping it into $\mathcal{C}$.
-For a worklist candidate with
-$n_{\mathcal{W}}>0$, inserting the intermediate worklist length into
-Eq.~\ref{eq:useful-ratio} gives
+To relate the worklist to the useful-compute ratio of
+Eq.~\ref{eq:useful-ratio}, we insert its length $n_{\mathcal{W}}$ between the
+required-position count and the issued-slot count. For
+$n_{\mathcal{W}}>0$,
 \begin{equation}
   \eta
   = \underbrace{\frac{\|M_{out}\|_0}{n_{\mathcal{W}}}}_{\eta_{\mathrm{construct}}}
@@ -62,19 +56,18 @@ Eq.~\ref{eq:useful-ratio} gives
   \underbrace{\frac{n_{\mathcal{W}}}{|\mathcal{C}|}}_{\eta_{\mathrm{compute}}} .
   \label{eq:eta-decomp}
 \end{equation}
-The construction-side factor $\eta_{\mathrm{construct}}$ is the fraction of
-$\mathcal{W}$ required by $M_{out}$, while the compute-side factor
-$\eta_{\mathrm{compute}}$ is the fraction of $\mathcal{C}$ occupied by worklist
-coordinates. These factors decompose $\eta$ only; time spent constructing and
-consuming the worklist remains reflected in throughput~$T$.
+The first factor, $\eta_{\mathrm{construct}}$, compares required positions with
+worklist entries; the second, $\eta_{\mathrm{compute}}$, compares worklist
+entries with issued slots. We analyze $\eta_{\mathrm{construct}}$ here and
+defer $\eta_{\mathrm{compute}}$ until the compute organization is defined in
+\S\ref{sec:design:compute}. The factorization decomposes $\eta$ only; all stage
+costs remain reflected in throughput~$T$.
 
 Fresh construction introduces no construction-side expansion. Its tiles
 partition the output grid, and their disjoint reservations place each active
-coordinate exactly once in $\mathcal{W}$. Consequently,
-\begin{equation*}
-  n_{\mathcal{W}} = |\mathcal{W}| = \|M_{out}\|_0,
-  \qquad \eta_{\mathrm{construct}} = 1 \quad (n_{\mathcal{W}}>0) .
-\end{equation*}
+coordinate exactly once in $\mathcal{W}$. Thus
+$n_{\mathcal{W}}=\|M_{out}\|_0$ and $\eta_{\mathrm{construct}}=1$ for a
+nonempty worklist.
 Because coverage constrains membership rather than order, the order in which
 tiles reserve their intervals does not affect correctness. The within-interval
 traversal order is retained for locality.
@@ -92,154 +85,122 @@ traversal order is retained for locality.
     \STATE $\mathrm{active}(p) \leftarrow \exists\, r \in \mathcal{N}(p): M_{in}[r] = 1$
     \STATE $M_{out}[p] \leftarrow \mathrm{active}(p)$
   \ENDFOR
-  \STATE $n_\tau \leftarrow |\{p \in \tau : \mathrm{active}(p)\}|$
-  \STATE $\mathrm{base} \leftarrow \textsc{AtomicReserve}(n_{\mathcal{W}},\; n_\tau)$
-  \STATE Write active $p \in \tau$ to the reserved interval in traversal order
+  \STATE $\mathcal{P}_\tau \leftarrow \textsc{Compact}(\tau,\,M_{out})$
+  \STATE $n_\tau \leftarrow |\mathcal{P}_\tau|$
+  \STATE \COMMENT{Atomically reserve $n_\tau$ worklist entries.}
+  \STATE $\mathrm{base} \leftarrow n_{\mathcal{W}}$
+  \STATE $n_{\mathcal{W}} \leftarrow n_{\mathcal{W}} + n_\tau$
+  \FOR{each $0\le j<n_\tau$ \textbf{in parallel}}
+    \STATE $\mathcal{W}[\mathrm{base}+j] \leftarrow \mathcal{P}_\tau[j]$
+  \ENDFOR
 \ENDFOR
 \end{algorithmic}
 \end{algorithm}
 
-The retained within-tile order is the spatial-structure contract passed to
-compute. Each segment follows dense traversal inside one bounded construction
-tile, keeping its coordinates' receptive fields nearby, while consecutive
-segments need not be spatially adjacent. Compute therefore inherits bounded
-spatial grouping within every segment it traverses without requiring a global
-order over $\mathcal{W}$.
-
-Metadata-only construction reduces each pass to mask and coordinate work, but
-that work scales asymmetrically with the compute it enables. Receptive-field
-propagation scans all $H_{out}W_{out}$ output positions and performs
-$O(k^2)$ mask work per position, without scaling down with channel widths or
-the number of scheduled positions.\footnote{When
-an upstream policy supplies $M_{out}$ directly, as in learned spatial
-gating~\cite{dynconv,dgnet}, construction compacts it without the $k^2$
-receptive-field test.} The required work of a fresh ungrouped convolution, by
-contrast, scales as
-$O(\alpha H_{out}W_{out}k^2C_{in}C_{out})$. Construction consequently occupies
-a larger share of operator latency as activity falls or channels become
-thinner.
-Repeating the same grid scan at every same-grid operator would compound this
-channel-independent cost, which makes cross-operator amortization the next
-design requirement.
+\sysname deliberately forgoes a global worklist order, allowing construction
+tiles to reserve contiguous segments independently without device-wide ordering
+coordination. Within each segment, active coordinates follow the tile's dense
+traversal, giving compute a spatially grouped coordinate run but offering no
+locality guarantee across segment boundaries.
+As shown in \S\ref{sec:eval:efficiency}, tile-local ordering achieves
+compute-stage throughput comparable to that under global ordering; avoiding the
+additional ordering pass is therefore the better end-to-end trade-off.
 
 \subsubsection{Cross-Operator Worklist Reuse}
 \label{sec:design:reuse}
 
-Once a spatial convolution has built a worklist, the same-grid operators that
-follow often add no new coordinate information. Convolution blocks commonly
-place $1\times1$ convolutions, activations, and inference-time normalization
-between operators that change the receptive field. Such operators either
-preserve the active set or narrow it, so reconstructing their worklists would
-only reproduce the incoming schedule or tighten an already valid superset.
-\sysname avoids repeating the grid scan by making a compatible operator
-sequence, rather than an individual operator, the amortization unit of
-construction.
+Construction has a channel-independent grid-scan cost. Each pass examines all
+$H_{out}W_{out}$ positions and, when deriving $M_{out}$ from $M_{in}$, performs
+$O(k^2)$ mask work per position, whereas required convolution work scales as
+$O(\alpha H_{out}W_{out}k^2C_{in}C_{out})$. Repeating this scan across
+consecutive same-grid layers that introduce no new required positions is
+therefore redundant. \sysname instead reuses one constructed worklist across
+each compatible layer sequence, amortizing its construction cost over the
+sequence.
 
-Separating semantic demand from the reusable schedule makes inheritance safe.
-Alongside the feature tensor, \sysname propagates $M_{out}$, $\mathcal{W}$, and
-device-resident $n_{\mathcal{W}}$.
-For operator $i$, let $\mathcal{G}_i$ be its output grid, write the worklist it
-consumes as $\mathcal{W}^i$ with length
-$n^i_{\mathcal{W}}=|\mathcal{W}^i|$, and define its active and scheduled sets as
-\begin{align*}
-  \mathcal{A}^i
-  &= \{p \in \mathcal{G}_i \mid M^i_{out}[p]=1\}, \\
-  \mathcal{S}^i_{\mathcal{W}}
-  &= \{\mathcal{W}^i[m] \mid 0 \le m < n^i_{\mathcal{W}}\}.
-\end{align*}
-Fresh construction emits each coordinate at most once, and reuse leaves the
-worklist unchanged, so $|\mathcal{S}^i_{\mathcal{W}}|=n^i_{\mathcal{W}}$. The
-inherited schedule is valid for operator $i$ whenever
-\begin{equation*}
-  \mathcal{A}^i \subseteq \mathcal{S}^i_{\mathcal{W}}
-  \subseteq \mathcal{G}_i .
-\end{equation*}
-The first inclusion guarantees coverage, while the second keeps every
-coordinate in the downstream output space. Under this condition, operator $i$
-inherits the worklist and skips construction. Equality in the first inclusion
-gives tight reuse; strict inclusion gives superset reuse.
+For layer $l$, let $\mathcal{G}^l$ denote its output grid, $M^l_{out}$ its
+output mask, $\mathcal{W}^l$ its worklist, and $n^l_{\mathcal{W}}$ its
+device-resident length. \sysname propagates the mask and worklist metadata
+alongside the feature tensor. From layer semantics, \sysname statically infers
+that consecutive layers are reuse-compatible when
+$\mathcal{G}^{l+1}=\mathcal{G}^l$ and
+\begin{equation}
+  \{p\in\mathcal{G}^{l+1} \mid M^{l+1}_{out}[p]=1\}
+  \subseteq
+  \{p\in\mathcal{G}^l \mid M^l_{out}[p]=1\} .
+  \label{eq:reuse-condition}
+\end{equation}
+Because $\mathcal{W}^l$ already satisfies coverage for $M^l_{out}$,
+Eq.~\ref{eq:reuse-condition} guarantees coverage for $M^{l+1}_{out}$ as well.
+\sysname therefore sets $\mathcal{W}^{l+1}=\mathcal{W}^l$ and
+$n^{l+1}_{\mathcal{W}}=n^l_{\mathcal{W}}$ without reconstruction. \sysname
+applies the same condition recursively to subsequent layers, forwarding the
+original $\mathcal{W}^l$ and $n^l_{\mathcal{W}}$ through the entire compatible
+sequence.
 
-An active-set-preserving operator leaves both $\mathcal{A}^i$ and the inherited
-worklist unchanged. Same-grid $1\times1$ convolutions, activations that forward
-the mask, and inference-time normalization fall into this case. They preserve
-$\eta^i_{\mathrm{construct}}=\eta^{i-1}_{\mathrm{construct}}$ and retain tight
-reuse whenever the incoming schedule is tight. Reuse therefore removes a
-construction pass without expanding the schedule.
+Equality in Eq.~\ref{eq:reuse-condition} covers same-grid $1\times1$
+convolutions, mask-preserving activations, and inference-time normalization and
+leaves $\eta_{\mathrm{construct}}$ unchanged. Strict inclusion results from
+mask-narrowing operators in the upstream policy, such as the activation-fused
+update truncation that DeltaCNN uses to increase downstream
+sparsity~\cite{deltacnn}. \sysname therefore retains $\mathcal{W}^{l+1}$ as a
+valid superset, trading the resulting lower $\eta_{\mathrm{construct}}$ for one
+fewer construction pass without violating coverage.
 
-The same coverage relation admits reuse after a pointwise operator narrows the
-active set. \sysname updates $M^i_{out}$ but retains the incoming worklist, so
-$\mathcal{A}^i\subseteq\mathcal{S}^i_{\mathcal{W}}$ still holds and the
-schedule may become a strict superset. For $n^i_{\mathcal{W}}>0$, the resulting
-construction-side factor is
-$\eta^i_{\mathrm{construct}}=|\mathcal{A}^i|/n^i_{\mathcal{W}}$. Reuse trades
-the additional scheduled work for one fewer $O(H_{out}W_{out})$ construction
-pass. Thus preserving operators leave
-$\eta_{\mathrm{construct}}$ unchanged, whereas narrowing operators can only
-decrease it within a compatible sequence.
-
-A lower $\eta_{\mathrm{construct}}$ does not itself trigger reconstruction.
-\sysname rebuilds at statically identified semantic boundaries, where a change
-in the output grid may invalidate inherited coordinates or receptive-field
-expansion may introduce required positions outside the inherited schedule. The
-pass of \S\ref{sec:design:construct:compact} then restores
-$\mathcal{A}^i=\mathcal{S}^i_{\mathcal{W}}$ and starts a new compatible
-sequence. Within a compatible sequence, \sysname retains the inherited
-schedule without observing per-operator activity; deciding dynamically whether
-a tighter schedule would repay another grid scan would reintroduce the cost
-that reuse removes.
-
-The number of construction passes therefore follows semantic rebuild points
-rather than raw operator count. Each rebuilt worklist carries its tile-local
-structure through the following compatible sequence without another
-construction scan. Because its device-resident length still varies across
-sequences and frames, compute must execute a dynamic problem size.
+A change in the output grid violates the geometry constraint, while
+receptive-field expansion may violate Eq.~\ref{eq:reuse-condition} by
+introducing positions outside the upstream mask; either case invokes the
+construction pass of \S\ref{sec:design:construct:compact} to emit a new tight
+worklist. A lower $\eta_{\mathrm{construct}}$ alone does not trigger
+reconstruction because tightening a valid superset would pay another grid scan.
+Reuse avoids repeated construction inside each compatible sequence, but common
+receptive-field-expanding layers such as $3\times3$ convolutions create rebuild
+points throughout the network. The resulting device-resident worklist lengths
+vary across layers and frames, so compute still faces a dynamic problem size.
 
 %% ----------------------------------------------------------------
 \subsection{Variable-Length Worklist Execution}
 \label{sec:design:compute}
 
-For the worklist path, construction and reuse fix
-$\eta_{\mathrm{construct}}$ before compute begins. The remaining factor arises
-as compute groups $\mathcal{W}$ into
-position tiles of $B_M$ coordinates, with $\bot$ slots appearing only in the
-final tile. For $n_{\mathcal{W}}>0$,
+Construction and reuse fix $\eta_{\mathrm{construct}}$ before compute begins;
+the implicit-GEMM decomposition controls the remaining
+$\eta_{\mathrm{compute}}$ and also affects throughput~$T$. For a standard
+ungrouped batch-1 convolution, dense implicit GEMM uses
+$M=H_{out}W_{out}$ output-position rows, $N=C_{out}$ output-channel columns, and
+reduction depth $K=k^2C_{in}$. It decomposes the output into
+$B_M\times B_N$ tiles and traverses each tile's reduction in $B_K$-wide steps.
+\sysname preserves the $N$ and $K$ dimensions and this tiled pipeline, but
+changes the $M$-dimension coordinate source: instead of enumerating the dense
+output grid, it reads the $n_{\mathcal{W}}$ coordinates in $\mathcal{W}$.
+Compute therefore groups $\mathcal{W}$ into $B_M$-coordinate tiles, padding
+only the final tile. For $n_{\mathcal{W}}>0$, this issues
+$|\mathcal{C}|=B_M\lceil n_{\mathcal{W}}/B_M\rceil$ position slots, giving
 \begin{equation}
-  |\mathcal{C}| = B_M\left\lceil\frac{n_{\mathcal{W}}}{B_M}\right\rceil,
-  \qquad
   \eta_{\mathrm{compute}}
   = \frac{n_{\mathcal{W}}}
          {B_M\left\lceil n_{\mathcal{W}}/B_M\right\rceil} .
   \label{eq:eta-compute}
 \end{equation}
 The final tile contains at most $B_M-1$ padding slots, making this overhead most
-pronounced for a short worklist. The same choice of $B_M$ also changes data
-reuse, block efficiency, and exposed parallelism, so maximizing
-$\eta_{\mathrm{compute}}$ need not maximize throughput~$T$. The compute design
-must navigate this coupling while leaving the current $n_{\mathcal{W}}$ on the
-device.
+pronounced for a short worklist. The same $B_M$ also controls data reuse, block
+efficiency, and exposed parallelism, so maximizing $\eta_{\mathrm{compute}}$
+need not maximize throughput~$T$.
+
+For dense convolution, $(M,N,K)$ follow from the layer shape, allowing the
+backend to select $(B_M,B_N,B_K)$ before execution. In the worklist path,
+the $M$-dimension extent is $n_{\mathcal{W}}$, which varies across invocations
+and remains unknown to the host. This creates two problems: executing the
+current worklist without exposing its length to the host, and selecting a
+decomposition suited to that length.
+\S\ref{sec:design:compute:persistent} addresses the former with persistent
+execution, while \S\ref{sec:design:adaptive} addresses the latter through
+trace-calibrated selection.
 
 \subsubsection{Persistent Worklist-Driven Convolution}
 \label{sec:design:compute:persistent}
 
-The worklist turns one fixed dimension of dense implicit GEMM into a
-device-resident runtime quantity. For a standard ungrouped batch-1 convolution,
-the dense mapping places output positions along rows $M$, output channels along
-columns $N$, and the channel and kernel reduction along depth $K$:
-\begin{equation*}
-  M = H_{out}W_{out}, \qquad N = C_{out}, \qquad K = k^2C_{in} .
-\end{equation*}
-Each tile computes $B_M\times B_N$ output elements and traverses $K$ in
-$B_K$-wide steps. Because the dense problem dimensions $(M,N,K)$ follow
-entirely from the layer shape, the backend can select $(B_M,B_N,B_K)$ before
-execution. \sysname preserves $N=C_{out}$ and $K=k^2C_{in}$ but replaces $M$ with
-$n_{\mathcal{W}}$, which changes across invocations and remains unknown to the
-host. This creates two distinct problems: executing the current row extent
-without first exposing it to the host, and selecting a decomposition suited to
-that extent. We solve the execution problem here and defer selection to
-\S\ref{sec:design:adaptive}.
-
-\sysname changes only the source of each row coordinate. The dense path maps
-row $m$ to the $m$-th coordinate $p_m$ of the contiguous traversal
+Concretely, the dense path maps row $m$ to the $m$-th coordinate $p_m$ of the
+contiguous traversal
 ($0\le m<|\mathcal{G}|$); the worklist path instead reads $\mathcal{W}[m]$
 ($0\le m<n_{\mathcal{W}}$). Each block loads a $B_M$-slot coordinate group,
 decodes the receptive-field bases of its non-$\bot$ entries, and computes their
@@ -249,9 +210,9 @@ It therefore reads directly from the dense feature tensor without materializing
 receptive-field patches. Processing $\mathcal{W}$ in contiguous ranges carries
 construction's within-segment grouping into these gathers.
 
-Coordinate substitution defines individual rows, but their runtime count
-remains unknown to the host. \sysname executes this device-resident row extent
-with an occupancy-sized persistent grid. At initialization, it uses each kernel
+This substitution defines the scheduled coordinates, but their number remains
+unknown to the host. \sysname executes the device-resident worklist with an
+occupancy-sized persistent grid. At initialization, it uses each kernel
 configuration's concurrent residency to fix the corresponding block count.
 Selecting a configuration therefore selects a grid bounded by device capacity
 rather than $n_{\mathcal{W}}$. Once launched, the blocks read the current
@@ -313,10 +274,11 @@ it efficiently remains a separate problem.
 
 Persistent execution handles every worklist length, but the fastest candidate
 remains length-dependent because the decomposition jointly controls
-$\eta_{\mathrm{compute}}$ and throughput~$T$. For operator $i$, its active
-ratio and normalized worklist length are
+$\eta_{\mathrm{compute}}$ and throughput~$T$. For operator $i$ with output
+grid $\mathcal{G}_i$ and worklist length $n^i_{\mathcal{W}}$, its active ratio
+and normalized worklist length are
 \begin{equation}
-  \alpha_i = \frac{|\mathcal{A}^i|}{|\mathcal{G}_i|}, \qquad
+  \alpha_i = \frac{\|M^i_{out}\|_0}{|\mathcal{G}_i|}, \qquad
   \lambda_i = \frac{n^i_{\mathcal{W}}}{|\mathcal{G}_i|} .
   \label{eq:lambda}
 \end{equation}
