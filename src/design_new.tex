@@ -232,7 +232,7 @@ many blocks, independently of $n_{\mathcal{W}}$.
     \STATE $(b_m,b_n) \leftarrow \mathrm{Unflatten}(t_i)$
     \STATE $\mathcal{P} \leftarrow
            \mathcal{W}[b_mB_M:\min((b_m+1)B_M,n_{\mathcal{W}})]$
-    \STATE Pad $\mathcal{P}$ to $B_M$ with masked $\bot$ coordinates
+    \STATE Pad $\mathcal{P}$ to $B_M$ entries with $\bot$
     \STATE $c_1 \leftarrow b_nB_N,\quad
            c_2 \leftarrow (b_n+1)B_N$
     \STATE $\mathbf{Y} \leftarrow \mathbf{0}_{B_M\times B_N}$
@@ -241,12 +241,14 @@ many blocks, independently of $n_{\mathcal{W}}$.
         \STATE $r_1 \leftarrow rB_K,\quad
                r_2 \leftarrow (r+1)B_K$
         \STATE $\mathbf{X} \leftarrow
-               [\,\mathbf{x}[\mathcal{N}_j(p),r_1:r_2]\,]_{p\in\mathcal{P}}$
+               [\,\mathbf{x}[\mathcal{N}_j(p),r_1:r_2]\,]_{p\in\mathcal{P}}$,
+               zero-padding $\bot$
         \STATE $\mathbf{W} \leftarrow \mathbf{w}_j[r_1:r_2,c_1:c_2]$
         \STATE $\mathbf{Y} \leftarrow \mathbf{Y}+\mathbf{X}\cdot\mathbf{W}$
       \ENDFOR
     \ENDFOR
-    \STATE $\mathbf{y}[\mathcal{P},c_1:c_2] \leftarrow \mathbf{Y}$
+    \STATE $\mathbf{y}[\mathcal{P},c_1:c_2] \leftarrow \mathbf{Y}$,
+           skipping $\bot$
     \STATE $t_i \leftarrow t_i+g_{\mathrm{cap}}$
   \ENDWHILE
 \ENDFOR
