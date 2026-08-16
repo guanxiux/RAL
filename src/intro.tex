@@ -71,7 +71,7 @@ First,
 \emph{construction efficiency}: construction scans the mask, so its cost scales with the layer's spatial grid, not
 with the active count or channel widths, while the compute it enables shrinks with
 both. Construction's share of latency therefore grows as activity falls and
-channels thin (while enough positions remain active to keep the pipeline full),
+channels thin,
 and accumulates across operators when every layer rebuilds.
 Second, \emph{end-to-end worklist efficiency}: the worklist's order and length both
 affect its consumption throughput.

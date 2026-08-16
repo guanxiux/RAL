@@ -72,8 +72,6 @@ $\mathcal{N}(p)$ is active,
 $M_{out}$ thus identifies the output positions that the execution path is required
 to compute, each by aggregating $\mathbf{x}$ over $\mathcal{N}(p)$ with the weights
 $\mathbf{w}$.
-The active ratio $\alpha = \|M_{out}\|_0 / |\mathcal{G}|$, the active fraction of
-the grid, is the intrinsic sparsity the policy exposes.
 
 An execution path issues computation over a sequence of position slots
 $\mathcal{C}$, where each slot is drawn from
@@ -132,29 +130,26 @@ and writeback overhead; DynConv~\cite{dynconv} adopts a model structure suited t
 gather-scatter, where one gather feeds several consecutive layers before a single
 scatter, amortizing that overhead.
 
-We measure each path by two quantities. Its useful-compute ratio is the
-fraction of issued position slots (including $\bot$) that carry an active
-output,
+These paths fail for different reasons, so we separate policy sparsity from
+execution efficiency. The policy fixes its active ratio $\alpha$, the fraction
+of output-grid positions marked active. An execution path instead determines
+its useful-compute ratio $\eta$ and throughput $T$, which combine into effective
+throughput $T_{\mathrm{eff}}$:
 \begin{equation}
-  \eta = \frac{\|M_{out}\|_0}{|\mathcal{C}|} \le 1,
-  \label{eq:useful-ratio}
+  \begin{aligned}
+    \alpha &= \frac{\|M_{out}\|_0}{|\mathcal{G}|},
+    & \eta &= \frac{\|M_{out}\|_0}{|\mathcal{C}|} \le 1,\\
+    T &= \frac{2|\mathcal{C}|k^2 C_{in} C_{out}}{t},
+    & T_{\mathrm{eff}} &= \eta T .
+  \end{aligned}
+  \label{eq:efficiency-framework}
 \end{equation}
-defined for $|\mathcal{C}|>0$. A path that issues no slots carries no ratio. An
-empty mask has $\eta=0$ whenever the path nevertheless issues slots. Throughput
-is the rate at which a path processes issued FLOPs,
-\begin{equation}
-  T = \frac{2\,|\mathcal{C}|\,k^2 C_{in} C_{out}}{t},
-  \label{eq:throughput}
-\end{equation}
-where $t$ is the per-frame latency, including all auxiliary work the path
-performs to enable computation (mask processing, coordinate generation,
-auxiliary passes). Because $|\mathcal{C}|$ counts only the convolution's
-issued position slots, auxiliary costs reduce~$T$ without changing~$\eta$.
-The leading factor of 2 counts each multiply-accumulate as two FLOPs. When the
-required set is nonempty, latency for its
-$2\,\|M_{out}\|_0\,k^2 C_{in} C_{out}$ FLOPs is set by the \textbf{effective
-throughput} $T_{\mathrm{eff}} = \eta T$, the rate at which a path computes needed
-outputs.
+For $|\mathcal{C}|>0$, $\eta$ captures inactive and padding slots in the issued
+schedule, while $T$ captures how quickly the path processes those slots. The
+latency $t$ includes all auxiliary mask and coordinate work, so such work lowers
+$T$ without changing~$\eta$; the factor of two counts each multiply-accumulate
+as two FLOPs. Consequently, $T_{\mathrm{eff}}$ is the rate at which the path
+computes required outputs and directly determines their latency.
 
 Figure~\ref{fig:gap} traces this on Jetson AGX Orin for the sparsest workload in our evaluation.
 The policy marks 84.4\% of the convolution work unnecessary, and the sparse paths
