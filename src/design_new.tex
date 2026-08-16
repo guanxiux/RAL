@@ -14,14 +14,13 @@ convolution pipeline (\S\ref{sec:design:compute}).
 
 Constructing a tight schedule already requires a scan of the output grid, but
 the resulting coordinates must also retain enough spatial structure for
-efficient consumption. A globally stable compaction preserves the complete
-dense traversal order, but obtaining its device-wide offsets requires a prefix
-scan or an additional pass. Independent appends avoid that coordination, but
-scatter nearby positions across the schedule. Materializing active receptive
-fields, as gather-scatter does, regularizes the compute input at the cost of
-feature traffic proportional to the active count and $k^2C_{in}$.
-The useful middle ground is therefore a metadata-only schedule that preserves
-order locally rather than globally.
+efficient consumption. Globally stable compaction preserves the complete dense
+traversal order but requires a prefix scan or another pass to obtain
+device-wide offsets; per-coordinate appends avoid that coordination but scatter
+neighboring positions. Materializing active receptive fields, as gather-scatter
+does, regularizes the compute input at the cost of feature traffic proportional
+to the active count and $k^2C_{in}$. The useful middle ground is therefore a
+metadata-only schedule that preserves order locally rather than globally.
 
 \sysname realizes this middle ground with contiguous, tile-local worklist
 segments. Because the number of active positions is not known before the pass,
@@ -38,10 +37,9 @@ supplied mask. Lines~8--13 count the compacted coordinates, atomically reserve
 $[\mathrm{base},\mathrm{base}+n_\tau)$ from the counter, and copy
 $\mathcal{P}_\tau$ into that interval. After all tiles complete, the reserved
 intervals collectively store $\mathcal{W}$, and the counter records
-$n_{\mathcal{W}}$. The layer shape statically determines both the buffer
-capacity and the construction launch geometry, while only the device observes
-the data-dependent worklist length. Construction therefore needs neither
-runtime allocation nor a host-visible active count.
+$n_{\mathcal{W}}$. Because the layer shape determines the buffer capacity and
+launch geometry while only the device observes the data-dependent length,
+construction needs neither runtime allocation nor a host-visible active count.
 
 To relate the worklist to the useful-compute ratio of
 Eq.~\ref{eq:efficiency-framework}, we insert its length $n_{\mathcal{W}}$ between the
@@ -54,21 +52,18 @@ $n_{\mathcal{W}}>0$,
   \underbrace{\frac{n_{\mathcal{W}}}{|\mathcal{C}|}}_{\eta_{\mathrm{compute}}} .
   \label{eq:eta-decomp}
 \end{equation}
-The first factor, $\eta_{\mathrm{construct}}$, compares required positions with
-worklist entries; the second, $\eta_{\mathrm{compute}}$, compares worklist
-entries with issued slots. We analyze $\eta_{\mathrm{construct}}$ here and
-defer $\eta_{\mathrm{compute}}$ until the compute organization is defined in
-\S\ref{sec:design:compute}. The factorization decomposes $\eta$ only; all stage
-costs remain reflected in throughput~$T$.
+Here, $\eta_{\mathrm{construct}}$ compares required positions with worklist
+entries, while $\eta_{\mathrm{compute}}$ compares worklist entries with issued
+slots. We analyze the former here and the latter after defining the compute
+organization in \S\ref{sec:design:compute}. The factorization decomposes
+$\eta$ only; all stage costs remain reflected in throughput~$T$.
 
-Fresh construction introduces no construction-side expansion. Its tiles
-partition the output grid, and their disjoint reservations place each active
-coordinate exactly once in $\mathcal{W}$. Thus
-$n_{\mathcal{W}}=\|M_{out}\|_0$ and $\eta_{\mathrm{construct}}=1$ for a
-nonempty worklist.
-Because coverage constrains membership rather than order, the order in which
-tiles reserve their intervals does not affect correctness. The within-interval
-traversal order is retained for locality.
+Because construction tiles partition the output grid and use disjoint
+reservations, each active coordinate appears exactly once, so
+$n_{\mathcal{W}}=\|M_{out}\|_0$. Fresh construction therefore has
+$\eta_{\mathrm{construct}}=1$ for a nonempty worklist. Coverage constrains
+membership rather than order, so tile reservation order does not affect
+correctness; traversal order within each interval is retained for locality.
 
 \begin{algorithm}[t]
 \caption{Tile-Local Worklist Construction}
@@ -95,26 +90,23 @@ traversal order is retained for locality.
 \end{algorithmic}
 \end{algorithm}
 
-\sysname deliberately forgoes a global worklist order, allowing construction
-tiles to reserve contiguous segments independently without device-wide ordering
-coordination. Within each segment, active coordinates follow the tile's dense
-traversal, giving compute a spatially grouped coordinate run but offering no
-locality guarantee across segment boundaries.
-As shown in \S\ref{sec:eval:efficiency}, tile-local ordering achieves
-compute-stage throughput comparable to that under global ordering; avoiding the
-additional ordering pass is therefore the better end-to-end trade-off.
+\sysname thus confines its ordering guarantee to each contiguous segment:
+coordinates retain the tile's dense traversal, while independently reserved
+segments provide no cross-boundary locality guarantee. As shown in
+\S\ref{sec:eval:efficiency}, this tile-local order achieves compute-stage
+throughput comparable to global ordering, making the additional ordering pass
+an unfavorable end-to-end trade-off.
 
 \subsubsection{Cross-Operator Worklist Reuse}
 \label{sec:design:reuse}
 
-Construction has a channel-independent grid-scan cost. Each pass examines all
-$H_{out}W_{out}$ positions and, when deriving $M_{out}$ from $M_{in}$, performs
-$O(k^2)$ mask work per position, whereas required convolution work scales as
-$O(\alpha H_{out}W_{out}k^2C_{in}C_{out})$. Repeating this scan across
-consecutive same-grid layers that introduce no new required positions is
-therefore redundant. \sysname instead reuses one constructed worklist across
-each compatible layer sequence, amortizing its construction cost over the
-sequence.
+Each construction pass examines all $H_{out}W_{out}$ positions and, when
+deriving $M_{out}$ from $M_{in}$, performs $O(k^2)$ mask work per position.
+This channel-independent grid scan contrasts with required convolution work,
+which scales as $O(\alpha H_{out}W_{out}k^2C_{in}C_{out})$. Repeating the scan
+across same-grid layers that introduce no new required positions is therefore
+redundant. \sysname instead reuses one constructed worklist across each
+compatible layer sequence, amortizing its construction cost over the sequence.
 
 For layer $l$, let $\mathcal{G}^l$ denote its output grid, $M^l_{out}$ its
 output mask, $\mathcal{W}^l$ its worklist, and $n^l_{\mathcal{W}}$ its
@@ -130,20 +122,18 @@ $\mathcal{G}^{l+1}=\mathcal{G}^l$ and
 \end{equation}
 Because $\mathcal{W}^l$ already satisfies coverage for $M^l_{out}$,
 Eq.~\ref{eq:reuse-condition} guarantees coverage for $M^{l+1}_{out}$ as well.
-\sysname therefore sets $\mathcal{W}^{l+1}=\mathcal{W}^l$ and
-$n^{l+1}_{\mathcal{W}}=n^l_{\mathcal{W}}$ without reconstruction. \sysname
-applies the same condition recursively to subsequent layers, forwarding the
-original $\mathcal{W}^l$ and $n^l_{\mathcal{W}}$ through the entire compatible
-sequence.
+\sysname therefore forwards $\mathcal{W}^{l+1}=\mathcal{W}^l$ and
+$n^{l+1}_{\mathcal{W}}=n^l_{\mathcal{W}}$ without reconstruction, applying the
+same condition recursively through the compatible sequence.
 
 Equality in Eq.~\ref{eq:reuse-condition} covers same-grid $1\times1$
-convolutions, mask-preserving activations, and inference-time normalization and
-leaves $\eta_{\mathrm{construct}}$ unchanged. Strict inclusion results from
+convolutions, mask-preserving activations, and inference-time normalization,
+leaving $\eta_{\mathrm{construct}}$ unchanged. Strict inclusion can result from
 mask-narrowing operators in the upstream policy, such as the activation-fused
 update truncation that DeltaCNN uses to increase downstream
-sparsity~\cite{deltacnn}. \sysname therefore retains $\mathcal{W}^{l+1}$ as a
-valid superset, trading the resulting lower $\eta_{\mathrm{construct}}$ for one
-fewer construction pass without violating coverage.
+sparsity~\cite{deltacnn}. The inherited worklist remains a valid superset,
+trading a lower $\eta_{\mathrm{construct}}$ for one fewer construction pass
+without violating coverage.
 
 A change in the output grid violates the geometry constraint, while
 receptive-field expansion may violate Eq.~\ref{eq:reuse-condition} by
@@ -151,25 +141,23 @@ introducing positions outside the upstream mask; either case invokes the
 construction pass of \S\ref{sec:design:construct:compact} to emit a new tight
 worklist. A lower $\eta_{\mathrm{construct}}$ alone does not trigger
 reconstruction because tightening a valid superset would pay another grid scan.
-Reuse avoids repeated construction inside each compatible sequence, but common
-receptive-field-expanding layers such as $3\times3$ convolutions create rebuild
-points throughout the network. The resulting device-resident worklist lengths
-vary across layers and frames, so compute still faces a dynamic problem size.
+Common receptive-field-expanding layers such as $3\times3$ convolutions still
+create rebuild points throughout the network, leaving device-resident worklist
+lengths variable across layers and frames. Compute must therefore handle a
+dynamic problem size.
 
 %% ----------------------------------------------------------------
 \subsection{Variable-Length Worklist Execution}
 \label{sec:design:compute}
 
-Construction and reuse fix $\eta_{\mathrm{construct}}$ before compute begins;
-the implicit-GEMM decomposition controls the remaining
-$\eta_{\mathrm{compute}}$ and also affects throughput~$T$. For a standard
-ungrouped batch-1 convolution, dense implicit GEMM uses
+Construction and reuse fix $\eta_{\mathrm{construct}}$; the implicit-GEMM
+decomposition controls $\eta_{\mathrm{compute}}$ and throughput~$T$. For a
+standard ungrouped batch-1 convolution, dense implicit GEMM uses
 $M=H_{out}W_{out}$ output-position rows, $N=C_{out}$ output-channel columns, and
-reduction depth $K=k^2C_{in}$. It decomposes the output into
-$B_M\times B_N$ tiles and traverses each tile's reduction in $B_K$-wide steps.
-\sysname preserves the $N$ and $K$ dimensions and this tiled pipeline, but
-changes the $M$-dimension coordinate source: instead of enumerating the dense
-output grid, it reads the $n_{\mathcal{W}}$ coordinates in $\mathcal{W}$.
+reduction depth $K=k^2C_{in}$, with $B_M\times B_N$ output tiles and
+$B_K$-wide reduction steps.
+\sysname preserves the $N$ and $K$ dimensions and this tiled pipeline, replacing
+only the $M$-dimension coordinate source with $\mathcal{W}$.
 Compute therefore groups $\mathcal{W}$ into $B_M$-coordinate tiles, padding
 only the final tile. For $n_{\mathcal{W}}>0$, this issues
 $|\mathcal{C}|=B_M\lceil n_{\mathcal{W}}/B_M\rceil$ position slots, giving
@@ -184,12 +172,12 @@ pronounced for a short worklist. The same $B_M$ also controls data reuse, block
 efficiency, and exposed parallelism, so maximizing $\eta_{\mathrm{compute}}$
 need not maximize throughput~$T$.
 
-For dense convolution, $(M,N,K)$ follow from the layer shape, allowing the
-backend to select $(B_M,B_N,B_K)$ before execution. In the worklist path,
-the $M$-dimension extent is $n_{\mathcal{W}}$, which varies across invocations
-and remains unknown to the host. This creates two problems: executing the
-current worklist without exposing its length to the host, and selecting a
-decomposition suited to that length.
+Because dense $(M,N,K)$ follow from the layer shape, the backend can select
+$(B_M,B_N,B_K)$ before execution. In the worklist path, however, the
+$M$-dimension extent is $n_{\mathcal{W}}$, which varies across invocations and
+remains unknown to the host. This leaves two problems: executing the current
+worklist without exposing its length to the host, and selecting a decomposition
+suited to that length.
 \S\ref{sec:design:compute:persistent} addresses the former with persistent
 execution, while \S\ref{sec:design:adaptive} addresses the latter through
 trace-calibrated selection.
@@ -197,23 +185,19 @@ trace-calibrated selection.
 \subsubsection{Persistent Worklist-Driven Convolution}
 \label{sec:design:compute:persistent}
 
-Under the coordinate-source substitution above, dense row $m$ uses the $m$-th
-coordinate $p_m$ of the output-grid traversal, whereas the worklist path reads
-$\mathcal{W}[m]$. Because each coordinate determines its receptive-field and
-output addresses, this substitution changes only the input gathers and output
-stores; feature and weight layouts and the regular $B_K$-tiled reduction remain
-unchanged, and no receptive-field patches are materialized. Reading contiguous
-ranges of $\mathcal{W}$ carries construction's tile-local grouping into the
-input gathers.
+Dense row $m$ obtains its coordinate $p_m$ from the output-grid traversal;
+\sysname instead sets $p_m=\mathcal{W}[m]$. Because $p_m$ determines the
+receptive-field and output addresses, only the input gathers and output stores
+change. Feature and weight layouts and the regular $B_K$-tiled reduction remain
+unchanged, and no receptive-field patches are materialized. Contiguous ranges
+of $\mathcal{W}$ carry construction's tile-local grouping into the gathers.
 
-A conventional kernel launch requires the host to determine its thread-block
-count before execution, but $n_{\mathcal{W}}$ is available only on the device.
-Reading the count on the host would synchronize every operator, while launching
-for the output-grid upper bound would submit blocks in proportion to dense work.
-\sysname instead
-derives each configuration's persistent-grid capacity $g_{\mathrm{cap}}$ from
-concurrent device residency and launches an occupancy-sized grid of exactly that
-many blocks, independently of $n_{\mathcal{W}}$.
+Because the host chooses a conventional launch's thread-block count, using
+device-resident $n_{\mathcal{W}}$ would require a synchronizing transfer;
+launching for the output-grid upper bound instead submits blocks in proportion
+to dense work. \sysname derives each configuration's persistent-grid capacity
+$g_{\mathrm{cap}}$ from the GPU's concurrent block residency and launches
+exactly that many blocks, independently of $n_{\mathcal{W}}$.
 
 \begin{algorithm}[t]
 \caption{Persistent Worklist-Driven Implicit GEMM}
@@ -253,13 +237,12 @@ many blocks, independently of $n_{\mathcal{W}}$.
 \end{algorithmic}
 \end{algorithm}
 
-The exact work assignment then occurs entirely on the device
-(Algorithm~\ref{alg:compute}). Line~1 derives the number of position-channel
-work items from $n_{\mathcal{W}}$, and Lines~2--3 instantiate
-$g_{\mathrm{cap}}$ persistent blocks and use this count as their device-side
-loop bound. For each item, Lines~4--8 recover its $(b_m,b_n)$ indices, load and
-pad the corresponding $B_M$-coordinate slice, select its $B_N$ output channels,
-and initialize a fixed $B_M\times B_N$ accumulator. Lines~9--16 then perform the
+Algorithm~\ref{alg:compute} assigns work entirely on the device. Line~1 derives
+the number of position-channel work items from $n_{\mathcal{W}}$; Lines~2--3
+distribute them across $g_{\mathrm{cap}}$ persistent blocks in a grid-stride
+loop. For each item, Lines~4--8 recover its $(b_m,b_n)$ indices, load and pad
+the corresponding $B_M$-coordinate slice, select its $B_N$ output channels,
+and initialize a fixed $B_M\times B_N$ accumulator. Lines~9--16 perform the
 regular implicit-GEMM reduction: each kernel offset and $B_K$-wide channel slice
 forms $\mathbf{X}$ and $\mathbf{W}$ directly from the dense tensors
 (Lines~12--13) and accumulates $\mathbf{X}\mathbf{W}$ (Line~14). Line~17 writes
@@ -267,33 +250,28 @@ the nonpadding rows to their worklist coordinates, after which Line~18 advances
 the block by $g_{\mathrm{cap}}$. For clarity, the pseudocode omits the boundary
 checks required when $C_{in}$ or $C_{out}$ is not tile-aligned. Thus,
 $n_{\mathcal{W}}$ controls only the device-side work bound and final position
-padding; the multiply shape and tensor layouts remain fixed. Selecting the
-configuration that executes this bound efficiently remains the problem addressed
-next.
+padding; the multiply shape and tensor layouts remain fixed. The remaining
+problem is choosing a configuration that executes this bound efficiently.
 
 \subsubsection{Trace-Calibrated Adaptive Decomposition}
 \label{sec:design:adaptive}
 
 Persistent scheduling resolves the execution bound, but not the decomposition
 choice: for a fixed layer, the fastest configuration changes with
-$n_{\mathcal{W}}$. Each configuration comprises a tile shape
-$(B_M,B_N,B_K)$ and a split-$K$ factor $S_K$, defined as the number of disjoint
-partitions of the $K=k^2C_{in}$ reduction for each position-channel tile.
-Algorithm~\ref{alg:compute} presents the $S_K=1$ path, which writes each
-completed reduction directly. For $S_K>1$, the standard split-$K$ path first
-zeros $\mathbf{y}$ at the scheduled coordinates, then computes the $S_K$
-partitions independently and atomically accumulates their partial sums into
-$\mathbf{y}$. For layer $l$, let $\mathcal{B}^l_M$,
-$\mathcal{B}^l_N$, $\mathcal{B}^l_K$, and $\mathcal{S}^l_K$ denote the values
-supported for these four parameters, respectively, on the target GPU. Their
-Cartesian product
+$n_{\mathcal{W}}$. A configuration $q=(B_M,B_N,B_K,S_K)$ includes a split-$K$
+factor $S_K$, the number of disjoint partitions of the $K=k^2C_{in}$ reduction
+for each position-channel tile. Algorithm~\ref{alg:compute} presents the
+$S_K=1$ path, which writes each completed reduction directly. For $S_K>1$,
+standard split-$K$ first zeros $\mathbf{y}$ at the scheduled coordinates, then
+computes the partitions independently and atomically accumulates their partial
+sums into $\mathbf{y}$. For layer $l$, the values supported on the target GPU
+define the configuration domain
 \begin{equation*}
   \mathcal{Q}_l = \mathcal{B}^l_M \times \mathcal{B}^l_N
-  \times \mathcal{B}^l_K \times \mathcal{S}^l_K
+  \times \mathcal{B}^l_K \times \mathcal{S}^l_K ,
 \end{equation*}
-defines the worklist configuration domain. Each $q\in\mathcal{Q}_l$ selects
-one supported value for each parameter and thereby specifies a concrete
-decomposition.
+where each factor contains the supported values of its corresponding
+parameter.
 
 The length-sensitive effects are clearest in $B_M$ and $S_K$. $B_M$ trades
 final-tile padding and exposed position parallelism against within-tile reuse.
@@ -304,9 +282,9 @@ same coordinates, split-$K$ affects throughput~$T$ but leaves $\mathcal{C}$ and
 $\eta_{\mathrm{compute}}$ unchanged.
 
 \sysname builds a level-to-configuration table $\mathcal{L}$, with one row
-$\mathcal{L}_l$ per layer, by quantizing $\alpha$ into $D$ levels,
-$d=\max\{1,\lceil D\alpha\rceil\}$. For each layer $l$ and level $d$,
-calibration constructs a synthetic worklist containing
+$\mathcal{L}_l$ per layer, after quantizing $\alpha$ into $D$ levels as
+$d=\max\{1,\lceil D\alpha\rceil\}$. For each layer $l$ and level $d$, it
+constructs a synthetic worklist containing
 $\lceil d|\mathcal{G}^l|/D\rceil$ active coordinates with construction's
 tile-local structure, then measures $\widehat{t}_l(q;d)$, the latency of every
 $q\in\mathcal{Q}_l$ at that level. It records
@@ -316,35 +294,31 @@ $q\in\mathcal{Q}_l$ at that level. It records
   \label{eq:calib}
 \end{equation}
 Because all worklist candidates execute the same synthetic worklist,
-$q^*_{l,d}$ is the decomposition with the highest measured throughput for
-layer $l$ at level $d$. \sysname stores this winner as
-$\mathcal{L}_l[d]=q^*_{l,d}$.
+Eq.~\ref{eq:calib} selects the decomposition with the highest measured
+throughput; \sysname stores it as $\mathcal{L}_l[d]=q^*_{l,d}$.
 When full-grid execution is semantics-compatible, calibration also compares a
 dense candidate as a special case and stores it in the same table if it is
 faster.
 
-Although $\mathcal{L}_l$ makes configuration selection a lookup once $d$ is
-known, obtaining each layer's current level directly would require transferring
-its device-resident activity count to the host. Waiting for each transfer would
-insert a synchronization at every layer. Making these transfers asynchronous
-and using their latest completed values would remove the waits, but not their
-cost: the runtime would enqueue and track one scalar transfer per layer per
-frame, making observation overhead scale with the layer count. \sysname
-deliberately avoids both alternatives. It enqueues one asynchronous transfer of
-network-input activity per frame and consumes only the latest completed
-observation, necessarily from one or more frames earlier. The same lagged
-observation predicts all layers' levels, so one nonblocking input observation
-replaces per-layer transfers.
-For event and temporal workloads, this observation is
-predictive because layer masks derive from a shared network-input mask through
-receptive-field propagation and successive input masks correlate in time.
+Lookup is cheap once $d$ is known, but obtaining every layer's current level
+directly would require transferring its device-resident activity count to the
+host. Waiting would synchronize each layer. Making these transfers asynchronous
+and using the latest completed values removes the waits, but the runtime must
+still enqueue and track one scalar transfer per layer per frame, so observation
+overhead scales with the layer count. \sysname deliberately rejects both
+alternatives: it enqueues only one asynchronous transfer of network-input
+activity per frame, then uses the latest completed, necessarily lagged
+observation to predict every layer's level. For event and temporal workloads,
+this single observation remains predictive: layer masks derive from a shared
+network-input mask through receptive-field propagation, and successive input
+masks correlate in time.
 
 To fit this predictor, \sysname profiles a set $\mathcal{F}$ of representative
-trace frames across the set $\mathcal{I}$ of layers that use it. It records
+trace frames for the set $\mathcal{I}$ of layers that use it, recording
 $\{\alpha_0^f\}_{f\in\mathcal{F}}$ and
-$\{\alpha_l^f\}_{(f,l)\in\mathcal{F}\times\mathcal{I}}$, then partitions the
-observed input range $[\alpha_{\mathrm{lo}},\alpha_{\mathrm{hi}}]$ into $B$
-equal-width buckets, where
+$\{\alpha_l^f\}_{(f,l)\in\mathcal{F}\times\mathcal{I}}$. It partitions the
+observed input-activity range $[\alpha_{\mathrm{lo}},\alpha_{\mathrm{hi}}]$
+into $B$ equal-width buckets, with
 $\alpha_{\mathrm{lo}}=\min_{f\in\mathcal{F}}\alpha_0^f$ and
 $\alpha_{\mathrm{hi}}=\max_{f\in\mathcal{F}}\alpha_0^f$. Frame $f$ receives
 index $b^f\in\{1,\ldots,B\}$:
@@ -360,15 +334,13 @@ Equal-width buckets preserve resolution in rare activity regimes because their
 ranges do not depend on sample frequency.
 
 Given these frame groups, \sysname fits a bucket-to-level prediction table
-$\mathcal{A}$, with one row $\mathcal{A}_l$ per layer. Separate rows are
-necessary because grid resolution, receptive-field
-size, and propagation depth transform the same input activity differently at
-each layer. For every bucket $b$, \sysname computes the median layer activity
+$\mathcal{A}$ with layer-specific rows $\mathcal{A}_l$, since grid resolution,
+receptive-field size, and propagation depth transform the same input activity
+differently at each layer. For every bucket $b$, \sysname computes the median
+layer activity
 $\widetilde{\alpha}_{l,b}=
 \operatorname*{median}_{f\in\mathcal{F}\,:\,b^f=b}\alpha_l^f$ over the frames assigned to
-$b$. It then
-quantizes this representative activity into the predicted target level for
-layer $l$ in bucket $b$:
+$b$, then quantizes it into the predicted level for layer $l$ in bucket $b$:
 \begin{equation}
   \hat{d}_{l,b} =
     \max\left\{1,
@@ -380,13 +352,12 @@ outliers. \sysname stores $\mathcal{A}_l[b]=\hat{d}_{l,b}$; an empty bucket
 copies the entry of its nearest populated neighbor.
 
 At runtime, \sysname composes $\mathcal{A}_l$ and $\mathcal{L}_l$ to translate
-the latest completed network-input activity observation into configurations for all
-layers. At frame $f$, let $f'<f$ denote the source frame of that input
-active-ratio observation. \sysname clamps $\alpha_0^{f'}$ to
-$[\alpha_{\mathrm{lo}},\alpha_{\mathrm{hi}}]$ and substitutes the result for
-$\alpha_0^f$ in Eq.~\ref{eq:input-bucket} to obtain $\hat{b}^f$, avoiding
-extrapolation beyond trace coverage. If no observation has completed, it retains
-$\hat{b}^{f-1}$. It then selects
+the latest completed network-input activity observation into configurations for
+all layers. At frame $f$, if this observation comes from $f'<f$, \sysname
+clamps $\alpha_0^{f'}$ to $[\alpha_{\mathrm{lo}},\alpha_{\mathrm{hi}}]$ and
+applies Eq.~\ref{eq:input-bucket} to obtain $\hat{b}^f$, avoiding extrapolation
+beyond trace coverage; if none has completed, it retains $\hat{b}^{f-1}$. It
+then selects
 \begin{equation}
   q_l^f = \mathcal{L}_l\!\left[\mathcal{A}_l[\hat{b}^f]\right] .
   \label{eq:select}
@@ -443,26 +414,22 @@ error can therefore affect performance but cannot omit scheduled coordinates.
 \end{algorithm}
 
 Algorithm~\ref{alg:adapt} connects the offline tables to nonblocking selection
-over the inference sequence $\mathcal{R}$. Lines~1--6 construct $\mathcal{L}$
-from per-level kernel calibration and fit $\mathcal{A}$ by grouping the input
-and per-layer active-ratio traces. Lines~7--9 initialize the asynchronous queue
-and the input bucket used before an observation completes. For each frame,
-Lines~10--17 retain the previous bucket unless a newer completed observation is
-available, clamp and bucket that observation, and compose $\mathcal{A}_l$ with
-$\mathcal{L}_l$ to select every layer's configuration. Lines~18--21
-asynchronously derive and enqueue the current input active ratio for a later
-frame, while Line~22 executes the current frame with the configurations already
-selected. An enqueued value becomes visible only after its device-to-host
-transfer completes; the bounded queue returns the newest visible value,
-discards older ones, and drops a new observation when no slot is free. Neither
-enqueue nor dequeue waits, so selection never stalls construction or compute.
+over the inference sequence $\mathcal{R}$. Lines~1--6 build $\mathcal{L}$ and
+$\mathcal{A}$ from the calibration and trace data; Lines~7--9 initialize the
+asynchronous queue and initial bucket. On each frame, Lines~10--17 retain the
+previous bucket if no observation has completed; otherwise, they clamp and
+bucket the latest value and compose $\mathcal{A}_l$ with $\mathcal{L}_l$ to
+select all layer configurations. Lines~18--21 derive and enqueue the current
+input active ratio asynchronously, and Line~22 executes the frame with the
+selected configurations. A value becomes visible only after its device-to-host
+transfer completes. The bounded queue returns the newest visible value and
+discards older ones; when no slot is free, enqueue drops the new observation.
+Neither operation waits, so selection never stalls construction or compute.
 
 Learned-gating models lack the shared input mask required by this predictor:
-each gated block derives its own mask from intermediate features. The per-layer
-asynchronous alternative would therefore enqueue one activity transfer for
-every gated layer on every frame. \sysname avoids these transfers by assigning
-each such layer a fixed level calibrated from its gate statistics. The
-trace-driven mode thus derives all per-layer decompositions
-from one nonblocking input observation, whereas the fixed-level mode requires
-no runtime activity transfer for selection. Neither mode inserts per-layer
-device-to-host transfers into the per-frame path.
+each gated block derives its own mask from intermediate features. Observing
+their activity levels asynchronously would require one transfer per gated layer
+per frame, so \sysname instead assigns each layer a fixed level calibrated from
+its gate statistics. The trace-driven mode thus uses one nonblocking input
+observation per frame, while the fixed-level mode uses none; neither inserts
+per-layer device-to-host transfers into the per-frame path.
