@@ -23,22 +23,20 @@ feature traffic proportional to the active count and $k^2C_{in}$.
 The useful middle ground is therefore a metadata-only schedule that preserves
 order locally rather than globally.
 
-\sysname realizes this middle ground as globally unordered, locally ordered
+\sysname realizes this middle ground with contiguous, tile-local worklist
 segments. Because the number of active positions is not known before the pass,
 it preallocates a coordinate buffer with capacity
 $|\mathcal{G}|=H_{out}W_{out}$, the static upper bound on
-$|\mathcal{W}|$, and initializes a device-resident counter for
-$n_{\mathcal{W}}$. The pass then partitions the output grid into
-$B_\tau\times B_\tau$ construction
-tiles $\tau$. Within each tile, it applies the activity test of
-Eq.~\ref{eq:mask}, writes the corresponding entries of $M_{out}$, and compacts
-the active coordinates into a local sequence $\mathcal{P}_\tau$ in dense-traversal
-order. When a learned gate supplies $M_{out}$ directly~\cite{dynconv,dgnet}, the
-pass skips the activity test and compacts the supplied mask. With
-$n_\tau=|\mathcal{P}_\tau|$, the tile reserves
-$[\mathrm{base},\mathrm{base}+n_\tau)$ from the counter and copies
-$\mathcal{P}_\tau$ into that interval (Algorithm~\ref{alg:construct}). After all
-tiles complete, the reserved
+$|\mathcal{W}|$. Algorithm~\ref{alg:construct} details the resulting single
+pass. Line~1 initializes the device-resident length counter. Lines~2--7
+partition the output grid into $B_\tau\times B_\tau$ construction tiles, derive
+the corresponding entries of $M_{out}$ using Eq.~\ref{eq:mask}, and compact
+each tile's active coordinates into a local sequence $\mathcal{P}_\tau$ in
+dense-traversal order. When a learned gate supplies $M_{out}$
+directly~\cite{dynconv,dgnet}, Lines~4--5 are omitted and Line~7 compacts the
+supplied mask. Lines~8--13 count the compacted coordinates, atomically reserve
+$[\mathrm{base},\mathrm{base}+n_\tau)$ from the counter, and copy
+$\mathcal{P}_\tau$ into that interval. After all tiles complete, the reserved
 intervals collectively store $\mathcal{W}$, and the counter records
 $n_{\mathcal{W}}$. The layer shape statically determines both the buffer
 capacity and the construction launch geometry, while only the device observes
@@ -326,11 +324,18 @@ dense candidate as a special case and stores it in the same table if it is
 faster.
 
 Although $\mathcal{L}_l$ makes configuration selection a lookup once $d$ is
-known, obtaining the current layer level requires a device-resident active
-count. Reading that count back at every layer would synchronize execution.
-\sysname instead predicts each layer's level from the latest completed
-observation of network-input activity.
-For event and temporal workloads, this signal is
+known, obtaining each layer's current level directly would require transferring
+its device-resident activity count to the host. Waiting for each transfer would
+insert a synchronization at every layer. Making these transfers asynchronous
+and using their latest completed values would remove the waits, but not their
+cost: the runtime would enqueue and track one scalar transfer per layer per
+frame, making observation overhead scale with the layer count. \sysname
+deliberately avoids both alternatives. It enqueues one asynchronous transfer of
+network-input activity per frame and consumes only the latest completed
+observation, necessarily from one or more frames earlier. The same lagged
+observation predicts all layers' levels, so one nonblocking input observation
+replaces per-layer transfers.
+For event and temporal workloads, this observation is
 predictive because layer masks derive from a shared network-input mask through
 receptive-field propagation and successive input masks correlate in time.
 
@@ -375,8 +380,8 @@ outliers. \sysname stores $\mathcal{A}_l[b]=\hat{d}_{l,b}$; an empty bucket
 copies the entry of its nearest populated neighbor.
 
 At runtime, \sysname composes $\mathcal{A}_l$ and $\mathcal{L}_l$ to translate
-a completed input-activity observation into a configuration for each layer. At
-frame $f$, let $f'<f$ denote the source frame of the latest completed input
+the latest completed network-input activity observation into configurations for all
+layers. At frame $f$, let $f'<f$ denote the source frame of that input
 active-ratio observation. \sysname clamps $\alpha_0^{f'}$ to
 $[\alpha_{\mathrm{lo}},\alpha_{\mathrm{hi}}]$ and substitutes the result for
 $\alpha_0^f$ in Eq.~\ref{eq:input-bucket} to obtain $\hat{b}^f$, avoiding
@@ -390,8 +395,6 @@ The observation may lag the current input, but it determines only the
 configuration; persistent compute still reads the current
 $n^l_{\mathcal{W}}$ on the device as the exact execution bound. Prediction
 error can therefore affect performance but cannot omit scheduled coordinates.
-Algorithm~\ref{alg:adapt} summarizes the offline fit and online selection over
-an inference-frame sequence $\mathcal{R}$.
 
 \begin{algorithm}[H]
 \caption{Trace-Calibrated Nonblocking Configuration Selection}
@@ -439,16 +442,27 @@ an inference-frame sequence $\mathcal{R}$.
 \end{algorithmic}
 \end{algorithm}
 
-The asynchronous block derives each scalar observation and submits it through
-$\mathit{Queue}$'s bounded device-to-host transfer slots. An enqueued item
-becomes visible only after its transfer completes. When nonempty, the queue
-returns its newest visible item and discards older ones. Enqueue skips the
-observation if every slot is occupied. Neither operation waits, so selection
-never stalls construction or compute.
+Algorithm~\ref{alg:adapt} connects the offline tables to nonblocking selection
+over the inference sequence $\mathcal{R}$. Lines~1--6 construct $\mathcal{L}$
+from per-level kernel calibration and fit $\mathcal{A}$ by grouping the input
+and per-layer active-ratio traces. Lines~7--9 initialize the asynchronous queue
+and the input bucket used before an observation completes. For each frame,
+Lines~10--17 retain the previous bucket unless a newer completed observation is
+available, clamp and bucket that observation, and compose $\mathcal{A}_l$ with
+$\mathcal{L}_l$ to select every layer's configuration. Lines~18--21
+asynchronously derive and enqueue the current input active ratio for a later
+frame, while Line~22 executes the current frame with the configurations already
+selected. An enqueued value becomes visible only after its device-to-host
+transfer completes; the bounded queue returns the newest visible value,
+discards older ones, and drops a new observation when no slot is free. Neither
+enqueue nor dequeue waits, so selection never stalls construction or compute.
 
 Learned-gating models lack the shared input mask required by this predictor:
-each gated block derives its own mask from intermediate features. \sysname
-therefore assigns each such layer a fixed level calibrated from its gate
-statistics instead of observing every gate at runtime. In both selection modes,
-the current $n^l_{\mathcal{W}}$ remains the exact execution bound without
-synchronizing the per-frame path.
+each gated block derives its own mask from intermediate features. The per-layer
+asynchronous alternative would therefore enqueue one activity transfer for
+every gated layer on every frame. \sysname avoids these transfers by assigning
+each such layer a fixed level calibrated from its gate statistics. The
+trace-driven mode thus derives all per-layer decompositions
+from one nonblocking input observation, whereas the fixed-level mode requires
+no runtime activity transfer for selection. Neither mode inserts per-layer
+device-to-host transfers into the per-frame path.
