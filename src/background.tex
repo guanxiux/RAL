@@ -82,18 +82,17 @@ $\{p : M_{out}[p]=1\}\subseteq\{c\in\mathcal{C}:c\ne\bot\}$.
 For each non-$\bot$ slot $p\in\mathcal{C}$ it computes
 \begin{equation}
   \mathbf{y}[p] = \sum_{i=1}^{k^2}
-  \mathbf{w}_i\,\mathbf{x}[\mathcal{N}_i(p)],
+  \mathbf{x}[\mathcal{N}_i(p)]\,\mathbf{w}_i,
   \label{eq:conv}
 \end{equation}
 where $\mathcal{N}_i(p)$ is the $i$-th position in $\mathcal{N}(p)$ and
 $\mathbf{w}_i\in\mathbb{R}^{C_{in}\times C_{out}}$ the corresponding weight
-slice. Positions the path does not compute retain their existing value in
-$\mathbf{y}$: masked convolution updates the output in place, so
-$\mathbf{y}[p]$ for $p\notin\{c\in\mathcal{C}:c\ne\bot\}$ carries over from
-the previous frame (event and temporal policies) or from a one-time dense
-initialization (spatial gating). Coverage is therefore the correctness
-condition: every position the policy marks as changed is recomputed, and every
-other position is already correct by construction.
+slice. How unrequested positions are represented or merged into a dense result
+is policy-specific. Event and temporal execution retains prior state, whereas
+learned gating merges the computed branch values into a residual or bypass
+tensor. Coverage is therefore the operator-level correctness condition: every
+position requested by the policy is computed, while the policy determines the
+treatment of all other positions.
 Beyond coverage, a path may issue inactive or $\bot$ slots; dense
 convolution is the extreme where
 $\{c\in\mathcal{C}:c\ne\bot\}=\mathcal{G}$. The policy fixes the accuracy
@@ -153,9 +152,10 @@ computes required outputs and directly determines their latency.
 
 Figure~\ref{fig:gap} traces this on Jetson AGX Orin for the sparsest workload in our evaluation.
 The policy marks 84.4\% of the convolution work unnecessary, and the sparse paths
-discard it with negligible accuracy loss, so the remaining work sets a 9.6\,ms
-latency floor (Fig.~\ref{fig:gap}a, dashed). Neither path approaches it: tile
-skipping (DeltaCNN~\cite{deltacnn}) reaches 36.6\,ms, still 3.8$\times$ the floor,
+discard it with negligible accuracy loss. Scaling dense latency by the fraction
+of convolution work that remains gives a 9.6\,ms ideal proportional-scaling reference
+(Fig.~\ref{fig:gap}a, dashed). Neither path approaches it: tile
+skipping (DeltaCNN~\cite{deltacnn}) reaches 36.6\,ms, still 3.8$\times$ the reference,
 and gather-scatter, even with DynConv built to amortize its overhead, runs at
 193.5\,ms, far slower than dense convolution itself. The gap traces to low
 effective throughput on both paths. Tile skipping holds
@@ -182,9 +182,10 @@ reorganizes a sparse matrix operand so the dense
 datapath can consume it; its sparsity lives in the
 matrix structure of a different operator, not in a spatial mask over a
 convolution grid. % ORIG: ... exploit sparsity fixed at compile time in the weights or a known format, a static, structural sparsity type rather than a mask discovered at runtime over the spatial grid.
-Structured weight sparsity (2:4 tensor cores~\cite{sparse24}) and sparse-format
-compilers (TACO~\cite{taco}, SparseTIR~\cite{sparsetir}) exploit a static structural
-sparsity fixed at compile time in the weights or a known format, rather than a mask
-discovered at runtime over the spatial grid. DPACS~\cite{dpacs} resolves similar dynamic spatial
+Structured weight sparsity, such as 2:4 tensor
+cores~\cite{sparse24}, exploits fixed patterns in the weights. Sparse-format
+compilers such as TACO~\cite{taco} and SparseTIR~\cite{sparsetir} instead target
+tensor algebra over explicitly sparse representations. Neither directly targets
+a dynamic output mask over a dense convolution grid. DPACS~\cite{dpacs} resolves similar dynamic spatial
 sparsity in CNN feature maps, but on a custom accelerator instead of a commodity
 GPU.

@@ -122,7 +122,7 @@ propagates and reuses the resulting mask and worklist metadata across compatible
 operators instead of reconstructing it, amortizing one construction across the
 compatible operator sequence. The fused pass lowers the cost of each
 construction, while cross-operator reuse reduces how often it occurs; together,
-they address Construction Efficiency and Amortization.
+they address the Worklist Construction Cost challenge.
 
 \paragraph{Compute stage.}
 The worklist length varies across layers and inputs and remains device-resident;

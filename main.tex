@@ -32,11 +32,12 @@ computing only positions an upstream policy marks active, yet existing paths
 sacrifice either throughput or useful-compute ratio and fail to convert sparsity
 into proportional latency reduction. We present \sysname, a masked-convolution
 runtime that derives an active-output worklist from the upstream mask and uses it
-to drive the dense tiled pipeline, securing both a high useful-compute ratio and
-high throughput by restricting computation to active positions while retaining
-the regular dense datapath.
-To amortize construction overhead and keep the compute
-pipeline fully utilized despite per-frame-varying worklist lengths, \sysname
+to drive the dense tiled pipeline. This substitution restricts computation to
+active positions while retaining dense tensor and weight layouts and the regular
+per-position reduction, securing both a high useful-compute ratio and high
+throughput.
+To amortize construction overhead and sustain compute throughput as per-frame
+worklist lengths vary, \sysname
 co-designs construction and consumption: compatible operators reuse the
 constructed worklist without reconstruction, the worklist emission order
 preserves tile-local spatial reuse, and a data-driven adaptive decomposition

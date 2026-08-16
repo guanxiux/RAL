@@ -1,46 +1,33 @@
 \section{Implementation}
 \label{sec:impl}
 
-We implement \sysname as a CUDA C++ extension for PyTorch. The current backend
-executes FP32 tensors in channels-last layout and provides the mask-aware
-operators required by the evaluated networks: convolution, transposed
-convolution, pooling, pointwise activation, addition, concatenation, and
-upsampling. A model-conversion pass replaces compatible PyTorch modules while
-preserving the graph topology, convolution parameters, and learned weights.
-The upstream application continues to generate masks.
+We implement \sysname as a PyTorch extension with a Python frontend and a CUDA
+backend written in C++. A model-conversion pass replaces supported modules, preserves their
+parameters and weights, and statically marks worklist-reuse edges and rebuild
+points. The backend operates on FP32 tensors in NHWC layout and implements the
+standard, grouped, and transposed convolutions and mask-aware auxiliary
+operators required by our workloads. Each converted output carries a
+lightweight record that references its device-resident $M_{out}$,
+$\mathcal{W}$, and $n_{\mathcal{W}}$ buffers. All buffers are allocated during
+module initialization, while the upstream application continues to determine
+the masks.
 
-The construction kernel assigns contiguous output positions to each warp. A
-thread tests one receptive field and terminates once it finds an active input.
-A warp ballot identifies active lanes, population counts give their local
-ranks, and one atomic operation reserves a contiguous worklist segment for the
-warp. Active lanes then write their coordinates in lane order. This realizes
-the tile-local ordering in Section~\ref{sec:design:construct} without a
-device-wide prefix scan or sorting pass. An identity $1\times1$ convolution
-has the same input and output coordinate space; when its input already carries
-compatible mask and worklist metadata, the operator reuses that worklist and
-skips construction.
+The construction kernel maps one CUDA block to each construction tile in
+Algorithm~\ref{alg:construct}. Warp ballots compute lane-local ranks, a short
+shared-memory prefix combines the warp counts, and one \texttt{atomicAdd}
+reserves the tile's contiguous worklist segment. Worklists use 32-bit linear
+coordinates and are provisioned for $|\mathcal{G}|$ entries; the runtime resets
+their device counters on the operator's CUDA stream. Learned-gating layers
+compact the supplied $M_{out}$ directly, and compatible downstream operators
+implement reuse by aliasing the existing metadata buffers.
 
-The compute kernel uses a persistent, tiled implicit-GEMM organization. It
-keeps partial sums in registers and stages input and weight tiles through
-shared memory. Supported architectures use asynchronous global-to-shared
-copies, with a synchronous path for earlier GPUs. Split-$K$ exposes additional
-parallel work when the active-coordinate dimension alone cannot occupy the
-device. Transposed convolution follows the same output-driven organization,
-but partitions output coordinates by stride phase so that each phase visits
-only its valid kernel offsets.
-
-Efficient scheduling depends jointly on the GPU, layer shape, and activity.
-We therefore autotune the sparse tile shape and split-$K$ factor and cache the
-choice by device, convolution parameters, activity level, and execution
-policy. For layers whose state-update semantics permit dense evaluation, the
-candidate set can also include a cuDNN path. A sparse-only policy isolates the
-worklist-driven kernel, and the cache key distinguishes the two policies and
-the requested determinism mode. Autotuning and one-time weight preparation
-complete before the timed sequence described in Section~\ref{sec:eval:setup}.
-
-For fixed input values, weights, and mask, \sysname evaluates
-Eq.~\eqref{eq:conv} at every active output coordinate. Floating-point
-reordering may produce small numerical differences from cuDNN, so we verify
-active outputs with numerical tolerances rather than requiring bitwise
-identity. This check separates backend correctness from the task-quality
-effect of the fixed upstream mask policy.
+The compute backend instantiates a C++ template family over
+$(B_M,B_N,B_K,S_K)$ and derives each variant's $g_{\mathrm{cap}}$ from CUDA
+occupancy information and the GPU's SM count. The online selector in
+Algorithm~\ref{alg:adapt} uses a bounded queue of pinned host scalars, CUDA
+events, and a dedicated copy stream. It transfers one network-input count per
+frame, updates the selected variant only from the newest completed observation,
+and drops an observation when no queue slot is free. Each invocation launches
+the selected variant's fixed persistent grid, while the kernel reads the current
+$n_{\mathcal{W}}$ to bound its grid-stride loop. Across these variants, outputs of \sysname
+at every active position agree numerically with cuDNN.

@@ -33,7 +33,7 @@ the corresponding entries of $M_{out}$ using Eq.~\ref{eq:mask}, and compact
 each tile's active coordinates into a local sequence $\mathcal{P}_\tau$ in
 dense-traversal order. When a learned gate supplies $M_{out}$
 directly~\cite{dynconv,dgnet}, Lines~4--5 are omitted and Line~7 compacts the
-supplied mask. Lines~8--13 count the compacted coordinates, atomically reserve
+supplied mask. Lines~8--11 count the compacted coordinates, atomically reserve
 $[\mathrm{base},\mathrm{base}+n_\tau)$ from the counter, and copy
 $\mathcal{P}_\tau$ into that interval. After all tiles complete, the reserved
 intervals collectively store $\mathcal{W}$, and the counter records
@@ -80,9 +80,8 @@ correctness; traversal order within each interval is retained for locality.
   \ENDFOR
   \STATE $\mathcal{P}_\tau \leftarrow \textsc{Compact}(\tau,\,M_{out})$
   \STATE $n_\tau \leftarrow |\mathcal{P}_\tau|$
-  \STATE \COMMENT{Atomically reserve $n_\tau$ worklist entries.}
-  \STATE $\mathrm{base} \leftarrow n_{\mathcal{W}}$
-  \STATE $n_{\mathcal{W}} \leftarrow n_{\mathcal{W}} + n_\tau$
+  \STATE $\mathrm{base} \leftarrow
+         \operatorname{AtomicAdd}(n_{\mathcal{W}},n_\tau)$
   \FOR{each $0\le j<n_\tau$ \textbf{in parallel}}
     \STATE $\mathcal{W}[\mathrm{base}+j] \leftarrow \mathcal{P}_\tau[j]$
   \ENDFOR
@@ -283,7 +282,9 @@ $\eta_{\mathrm{compute}}$ unchanged.
 
 \sysname builds a level-to-configuration table $\mathcal{L}$, with one row
 $\mathcal{L}_l$ per layer, after quantizing $\alpha$ into $D$ levels as
-$d=\max\{1,\lceil D\alpha\rceil\}$. For each layer $l$ and level $d$, it
+$d=\max\{1,\lceil D\alpha\rceil\}$. Calibration deliberately represents each
+level with a fresh, tight worklist rather than reproducing every reuse state.
+For each layer $l$ and level $d$, \sysname
 constructs a synthetic worklist containing
 $\lceil d|\mathcal{G}^l|/D\rceil$ active coordinates with construction's
 tile-local structure, then measures $\widehat{t}_l(q;d)$, the latency of every
@@ -294,8 +295,9 @@ $q\in\mathcal{Q}_l$ at that level. It records
   \label{eq:calib}
 \end{equation}
 Because all worklist candidates execute the same synthetic worklist,
-Eq.~\ref{eq:calib} selects the decomposition with the highest measured
-throughput; \sysname stores it as $\mathcal{L}_l[d]=q^*_{l,d}$.
+Eq.~\ref{eq:calib} selects the minimum-latency decomposition, equivalently the
+one with the highest effective throughput at that level. \sysname stores it as
+$\mathcal{L}_l[d]=q^*_{l,d}$.
 When full-grid execution is semantics-compatible, calibration also compares a
 dense candidate as a special case and stores it in the same table if it is
 faster.
@@ -362,9 +364,10 @@ then selects
   q_l^f = \mathcal{L}_l\!\left[\mathcal{A}_l[\hat{b}^f]\right] .
   \label{eq:select}
 \end{equation}
-The observation may lag the current input, but it determines only the
-configuration; persistent compute still reads the current
-$n^l_{\mathcal{W}}$ on the device as the exact execution bound. Prediction
+The observation may lag the current input, and reuse may make the runtime
+worklist longer than the predicted activity level implies. Both effects
+influence only the configuration: persistent compute still reads the current
+$n^l_{\mathcal{W}}$ on the device as the exact execution bound. Selection
 error can therefore affect performance but cannot omit scheduled coordinates.
 
 \begin{algorithm}[H]

@@ -68,7 +68,7 @@ Translating this into latency reduction requires handling two
 challenges.
 % : the worklist must be cheap to build and fast to consume.
 First,
-\emph{construction efficiency}: construction scans the mask, so its cost scales with the layer's spatial grid, not
+\emph{worklist construction cost}: construction scans the mask, so its cost scales with the layer's spatial grid, not
 with the active count or channel widths, while the compute it enables shrinks with
 both. Construction's share of latency therefore grows as activity falls and
 channels thin,
