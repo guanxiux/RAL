@@ -4,59 +4,52 @@
 \subsection{Experimental Setup}
 \label{sec:eval:setup}
 
-We evaluate \sysname across four perception models, three mask sources, four
-GPU platforms, and three competing execution paradigms. The evaluation asks
-four questions: (1)~does \sysname reduce full-model latency relative to the
-fastest available path, (2)~how effectively does it convert required-work
-reduction into latency reduction, (3)~what overhead does worklist construction
-add, and (4)~does replacing the masked-convolution backend change task output
-or accuracy?
+\paragraph{Platforms.}
 
-\subsubsection{Platforms}
-
-We evaluate four representative GPU platforms: two embedded SoCs (Jetson
-Xavier NX and Jetson AGX Orin), a laptop-class mobile GPU (RTX~4070 Laptop),
-and a desktop GPU (RTX~3080). These devices cover the hardware classes
-commonly used for onboard deployment and robotics development. The two Jetson
-systems anchor our target deployment setting, while the discrete GPUs test
-whether \sysname generalizes beyond embedded SoCs.
+We evaluate six GPU platforms spanning four discrete GPUs and two embedded
+SoCs. The discrete platforms are RTX~4070 Laptop, RTX~3080,
+\textit{TBD Discrete GPU A}, and \textit{TBD Discrete GPU B}.
+They span laptop- and desktop-class devices and test \sysname across commodity
+GPU performance tiers. Jetson Xavier NX and Jetson AGX Orin complement this
+coverage with resource- and power-constrained deployments, where we also
+measure board energy.
+% TODO(platforms): Replace the two discrete-GPU placeholders once selected.
 % TODO: memory capacity, CUDA version, power mode, and fixed-clock settings.
 
-\subsubsection{Models, Tasks, and Mask Sources}
-Our selected workloads span three robotic perception tasks:
-\begin{itemize}
-  \item \textbf{Event-based optical flow.}
-        We evaluate FireFlowNet~\cite{fireflownet}, a lightweight event-based
-        optical-flow model that delivers high inference rates while retaining
-        competitive accuracy, on MVSEC~\cite{mvsec}. MVSEC contains event-camera
-        sequences and corresponding ground-truth flow from indoor quadrotor
-        flight and outdoor driving. Following Ev-Conv~\cite{evconv},
-        consecutive 50-ms windows advance by 1~ms; events entering or leaving
-        the window form the sparse increment from which we derive layer masks.
-        We calibrate the sparsification policy on
-        \texttt{indoor\_flying1} and evaluate on the other three sequences.
+\paragraph{Models, tasks, and mask sources.}
+Our workloads span three vision tasks.
 
-  \item \textbf{Video object detection.}
-        We evaluate YOLOv8n and YOLOv8m~\cite{yolov8} on MOT16~\cite{mot16}, a
-        collection of crowded pedestrian videos with annotated person boxes.
-        Both models produce bounding boxes and confidence scores, while their
-        different scales expose how model size affects sparse-execution
-        efficiency. DeltaCNN~\cite{deltacnn} supplies the temporal mask
-        mechanism by propagating thresholded activation deltas between
-        successive frames.
+\noindent\emph{Event-based optical flow.}
+We evaluate FireFlowNet~\cite{fireflownet}, a lightweight event-based
+optical-flow model that delivers high inference rates while retaining
+competitive accuracy, on MVSEC~\cite{mvsec}. MVSEC contains event-camera
+sequences and corresponding ground-truth flow from indoor quadrotor flight and
+outdoor driving. Following Ev-Conv~\cite{evconv}, consecutive 50-ms windows
+advance by 1~ms; events entering or leaving the window form the sparse
+increment from which we derive layer masks.
 
-  \item \textbf{Human pose estimation.}
-        We use the DynConv pose model~\cite{dynconv} on MPII~\cite{mpii}, which
-        depicts people performing diverse activities and annotates their 2D
-        body joints. The model predicts joint heatmaps; its learned spatial
-        gates provide input-dependent masks at gated blocks.
-\end{itemize}
+\noindent\emph{Detection.}
+We evaluate YOLOv8n and YOLOv8m~\cite{yolov8} on MOT16~\cite{mot16}, a
+collection of crowded pedestrian videos for multi-object tracking. Their
+two model sizes expose how scale affects sparse-execution efficiency.
+For both models, DeltaCNN's temporal policy~\cite{deltacnn} thresholds
+activation differences between successive frames and propagates the resulting
+masks across layers.
 
-Table~\ref{tab:models} summarizes their models and evaluation scales.
-We use official weights for all four models~\cite{fireflownet,yolov8,dynconv}. 
-For each workload, we fix these weights, inputs, and upstream mask
-policy; the sparse paths receive the same resulting layer masks and differ
-only in their masked-convolution backend.
+\noindent\emph{Human pose estimation.}
+We use the DynConv pose model~\cite{dynconv} on MPII~\cite{mpii}, which depicts
+people performing diverse activities and annotates their 2D body joints.
+DynConv's learned spatial gates produce an input-dependent mask for each gated
+block.
+
+
+Table~\ref{tab:models} summarizes the workloads and evaluation scales.
+For every workload, calibration uses the training split, while all reported
+results use a disjoint test split. We use
+the authors' released weights for all four models~\cite{fireflownet,yolov8,dynconv}.
+Within each workload, we fix the inputs, weights, and upstream mask policy;
+every sparse path receives the same resulting layer masks, isolating the
+masked-convolution backend.
 
 \begin{table}[!ht]
 \centering
@@ -86,67 +79,82 @@ Eval. samples & 196.8K & 2,575 & 2,958 \\
 \end{tabular}
 \end{table}
 
-\subsubsection{Execution Baselines}
+\paragraph{Baselines.}
 
 We compare \sysname against three FP32 execution paths established by prior
-work.
+work:
 
 \begin{itemize}
-  \item \textbf{Dense} uses the native PyTorch/cuDNN backend~\cite{cudnn} with sparse execution disabled.
+  \item \textbf{Dense} executes the complete model with the native
+        PyTorch/cuDNN backend~\cite{cudnn}.
 
-  \item \textbf{Tile skipping} follows the tile-sparse execution established
-        by SBNet, Ev-Conv, and DeltaCNN~\cite{sbnet,evconv,deltacnn}.
+  \item \textbf{Tile skipping} retains the dense tiled pipeline and skips a
+        tile only when all its outputs are inactive, following SBNet, Ev-Conv, and
+        DeltaCNN~\cite{sbnet,evconv,deltacnn}.
 
-  \item \textbf{Gather-scatter} uses the original DynConv CUDA backend for
-        human pose~\cite{dynconv} and an implementation equivalent to MMCV
-        \texttt{MaskedConv2d} for FireFlowNet and YOLO~\cite{mmcv}.
+  \item \textbf{Gather-scatter} uses DynConv's original CUDA backend for
+        pose~\cite{dynconv}. FireFlowNet and YOLO use an adaptation of MMCV's
+        masked-convolution operator~\cite{mmcv}.
 \end{itemize}
 
-\subsubsection{Metrics and Methodology}
+\paragraph{Measurements.}
 
-Our primary metric is full-model GPU latency. The timed region includes mask
-propagation, worklist construction, all network operators, and output update,
-but excludes host-to-device input transfer, calibration, autotuning, and the
-one-time dense state initialization required by incremental models. We use
-CUDA events on the model's compute stream and process complete held-out
-sequences rather than isolated synthetic frames. Each sequence is repeated
-three times; we retain per-frame samples and report both aggregate latency and
-dispersion.
+We measure per-frame full-model GPU latency over the complete evaluation data
+above with CUDA events; every sequence or split is repeated three times. Timing
+covers mask propagation, worklist construction, all network operators, and
+output update; it excludes input transfer, offline calibration and autotuning,
+and one-time state initialization. On the Jetson platforms, we integrate
+board-level \texttt{VDD\_IN} over each timed round to obtain its mean power,
+multiply that value by the round's cumulative CUDA-event time, and aggregate
+across rounds to obtain per-frame board energy. We follow the original workload
+protocols: AEE for optical flow~\cite{evconv}, COCO-style AP$_{50:95}$ for
+detection~\cite{deltacnn}, and PCKh for human pose~\cite{dynconv}. Because
+MOT16 releases ground-truth detections only for its training split, AP on the
+test sequences uses fixed pseudo-labels from a dense YOLO26x
+teacher~\cite{yolo26}.
 
-To explain latency, we report the required-work ratio $\rho_{\mathrm{work}}$,
-useful-compute ratio $\eta$, convolution throughput, and the construction
-fraction of operator latency. Throughput here isolates the compute kernel;
-construction is reported separately as a fraction of operator latency, so
-readers can reconstruct the inclusive $T$ of
-\S\ref{sec:bg:gap}. We aggregate $\eta$ as total active FLOPs over total
-scheduled FLOPs across all convolution layers, so each layer contributes in
-proportion to the work it actually schedules. Because layers differ in cost, an unweighted
-average of layer activities misstates the work a mask removes, so we weight each
-layer by its dense MAC count,
-\begin{equation}
-  \rho_{\mathrm{work}} =
-  \frac{\sum_l \alpha^l W^l_{\mathrm{dense}}}
-       {\sum_l W^l_{\mathrm{dense}}},
-  \qquad
-  \alpha^l=\frac{\|M^l\|_0}{H^l_{out}W^l_{out}},
-  \label{eq:work-ratio}
-\end{equation}
-where $W^l_{\mathrm{dense}}$ is the dense MAC count of layer $l$. Task quality is measured with
-Average Endpoint Error (AEE) for optical flow, detection AP against the fixed
-evaluation references for YOLO, and PCKh for human pose. Accuracy comparisons
-use the same masks and operating point as latency measurements; they evaluate
-the upstream policy, while operator correctness is checked separately against
-dense convolution at every active output.
-
-\subsection{Full-Model Latency}
+\subsection{End-to-End Latency and Energy}
 \label{sec:eval:latency}
 
-% TODO
+\begin{figure*}[t]
+  \centering
+  \includegraphics[width=\textwidth]{figures/e2e_latency.pdf}
+  \caption{Full-model mean per-frame latency across GPU platforms. Within each
+  platform, every workload uses its own y-axis to compare the four execution
+  paths; lower is better. Broken y-axes preserve resolution where
+  gather-scatter is substantially slower than the other paths.}
+  \Description{Grouped bar charts of full-model latency. Six platform panels
+  each contain four workload groups comparing Dense, Tile skipping,
+  Gather-scatter, and WISEConv. Two discrete-GPU panels are marked as awaiting
+  results. Selected workload groups use broken y-axes for a much slower
+  gather-scatter path.}
+  \label{fig:e2e-latency}
+\end{figure*}
+
+\sysname is the fastest path in all 16 currently measured workload-platform
+pairs (Figure~\ref{fig:e2e-latency}). Relative to the fastest competing path
+for each pair, it reduces full-model latency by 22.1--46.5\%. The reduction is
+34.2--46.5\% on the discrete GPUs and 22.1--38.6\% on the Jetson platforms,
+showing that the benefit persists across both discrete GPUs and embedded SoCs.
+Existing sparse paths are inconsistent: even
+the faster of tile skipping and gather-scatter fails to beat dense execution
+in 8 of the 16 pairs. This outcome reflects the tension established in
+\S\ref{sec:bg:gap}: reducing scheduled work does not guarantee lower latency
+when the execution path sacrifices throughput.
+
+These latency savings also translate into lower board energy. \sysname has the
+lowest per-frame energy in every Jetson workload-platform pair
+(Table~\ref{tab:e2e-energy}), reducing energy by
+17.0--39.8\% relative to the fastest competing path and by 28.5--72.6\%
+relative to dense execution.
+
+\input{figures/e2e_energy_table}
 
 \subsection{Efficiency Analysis}
 \label{sec:eval:efficiency}
 
-% TODO
+% TODO: At first use, state that model-level work ratios accumulate convolution
+% FLOPs over all measured frames and layers before division.
 
 \subsection{Construction Overhead}
 \label{sec:eval:overhead}

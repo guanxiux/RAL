@@ -9,8 +9,8 @@ standard, grouped, and transposed convolutions and mask-aware auxiliary
 operators required by our workloads. Each converted output carries a
 lightweight record that references its device-resident $M_{out}$,
 $\mathcal{W}$, and $n_{\mathcal{W}}$ buffers. All buffers are allocated during
-module initialization, while the upstream application continues to determine
-the masks.
+module initialization, while mask selection remains with the upstream
+application.
 
 The construction kernel maps one CUDA block to each construction tile in
 Algorithm~\ref{alg:construct}. Warp ballots compute lane-local ranks, a short
@@ -29,5 +29,5 @@ events, and a dedicated copy stream. It transfers one network-input count per
 frame, updates the selected variant only from the newest completed observation,
 and drops an observation when no queue slot is free. Each invocation launches
 the selected variant's fixed persistent grid, while the kernel reads the current
-$n_{\mathcal{W}}$ to bound its grid-stride loop. Across these variants, outputs of \sysname
-at every active position agree numerically with cuDNN.
+$n_{\mathcal{W}}$ to bound its grid-stride loop. Every backend variant agrees
+numerically with cuDNN at each active output position.

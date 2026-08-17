@@ -42,9 +42,10 @@ co-designs construction and consumption: compatible operators reuse the
 constructed worklist without reconstruction, the worklist emission order
 preserves tile-local spatial reuse, and a data-driven adaptive decomposition
 adjusts parallel work to the activity level without host synchronization. Across
-four perception models and six GPU platforms (four discrete, two embedded),
-\sysname reduces full-model latency by 22.1--46.5\% relative to the fastest competing
-path and per-frame energy by 28.0--59.6\% on the embedded platforms.
+four perception models on six GPU platforms (four discrete, two embedded), \sysname
+reduces full-model latency by 22.1--46.5\% against the fastest competing path
+and per-frame energy by 28.5--72.6\% relative to dense execution on the
+embedded GPUs.
 \end{abstract}
 
 \keywords{Sparse convolution, dynamic spatial sparsity, GPU runtime, deep learning

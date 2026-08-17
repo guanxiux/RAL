@@ -1,0 +1,97 @@
+platform,platform_label,platform_status,workload,workload_label,backend,backend_label,latency_ms,energy_j_per_frame,latency_source,energy_source
+tbd-a,TBD Discrete GPU A,placeholder,fireflownet,FireFlowNet,dense,Dense,,,,
+tbd-a,TBD Discrete GPU A,placeholder,fireflownet,FireFlowNet,tile_skip,Tile skipping,,,,
+tbd-a,TBD Discrete GPU A,placeholder,fireflownet,FireFlowNet,gather_scatter,Gather-scatter,,,,
+tbd-a,TBD Discrete GPU A,placeholder,fireflownet,FireFlowNet,wiseconv,WISEConv,,,,
+tbd-a,TBD Discrete GPU A,placeholder,yolov8n,YOLOv8n,dense,Dense,,,,
+tbd-a,TBD Discrete GPU A,placeholder,yolov8n,YOLOv8n,tile_skip,Tile skipping,,,,
+tbd-a,TBD Discrete GPU A,placeholder,yolov8n,YOLOv8n,gather_scatter,Gather-scatter,,,,
+tbd-a,TBD Discrete GPU A,placeholder,yolov8n,YOLOv8n,wiseconv,WISEConv,,,,
+tbd-a,TBD Discrete GPU A,placeholder,yolov8m,YOLOv8m,dense,Dense,,,,
+tbd-a,TBD Discrete GPU A,placeholder,yolov8m,YOLOv8m,tile_skip,Tile skipping,,,,
+tbd-a,TBD Discrete GPU A,placeholder,yolov8m,YOLOv8m,gather_scatter,Gather-scatter,,,,
+tbd-a,TBD Discrete GPU A,placeholder,yolov8m,YOLOv8m,wiseconv,WISEConv,,,,
+tbd-a,TBD Discrete GPU A,placeholder,dynconv_pose,DynConv Pose,dense,Dense,,,,
+tbd-a,TBD Discrete GPU A,placeholder,dynconv_pose,DynConv Pose,tile_skip,Tile skipping,,,,
+tbd-a,TBD Discrete GPU A,placeholder,dynconv_pose,DynConv Pose,gather_scatter,Gather-scatter,,,,
+tbd-a,TBD Discrete GPU A,placeholder,dynconv_pose,DynConv Pose,wiseconv,WISEConv,,,,
+tbd-b,TBD Discrete GPU B,placeholder,fireflownet,FireFlowNet,dense,Dense,,,,
+tbd-b,TBD Discrete GPU B,placeholder,fireflownet,FireFlowNet,tile_skip,Tile skipping,,,,
+tbd-b,TBD Discrete GPU B,placeholder,fireflownet,FireFlowNet,gather_scatter,Gather-scatter,,,,
+tbd-b,TBD Discrete GPU B,placeholder,fireflownet,FireFlowNet,wiseconv,WISEConv,,,,
+tbd-b,TBD Discrete GPU B,placeholder,yolov8n,YOLOv8n,dense,Dense,,,,
+tbd-b,TBD Discrete GPU B,placeholder,yolov8n,YOLOv8n,tile_skip,Tile skipping,,,,
+tbd-b,TBD Discrete GPU B,placeholder,yolov8n,YOLOv8n,gather_scatter,Gather-scatter,,,,
+tbd-b,TBD Discrete GPU B,placeholder,yolov8n,YOLOv8n,wiseconv,WISEConv,,,,
+tbd-b,TBD Discrete GPU B,placeholder,yolov8m,YOLOv8m,dense,Dense,,,,
+tbd-b,TBD Discrete GPU B,placeholder,yolov8m,YOLOv8m,tile_skip,Tile skipping,,,,
+tbd-b,TBD Discrete GPU B,placeholder,yolov8m,YOLOv8m,gather_scatter,Gather-scatter,,,,
+tbd-b,TBD Discrete GPU B,placeholder,yolov8m,YOLOv8m,wiseconv,WISEConv,,,,
+tbd-b,TBD Discrete GPU B,placeholder,dynconv_pose,DynConv Pose,dense,Dense,,,,
+tbd-b,TBD Discrete GPU B,placeholder,dynconv_pose,DynConv Pose,tile_skip,Tile skipping,,,,
+tbd-b,TBD Discrete GPU B,placeholder,dynconv_pose,DynConv Pose,gather_scatter,Gather-scatter,,,,
+tbd-b,TBD Discrete GPU B,placeholder,dynconv_pose,DynConv Pose,wiseconv,WISEConv,,,,
+3080,RTX 3080,measured,fireflownet,FireFlowNet,dense,Dense,1.043358115,,logs/optical_flow/dense/3080-v23-full-r3-1800mhz/summary.json,
+3080,RTX 3080,measured,fireflownet,FireFlowNet,tile_skip,Tile skipping,0.605519470,,logs/optical_flow/tile_skip/3080-v23-full-r3-1800mhz/summary.json,
+3080,RTX 3080,measured,fireflownet,FireFlowNet,gather_scatter,Gather-scatter,2.051854015,,logs/optical_flow/gather_scatter/3080-v23-full-r3-1800mhz/summary.json,
+3080,RTX 3080,measured,fireflownet,FireFlowNet,wiseconv,WISEConv,0.398664067,,logs/optical_flow/wiseconv/3080-v23-full-r3-1800mhz/summary.json,
+3080,RTX 3080,measured,yolov8n,YOLOv8n,dense,Dense,2.789095595,,logs/yolov8_mot16/3080-v23-yolov8n-full-r3-1800mhz/summary.json,
+3080,RTX 3080,measured,yolov8n,YOLOv8n,tile_skip,Tile skipping,3.516528360,,logs/yolov8_mot16/3080-v23-yolov8n-full-r3-1800mhz/summary.json,
+3080,RTX 3080,measured,yolov8n,YOLOv8n,gather_scatter,Gather-scatter,11.968813086,,logs/yolov8_mot16/3080-v23-yolov8n-full-r3-1800mhz/summary.json,
+3080,RTX 3080,measured,yolov8n,YOLOv8n,wiseconv,WISEConv,1.581794986,,logs/yolov8_mot16/3080-v23-yolov8n-full-r3-1800mhz/summary.json,
+3080,RTX 3080,measured,yolov8m,YOLOv8m,dense,Dense,10.177840243,,logs/yolov8_mot16/3080-v23-yolov8m-full-r3-1800mhz/summary.json,
+3080,RTX 3080,measured,yolov8m,YOLOv8m,tile_skip,Tile skipping,15.480770516,,logs/yolov8_mot16/3080-v23-yolov8m-full-r3-1800mhz/summary.json,
+3080,RTX 3080,measured,yolov8m,YOLOv8m,gather_scatter,Gather-scatter,16.565888967,,logs/yolov8_mot16/3080-v23-yolov8m-full-r3-1800mhz/summary.json,
+3080,RTX 3080,measured,yolov8m,YOLOv8m,wiseconv,WISEConv,5.966742940,,logs/yolov8_mot16/3080-v23-yolov8m-full-r3-1800mhz/summary.json,
+3080,RTX 3080,measured,dynconv_pose,DynConv Pose,dense,Dense,5.986501688,,logs/dynconv_pose/3080-v23-full-s0125-r3-1800mhz/summary.json,
+3080,RTX 3080,measured,dynconv_pose,DynConv Pose,tile_skip,Tile skipping,6.916904644,,logs/dynconv_pose/3080-v23-full-s0125-r3-1800mhz/summary.json,
+3080,RTX 3080,measured,dynconv_pose,DynConv Pose,gather_scatter,Gather-scatter,57.133688674,,logs/dynconv_pose/3080-v23-full-s0125-r3-1800mhz/summary.json,
+3080,RTX 3080,measured,dynconv_pose,DynConv Pose,wiseconv,WISEConv,3.203092204,,logs/dynconv_pose/3080-v23-full-s0125-r3-1800mhz/summary.json,
+4070-laptop,RTX 4070 Laptop,measured,fireflownet,FireFlowNet,dense,Dense,1.078512727,,logs/optical_flow/dense/4070-laptop-full-r3/summary.json,
+4070-laptop,RTX 4070 Laptop,measured,fireflownet,FireFlowNet,tile_skip,Tile skipping,0.863771485,,logs/optical_flow/tile_skip/4070-laptop-full-r3/summary.json,
+4070-laptop,RTX 4070 Laptop,measured,fireflownet,FireFlowNet,gather_scatter,Gather-scatter,2.172464583,,logs/optical_flow/gather_scatter/4070-laptop-full-r3/summary.json,
+4070-laptop,RTX 4070 Laptop,measured,fireflownet,FireFlowNet,wiseconv,WISEConv,0.565474709,,logs/optical_flow/wiseconv/4070-laptop-full-r3/summary.json,
+4070-laptop,RTX 4070 Laptop,measured,yolov8n,YOLOv8n,dense,Dense,3.047415568,,logs/yolov8_mot16/4070-laptop-yolov8n-full-r3/summary.json,
+4070-laptop,RTX 4070 Laptop,measured,yolov8n,YOLOv8n,tile_skip,Tile skipping,3.798947997,,logs/yolov8_mot16/4070-laptop-yolov8n-full-r3/summary.json,
+4070-laptop,RTX 4070 Laptop,measured,yolov8n,YOLOv8n,gather_scatter,Gather-scatter,8.539008088,,logs/yolov8_mot16/4070-laptop-yolov8n-full-r3/summary.json,
+4070-laptop,RTX 4070 Laptop,measured,yolov8n,YOLOv8n,wiseconv,WISEConv,1.963970288,,logs/yolov8_mot16/4070-laptop-yolov8n-full-r3/summary.json,
+4070-laptop,RTX 4070 Laptop,measured,yolov8m,YOLOv8m,dense,Dense,12.504274410,,logs/yolov8_mot16/4070-laptop-yolov8m-full-r3/summary.json,
+4070-laptop,RTX 4070 Laptop,measured,yolov8m,YOLOv8m,tile_skip,Tile skipping,18.221414735,,logs/yolov8_mot16/4070-laptop-yolov8m-full-r3/summary.json,
+4070-laptop,RTX 4070 Laptop,measured,yolov8m,YOLOv8m,gather_scatter,Gather-scatter,17.207856474,,logs/yolov8_mot16/4070-laptop-yolov8m-full-r3/summary.json,
+4070-laptop,RTX 4070 Laptop,measured,yolov8m,YOLOv8m,wiseconv,WISEConv,7.392252583,,logs/yolov8_mot16/4070-laptop-yolov8m-full-r3/summary.json,
+4070-laptop,RTX 4070 Laptop,measured,dynconv_pose,DynConv Pose,dense,Dense,6.272635024,,logs/dynconv_pose/4070-laptop-full-s0125-r3/summary.json,
+4070-laptop,RTX 4070 Laptop,measured,dynconv_pose,DynConv Pose,tile_skip,Tile skipping,6.678225200,,logs/dynconv_pose/4070-laptop-full-s0125-r3/summary.json,
+4070-laptop,RTX 4070 Laptop,measured,dynconv_pose,DynConv Pose,gather_scatter,Gather-scatter,33.753900657,,logs/dynconv_pose/4070-laptop-full-s0125-r3/summary.json,
+4070-laptop,RTX 4070 Laptop,measured,dynconv_pose,DynConv Pose,wiseconv,WISEConv,3.569667969,,logs/dynconv_pose/4070-laptop-full-s0125-r3/summary.json,
+agx-orin,Jetson AGX Orin,measured,fireflownet,FireFlowNet,dense,Dense,12.465948386,0.262377730,logs/optical_flow/dense/agx-orin-30w-locked-energy-v4-full-r3/summary.json,logs/nx_state/agx-orin-30w-locked-energy-v4/fireflownet-full-r3-energy-v4.per_backend_energy.json
+agx-orin,Jetson AGX Orin,measured,fireflownet,FireFlowNet,tile_skip,Tile skipping,8.548918871,0.147517478,logs/optical_flow/tile_skip/agx-orin-30w-locked-energy-v4-full-r3/summary.json,logs/nx_state/agx-orin-30w-locked-energy-v4/fireflownet-full-r3-energy-v4.per_backend_energy.json
+agx-orin,Jetson AGX Orin,measured,fireflownet,FireFlowNet,gather_scatter,Gather-scatter,14.496563514,0.287357333,logs/optical_flow/gather_scatter/agx-orin-30w-locked-energy-v4-full-r3/summary.json,logs/nx_state/agx-orin-30w-locked-energy-v4/fireflownet-full-r3-energy-v4.per_backend_energy.json
+agx-orin,Jetson AGX Orin,measured,fireflownet,FireFlowNet,wiseconv,WISEConv,5.389874359,0.100712054,logs/optical_flow/wiseconv/agx-orin-30w-locked-energy-v4-full-r3/summary.json,logs/nx_state/agx-orin-30w-locked-energy-v4/fireflownet-full-r3-energy-v4.per_backend_energy.json
+agx-orin,Jetson AGX Orin,measured,yolov8n,YOLOv8n,dense,Dense,24.669769258,0.478873236,logs/yolov8_mot16/agx-orin-30w-locked-energy-v4-yolov8n-full-r3/summary.json,logs/nx_state/agx-orin-30w-locked-energy-v4/yolov8n-full-r3-energy-v4.per_backend_energy.json
+agx-orin,Jetson AGX Orin,measured,yolov8n,YOLOv8n,tile_skip,Tile skipping,24.528634526,0.435425951,logs/yolov8_mot16/agx-orin-30w-locked-energy-v4-yolov8n-full-r3/summary.json,logs/nx_state/agx-orin-30w-locked-energy-v4/yolov8n-full-r3-energy-v4.per_backend_energy.json
+agx-orin,Jetson AGX Orin,measured,yolov8n,YOLOv8n,gather_scatter,Gather-scatter,40.270781237,0.699784658,logs/yolov8_mot16/agx-orin-30w-locked-energy-v4-yolov8n-full-r3/summary.json,logs/nx_state/agx-orin-30w-locked-energy-v4/yolov8n-full-r3-energy-v4.per_backend_energy.json
+agx-orin,Jetson AGX Orin,measured,yolov8n,YOLOv8n,wiseconv,WISEConv,16.738469005,0.316571349,logs/yolov8_mot16/agx-orin-30w-locked-energy-v4-yolov8n-full-r3/summary.json,logs/nx_state/agx-orin-30w-locked-energy-v4/yolov8n-full-r3-energy-v4.per_backend_energy.json
+agx-orin,Jetson AGX Orin,measured,yolov8m,YOLOv8m,dense,Dense,142.973476100,2.699789713,logs/yolov8_mot16/agx-orin-30w-locked-energy-v4-yolov8m-full-r3/summary.json,logs/nx_state/agx-orin-30w-locked-energy-v4/yolov8m-full-r3-energy-v4.per_backend_energy.json
+agx-orin,Jetson AGX Orin,measured,yolov8m,YOLOv8m,tile_skip,Tile skipping,142.874790279,2.329146809,logs/yolov8_mot16/agx-orin-30w-locked-energy-v4-yolov8m-full-r3/summary.json,logs/nx_state/agx-orin-30w-locked-energy-v4/yolov8m-full-r3-energy-v4.per_backend_energy.json
+agx-orin,Jetson AGX Orin,measured,yolov8m,YOLOv8m,gather_scatter,Gather-scatter,132.517731431,2.419852924,logs/yolov8_mot16/agx-orin-30w-locked-energy-v4-yolov8m-full-r3/summary.json,logs/nx_state/agx-orin-30w-locked-energy-v4/yolov8m-full-r3-energy-v4.per_backend_energy.json
+agx-orin,Jetson AGX Orin,measured,yolov8m,YOLOv8m,wiseconv,WISEConv,90.564837324,1.573002927,logs/yolov8_mot16/agx-orin-30w-locked-energy-v4-yolov8m-full-r3/summary.json,logs/nx_state/agx-orin-30w-locked-energy-v4/yolov8m-full-r3-energy-v4.per_backend_energy.json
+agx-orin,Jetson AGX Orin,measured,dynconv_pose,DynConv Pose,dense,Dense,61.719844403,1.202852287,logs/dynconv_pose/agx-orin-30w-locked-energy-v4-full-s0125-r3/summary.json,logs/nx_state/agx-orin-30w-locked-energy-v4/dynconv-pose-full-s0125-r3-energy-v4.per_backend_energy.json
+agx-orin,Jetson AGX Orin,measured,dynconv_pose,DynConv Pose,tile_skip,Tile skipping,36.639815384,0.665069979,logs/dynconv_pose/agx-orin-30w-locked-energy-v4-full-s0125-r3/summary.json,logs/nx_state/agx-orin-30w-locked-energy-v4/dynconv-pose-full-s0125-r3-energy-v4.per_backend_energy.json
+agx-orin,Jetson AGX Orin,measured,dynconv_pose,DynConv Pose,gather_scatter,Gather-scatter,193.517093336,2.369893320,logs/dynconv_pose/agx-orin-30w-locked-energy-v4-full-s0125-r3/summary.json,logs/nx_state/agx-orin-30w-locked-energy-v4/dynconv-pose-full-s0125-r3-energy-v4.per_backend_energy.json
+agx-orin,Jetson AGX Orin,measured,dynconv_pose,DynConv Pose,wiseconv,WISEConv,22.494219708,0.476242227,logs/dynconv_pose/agx-orin-30w-locked-energy-v4-full-s0125-r3/summary.json,logs/nx_state/agx-orin-30w-locked-energy-v4/dynconv-pose-full-s0125-r3-energy-v4.per_backend_energy.json
+xavier-nx,Jetson Xavier NX,measured,fireflownet,FireFlowNet,dense,Dense,14.454403225,0.279288537,logs/optical_flow/dense/xavier-nx-20w-locked-full-r3/summary.json,logs/nx_state/xavier-nx-20w-locked/fireflownet-full-r3-energy-v3.per_backend_energy.json + CUDA-event latency JSONL
+xavier-nx,Jetson Xavier NX,measured,fireflownet,FireFlowNet,tile_skip,Tile skipping,9.251429982,0.127114705,logs/optical_flow/tile_skip/xavier-nx-20w-locked-full-r3/summary.json,logs/nx_state/xavier-nx-20w-locked/fireflownet-full-r3-energy-v3.per_backend_energy.json + CUDA-event latency JSONL
+xavier-nx,Jetson Xavier NX,measured,fireflownet,FireFlowNet,gather_scatter,Gather-scatter,26.514379747,0.326649101,logs/optical_flow/gather_scatter/xavier-nx-20w-locked-full-r3/summary.json,logs/nx_state/xavier-nx-20w-locked/fireflownet-full-r3-energy-v3.per_backend_energy.json + CUDA-event latency JSONL
+xavier-nx,Jetson Xavier NX,measured,fireflownet,FireFlowNet,wiseconv,WISEConv,5.707657943,0.076507943,logs/optical_flow/wiseconv/xavier-nx-20w-locked-full-r3/summary.json,logs/nx_state/xavier-nx-20w-locked/fireflownet-full-r3-energy-v3.per_backend_energy.json + CUDA-event latency JSONL
+xavier-nx,Jetson Xavier NX,measured,yolov8n,YOLOv8n,dense,Dense,24.144997819,0.485009955,logs/yolov8_mot16/xavier-nx-20w-locked-yolov8n-full-r3/summary.json,logs/nx_state/xavier-nx-20w-locked/yolov8n-full-r3-energy-v3.per_backend_energy.json + CUDA-event latency JSONL
+xavier-nx,Jetson Xavier NX,measured,yolov8n,YOLOv8n,tile_skip,Tile skipping,24.871395281,0.418099499,logs/yolov8_mot16/xavier-nx-20w-locked-yolov8n-full-r3/summary.json,logs/nx_state/xavier-nx-20w-locked/yolov8n-full-r3-energy-v3.per_backend_energy.json + CUDA-event latency JSONL
+xavier-nx,Jetson Xavier NX,measured,yolov8n,YOLOv8n,gather_scatter,Gather-scatter,70.991005689,0.852563302,logs/yolov8_mot16/xavier-nx-20w-locked-yolov8n-full-r3/summary.json,logs/nx_state/xavier-nx-20w-locked/yolov8n-full-r3-energy-v3.per_backend_energy.json + CUDA-event latency JSONL
+xavier-nx,Jetson Xavier NX,measured,yolov8n,YOLOv8n,wiseconv,WISEConv,18.804813111,0.346868515,logs/yolov8_mot16/xavier-nx-20w-locked-yolov8n-full-r3/summary.json,logs/nx_state/xavier-nx-20w-locked/yolov8n-full-r3-energy-v3.per_backend_energy.json + CUDA-event latency JSONL
+xavier-nx,Jetson Xavier NX,measured,yolov8m,YOLOv8m,dense,Dense,126.224661027,2.584909729,logs/yolov8_mot16/xavier-nx-20w-locked-yolov8m-full-r3/summary.json,logs/nx_state/xavier-nx-20w-locked/yolov8m-full-r3-energy-v3.per_backend_energy.json + CUDA-event latency JSONL
+xavier-nx,Jetson Xavier NX,measured,yolov8m,YOLOv8m,tile_skip,Tile skipping,133.682727528,2.269649459,logs/yolov8_mot16/xavier-nx-20w-locked-yolov8m-full-r3/summary.json,logs/nx_state/xavier-nx-20w-locked/yolov8m-full-r3-energy-v3.per_backend_energy.json + CUDA-event latency JSONL
+xavier-nx,Jetson Xavier NX,measured,yolov8m,YOLOv8m,gather_scatter,Gather-scatter,205.063089926,3.183819460,logs/yolov8_mot16/xavier-nx-20w-locked-yolov8m-full-r3/summary.json,logs/nx_state/xavier-nx-20w-locked/yolov8m-full-r3-energy-v3.per_backend_energy.json + CUDA-event latency JSONL
+xavier-nx,Jetson Xavier NX,measured,yolov8m,YOLOv8m,wiseconv,WISEConv,94.295178005,1.781960739,logs/yolov8_mot16/xavier-nx-20w-locked-yolov8m-full-r3/summary.json,logs/nx_state/xavier-nx-20w-locked/yolov8m-full-r3-energy-v3.per_backend_energy.json + CUDA-event latency JSONL
+xavier-nx,Jetson Xavier NX,measured,dynconv_pose,DynConv Pose,dense,Dense,58.198537517,1.083557378,logs/dynconv_pose/xavier-nx-20w-locked-full-s0125-r3/summary.json,logs/nx_state/xavier-nx-20w-locked/dynconv-pose-full-s0125-r3-energy-v3.per_backend_energy.json + CUDA-event latency JSONL
+xavier-nx,Jetson Xavier NX,measured,dynconv_pose,DynConv Pose,tile_skip,Tile skipping,34.422600827,0.537127204,logs/dynconv_pose/xavier-nx-20w-locked-full-s0125-r3/summary.json,logs/nx_state/xavier-nx-20w-locked/dynconv-pose-full-s0125-r3-energy-v3.per_backend_energy.json + CUDA-event latency JSONL
+xavier-nx,Jetson Xavier NX,measured,dynconv_pose,DynConv Pose,gather_scatter,Gather-scatter,395.734666196,2.827264897,logs/dynconv_pose/xavier-nx-20w-locked-full-s0125-r3/summary.json,logs/nx_state/xavier-nx-20w-locked/dynconv-pose-full-s0125-r3-energy-v3.per_backend_energy.json + CUDA-event latency JSONL
+xavier-nx,Jetson Xavier NX,measured,dynconv_pose,DynConv Pose,wiseconv,WISEConv,23.193445193,0.341166534,logs/dynconv_pose/xavier-nx-20w-locked-full-s0125-r3/summary.json,logs/nx_state/xavier-nx-20w-locked/dynconv-pose-full-s0125-r3-energy-v3.per_backend_energy.json + CUDA-event latency JSONL

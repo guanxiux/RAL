@@ -14,7 +14,7 @@ render at the sizes set here). It composes two equal-area panels with baked-in
   (b) Raw throughput T and effective throughput eta*T (GFLOPS) for the same
       three systems.
 
-Colours/hatches are consistent per baseline. Reads only the CSV (no dependency
+Colours/textures are consistent per baseline. Reads only the CSV (no dependency
 on the gitignored logs); rerun gap_stats.py to refresh the CSV.
 """
 import csv
@@ -26,7 +26,11 @@ matplotlib.use("Agg")
 import matplotlib.font_manager as fm
 import matplotlib.pyplot as plt
 import numpy as np
-from matplotlib.patches import Patch
+
+from bar_patterns import (
+    add_bar,
+    legend_handles,
+)
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 CSV = os.path.join(HERE, "gap_stats.csv")
@@ -53,27 +57,16 @@ plt.rcParams.update({
     "mathtext.fontset": "cm",
     "pdf.fonttype": 42, "ps.fonttype": 42,
     "axes.linewidth": 0.7,
-    "hatch.linewidth": 0.45,
+    "hatch.linewidth": 0.38,
 })
 FS_TICK, FS_LAB, FS_LEG, FS_CAP, FS_FLOOR = 6.5, 7.0, 7.0, 7.5, 6.0
 
 ORDER = ["Dense", "Tile skipping", "Gather-scatter"]
-
-# Well-regarded categorical palettes (colorblind-aware); pick via $PALETTE.
-PALETTES = {
-    # ColorBrewer Set2: soft teal / coral / periwinkle -- editorial, muted
-    "set2": ["#66c2a5", "#fc8d62", "#8da0cb"],
-    # Okabe-Ito: the accessibility gold standard -- crisp blue / orange / green
-    "okabe": ["#0072b2", "#e69f00", "#009e73"],
-    # Seaborn "muted": common in ML papers -- indigo / rust / sage
-    "muted": ["#4c72b0", "#dd8452", "#55a868"],
-    # ColorBrewer Pastel1-ish soft trio -- very light, gentle
-    "soft": ["#8bbcd6", "#f2b76b", "#b7a1c9"],
+STYLE_KEY = {
+    "Dense": "dense",
+    "Tile skipping": "tile_skip",
+    "Gather-scatter": "gather_scatter",
 }
-PAL = os.environ.get("PALETTE", "set2")
-COLORS = dict(zip(ORDER, PALETTES[PAL]))
-EDGE = {s: "#2b2b2b" for s in ORDER}     # near-black frame, softer than pure black
-HATCH = {"Dense": "//", "Tile skipping": "\\\\", "Gather-scatter": "xx"}
 # Legend shows the concrete implementations; the paradigm-to-impl mapping is
 # established in the gap section's text, so it needs no restating in the caption.
 LABEL = {"Dense": "Dense", "Tile skipping": "DeltaCNN", "Gather-scatter": "DynConv"}
@@ -117,11 +110,14 @@ def draw_latency(fig):
     ax_top = fig.add_axes([LX0, PB + BOTH + GAPH, PW, PH - BOTH - GAPH], zorder=2)
 
     # latency bars (both sub-axes for the broken scale)
+    latency_patches = {}
     for a in (ax_bot, ax_top):
         a.patch.set_alpha(0)                 # let the accuracy axis show through
+        latency_patches[a] = {}
         for i, s in enumerate(ORDER):
-            a.bar(LAT_X[i], lat[s], BW_A, color=COLORS[s], edgecolor=EDGE[s],
-                  hatch=HATCH[s], linewidth=0.8, zorder=3)
+            latency_patches[a][s] = add_bar(
+                a, LAT_X[i], lat[s], BW_A, STYLE_KEY[s], linewidth=0.8
+            )
         a.set_xlim(AX_LO, AX_HI)
         a.set_xticks([])
     ax_bot.set_ylim(0, 70)
@@ -140,9 +136,11 @@ def draw_latency(fig):
                     color="#b23b3b", linespacing=1.05)
 
     # accuracy bars on the right axis
+    accuracy_patches = {}
     for i, s in enumerate(ORDER):
-        ax_acc.bar(ACC_X[i], pckh[s], BW_A, color=COLORS[s], edgecolor=EDGE[s],
-                   hatch=HATCH[s], linewidth=0.8, zorder=3)
+        accuracy_patches[s] = add_bar(
+            ax_acc, ACC_X[i], pckh[s], BW_A, STYLE_KEY[s], linewidth=0.8
+        )
     ax_acc.set_xlim(AX_LO, AX_HI)
     ax_acc.set_ylim(0, 130)               # headroom above 100 lowers the bars
     ax_acc.set_yticks([0, 50, 100])
@@ -168,6 +166,8 @@ def draw_latency(fig):
     ax_bot.set_ylabel("Per-frame latency (ms)", fontsize=FS_LAB)
     ax_bot.yaxis.set_label_coords(-0.175, 0.62)
 
+
+
     # dashed break marks at the left spine boundary between the two sub-axes
     d = 0.013
     kw = dict(transform=fig.transFigure, color="k", lw=0.8, clip_on=False,
@@ -183,10 +183,18 @@ def draw_throughput(fig):
     gx = np.array([0.0, 1.0])
     bw = 0.24
     offs = {s: (i - 1) * bw for i, s in enumerate(ORDER)}
+    patches = []
     for gi, data in enumerate((traw, teff)):
         for s in ORDER:
-            ax.bar(gx[gi] + offs[s], data[s], bw, color=COLORS[s],
-                   edgecolor=EDGE[s], hatch=HATCH[s], linewidth=0.8, zorder=3)
+            patch = add_bar(
+                ax,
+                gx[gi] + offs[s],
+                data[s],
+                bw,
+                STYLE_KEY[s],
+                linewidth=0.8,
+            )
+            patches.append((patch, STYLE_KEY[s]))
     ax.set_ylim(0, max(traw.values()) * 1.30)
     ax.set_yticks([0, 50, 100, 150, 200])
     ax.set_xlim(-0.55, gx[-1] + 0.55)
@@ -202,9 +210,9 @@ def draw_throughput(fig):
 
 
 def shared_legend(fig):
-    handles = [Patch(facecolor=COLORS[s], edgecolor=EDGE[s], hatch=HATCH[s],
-                     linewidth=0.5, label=LABEL[s]) for s in ORDER]
-    fig.legend(handles=handles, fontsize=FS_LEG, ncol=3, frameon=False,
+    handles = legend_handles([STYLE_KEY[s] for s in ORDER])
+    fig.legend(handles=handles, labels=[LABEL[s] for s in ORDER],
+               fontsize=FS_LEG, ncol=3, frameon=False,
                loc="upper center", bbox_to_anchor=(0.55, 1.01),
                handlelength=1.2, columnspacing=1.1, handletextpad=0.4)
 

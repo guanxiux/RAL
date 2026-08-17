@@ -64,12 +64,14 @@ plt.rcParams.update({
 
 ## 5. 配色与描边
 
-分类调色板集中在一个 dict 里,用环境变量 `PALETTE` 切换,默认 `set2`
-(ColorBrewer 青/珊瑚/长春花,柔和不刺眼)。要点:
+跨图复用 `bar_patterns.py` 中的分类调色板与纹理,当前颜色采用 ColorBrewer
+Set2 的青/珊瑚/长春花,WISEConv 使用 muted gold。要点:
 
 - 深≠高级;选**柔和有区分度**的成套配色,别自己调深浅。
 - 每个 bar 加近黑描边 `#2b2b2b`(`linewidth≈0.8`),灰底上更清晰。
-- 叠 hatch(`//` `\\` `xx`,`hatch.linewidth≈0.45`)保证黑白打印/色盲可辨。
+- 使用常规密度的实线斜线 hatch 保证黑白打印和色觉受限时仍可辨: Dense 无纹理,
+  Tile skipping 为 `//`,Gather-scatter 为 `\\`,WISEConv 为 `xx`。纹理由
+  `bar_patterns.py` 统一维护。
 
 ## 6. 断轴(某个 bar 特别高时)
 
@@ -93,4 +95,3 @@ plt.rcParams.update({
 2. `pdffonts` 确认嵌入 TeXGyreTermes、无 DejaVu。
 3. `RAL/` 下 `latexmk -pdf main.tex`,确认无新 undefined reference。
 4. 高 DPI 渲染该页(`pdftoppm -png -r 300`)肉眼比对:图内字与正文同字体、同粗细、字号相称。
-

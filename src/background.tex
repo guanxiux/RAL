@@ -96,7 +96,8 @@ treatment of all other positions.
 Beyond coverage, a path may issue inactive or $\bot$ slots; dense
 convolution is the extreme where
 $\{c\in\mathcal{C}:c\ne\bot\}=\mathcal{G}$. The policy fixes the accuracy
-and the required work, while $\mathcal{C}$ is determined by the path.
+and required work, whereas the execution path determines the issued sequence
+$\mathcal{C}$.
 
 \subsection{The Sparsity-to-Latency Gap}
 \label{sec:bg:gap}
@@ -147,8 +148,8 @@ For $|\mathcal{C}|>0$, $\eta$ captures inactive and padding slots in the issued
 schedule, while $T$ captures how quickly the path processes those slots. The
 latency $t$ includes all auxiliary mask and coordinate work, so such work lowers
 $T$ without changing~$\eta$; the factor of two counts each multiply-accumulate
-as two FLOPs. Consequently, $T_{\mathrm{eff}}$ is the rate at which the path
-computes required outputs and directly determines their latency.
+as two FLOPs. Consequently, $T_{\mathrm{eff}}$ measures the rate of
+required-output computation and therefore determines its latency.
 
 Figure~\ref{fig:gap} traces this on Jetson AGX Orin for the sparsest workload in our evaluation.
 The policy marks 84.4\% of the convolution work unnecessary, and the sparse paths
@@ -161,8 +162,9 @@ and gather-scatter, even with DynConv built to amortize its overhead, runs at
 effective throughput on both paths. Tile skipping holds
 throughput near half of dense but at a useful-compute ratio of only 49.1\%;
 gather-scatter lifts the useful-compute ratio near one, yet extraction and data
-movement collapse its throughput to 5.0\% of dense (Fig.~\ref{fig:gap}b). Neither
-path efficiently converts the GPU's capability into effective throughput for masked convolution.
+movement collapse its throughput to 5.0\% of dense (Fig.~\ref{fig:gap}b). For
+masked convolution, neither path efficiently converts the GPU's capability into
+effective throughput.
 
 
 \subsection{Distinction from Related Sparse Execution}

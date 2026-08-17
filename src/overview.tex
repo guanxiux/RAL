@@ -90,11 +90,11 @@ requirements, as Figure~\ref{fig:overview} summarizes.
     completed input-activity observation from an earlier frame selects a
     high-throughput, low-padding workload decomposition.
     \vspace{2.5cm}}}
-  \caption{The \sysname two-stage pipeline. Construction operates only on mask
-  and coordinate metadata, emits tile-locally ordered worklist segments, and
-  reuses the resulting metadata across compatible operators. Compute bounds persistent
-  work on the device and uses a completed, temporally lagged input-activity
-  observation to adapt the workload decomposition without host synchronization.}
+  \caption{The \sysname two-stage pipeline. Construction emits tile-locally
+  ordered worklist segments using only mask and coordinate metadata, then reuses
+  the metadata across compatible operators. Compute bounds
+  persistent work on the device and adapts its decomposition from a completed,
+  temporally lagged input-activity observation without host synchronization.}
   \Description{Placeholder for the \sysname overview figure. The construction
   stage emits and reuses mask and worklist metadata. The compute stage consumes
   a device-bounded worklist with persistent blocks and selects its workload
@@ -114,8 +114,8 @@ without global ordering.
 \sysname stores $\mathcal{W}$ in a buffer preallocated for
 $|\mathcal{G}|=H_{out}W_{out}$ coordinates, the static upper bound on
 $|\mathcal{W}|$. A device-resident counter records
-$n_{\mathcal{W}}=|\mathcal{W}|$, so the host neither reads the active count nor
-allocates storage at runtime.
+$n_{\mathcal{W}}=|\mathcal{W}|$, so construction needs neither runtime
+allocation nor a host-visible active count.
 
 Even this metadata-only pass must scan the layer's mask grid. \sysname therefore
 propagates and reuses the resulting mask and worklist metadata across compatible

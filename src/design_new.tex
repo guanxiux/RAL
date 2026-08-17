@@ -20,7 +20,7 @@ device-wide offsets; per-coordinate appends avoid that coordination but scatter
 neighboring positions. Materializing active receptive fields, as gather-scatter
 does, regularizes the compute input at the cost of feature traffic proportional
 to the active count and $k^2C_{in}$. The useful middle ground is therefore a
-metadata-only schedule that preserves order locally rather than globally.
+metadata-only schedule with local rather than global ordering.
 
 \sysname realizes this middle ground with contiguous, tile-local worklist
 segments. Because the number of active positions is not known before the pass,
@@ -37,9 +37,9 @@ supplied mask. Lines~8--11 count the compacted coordinates, atomically reserve
 $[\mathrm{base},\mathrm{base}+n_\tau)$ from the counter, and copy
 $\mathcal{P}_\tau$ into that interval. After all tiles complete, the reserved
 intervals collectively store $\mathcal{W}$, and the counter records
-$n_{\mathcal{W}}$. Because the layer shape determines the buffer capacity and
-launch geometry while only the device observes the data-dependent length,
-construction needs neither runtime allocation nor a host-visible active count.
+$n_{\mathcal{W}}$. Because the layer shape fixes the buffer capacity and launch
+geometry while only the device observes the data-dependent length, construction
+requires no runtime allocation or host-visible active count.
 
 To relate the worklist to the useful-compute ratio of
 Eq.~\ref{eq:efficiency-framework}, we insert its length $n_{\mathcal{W}}$ between the
@@ -104,8 +104,8 @@ deriving $M_{out}$ from $M_{in}$, performs $O(k^2)$ mask work per position.
 This channel-independent grid scan contrasts with required convolution work,
 which scales as $O(\alpha H_{out}W_{out}k^2C_{in}C_{out})$. Repeating the scan
 across same-grid layers that introduce no new required positions is therefore
-redundant. \sysname instead reuses one constructed worklist across each
-compatible layer sequence, amortizing its construction cost over the sequence.
+redundant. \sysname instead amortizes construction over each compatible layer
+sequence by reusing one worklist across its operators.
 
 For layer $l$, let $\mathcal{G}^l$ denote its output grid, $M^l_{out}$ its
 output mask, $\mathcal{W}^l$ its worklist, and $n^l_{\mathcal{W}}$ its
@@ -119,11 +119,11 @@ $\mathcal{G}^{l+1}=\mathcal{G}^l$ and
   \{p\in\mathcal{G}^l \mid M^l_{out}[p]=1\} .
   \label{eq:reuse-condition}
 \end{equation}
-Because $\mathcal{W}^l$ already satisfies coverage for $M^l_{out}$,
-Eq.~\ref{eq:reuse-condition} guarantees coverage for $M^{l+1}_{out}$ as well.
+Because $\mathcal{W}^l$ covers $M^l_{out}$,
+Eq.~\ref{eq:reuse-condition} guarantees coverage for $M^{l+1}_{out}$.
 \sysname therefore forwards $\mathcal{W}^{l+1}=\mathcal{W}^l$ and
-$n^{l+1}_{\mathcal{W}}=n^l_{\mathcal{W}}$ without reconstruction, applying the
-same condition recursively through the compatible sequence.
+$n^{l+1}_{\mathcal{W}}=n^l_{\mathcal{W}}$ without reconstruction and applies
+the condition recursively at each subsequent layer.
 
 Equality in Eq.~\ref{eq:reuse-condition} covers same-grid $1\times1$
 convolutions, mask-preserving activations, and inference-time normalization,
@@ -249,8 +249,8 @@ the nonpadding rows to their worklist coordinates, after which Line~18 advances
 the block by $g_{\mathrm{cap}}$. For clarity, the pseudocode omits the boundary
 checks required when $C_{in}$ or $C_{out}$ is not tile-aligned. Thus,
 $n_{\mathcal{W}}$ controls only the device-side work bound and final position
-padding; the multiply shape and tensor layouts remain fixed. The remaining
-problem is choosing a configuration that executes this bound efficiently.
+padding; the multiply shape and tensor layouts remain fixed, leaving only the
+choice of an efficient decomposition for this bound.
 
 \subsubsection{Trace-Calibrated Adaptive Decomposition}
 \label{sec:design:adaptive}
@@ -332,8 +332,8 @@ index $b^f\in\{1,\ldots,B\}$:
     \right\rceil\right\}.
   \label{eq:input-bucket}
 \end{equation}
-Equal-width buckets preserve resolution in rare activity regimes because their
-ranges do not depend on sample frequency.
+Equal-width buckets assign fixed activity ranges independent of sample
+frequency and therefore preserve resolution in rare regimes.
 
 Given these frame groups, \sysname fits a bucket-to-level prediction table
 $\mathcal{A}$ with layer-specific rows $\mathcal{A}_l$, since grid resolution,
@@ -350,8 +350,8 @@ $b$, then quantizes it into the predicted level for layer $l$ in bucket $b$:
   \label{eq:mapfit}
 \end{equation}
 The median minimizes absolute deviation within the bucket and is robust to
-outliers. \sysname stores $\mathcal{A}_l[b]=\hat{d}_{l,b}$; an empty bucket
-copies the entry of its nearest populated neighbor.
+outliers. \sysname stores $\mathcal{A}_l[b]=\hat{d}_{l,b}$ and fills empty
+buckets from their nearest populated neighbors.
 
 At runtime, \sysname composes $\mathcal{A}_l$ and $\mathcal{L}_l$ to translate
 the latest completed network-input activity observation into configurations for
@@ -434,5 +434,5 @@ each gated block derives its own mask from intermediate features. Observing
 their activity levels asynchronously would require one transfer per gated layer
 per frame, so \sysname instead assigns each layer a fixed level calibrated from
 its gate statistics. The trace-driven mode thus uses one nonblocking input
-observation per frame, while the fixed-level mode uses none; neither inserts
-per-layer device-to-host transfers into the per-frame path.
+observation per frame, while the fixed-level mode uses none; neither adds
+per-layer device-to-host transfers to frame execution.
