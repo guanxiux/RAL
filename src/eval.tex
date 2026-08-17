@@ -107,14 +107,15 @@ and one-time state initialization. On the Jetson platforms, we integrate
 board-level \texttt{VDD\_IN} over each timed round to obtain its mean power,
 multiply that value by the round's cumulative CUDA-event time, and aggregate
 across rounds to obtain per-frame board energy. We follow the original workload
-protocols: AEE for optical flow~\cite{evconv}, COCO-style AP$_{50:95}$ for
-detection~\cite{deltacnn}, and PCKh for human pose~\cite{dynconv}. Because
+protocols: AEE for optical flow~\cite{evconv}, COCO-style average precision
+(AP) for detection, averaged over IoU thresholds from 0.50 to
+0.95~\cite{deltacnn}, and PCKh for human pose~\cite{dynconv}. Because
 MOT16 releases ground-truth detections only for its training split, AP on the
 test sequences uses fixed pseudo-labels from a dense YOLO26x
 teacher~\cite{yolo26}.
 
-\subsection{End-to-End Latency and Energy}
-\label{sec:eval:latency}
+\subsection{End-to-End Performance}
+\label{sec:eval:end-to-end}
 
 \begin{figure*}[t]
   \centering
@@ -150,18 +151,44 @@ relative to dense execution.
 
 \input{figures/e2e_energy_table}
 
-\subsection{Efficiency Analysis}
-\label{sec:eval:efficiency}
+Task accuracy remains determined by the upstream mask policy rather than the
+execution backend. Figure~\ref{fig:e2e-accuracy} reports each workload once on
+RTX~3080 because all platforms use the same weights, inputs, and masks. The
+three sparse paths agree within 0.31 AP points for detection and to the shown
+precision for optical flow and pose. Relative to dense execution, the selected
+mask policies change accuracy by at most 3.0 AP points for detection and 1.4
+PCKh points for pose, while slightly improving FireFlowNet's AEE. Thus the
+latency and energy comparisons do not exchange backend correctness for speed.
+
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=\columnwidth]{figures/e2e_accuracy.pdf}
+  \caption{Task accuracy at the operating points used in the end-to-end
+  experiments. AEE is lower-is-better; AP and PCKh are
+  higher-is-better. We report accuracy once on RTX~3080 because the models,
+  inputs, and upstream masks are shared across platforms.}
+  \Description{Four grouped bar charts compare Dense, Tile skipping,
+  Gather-scatter, and WISEConv task accuracy. FireFlowNet reports average
+  endpoint error, YOLOv8n and YOLOv8m report AP, and DynConv Pose reports
+  PCKh. The three sparse execution paths have closely matching task accuracy in
+  every workload.}
+  \label{fig:e2e-accuracy}
+\end{figure}
+
+\subsection{Microbenchmarks}
+\label{sec:eval:microbenchmarks}
 
 % TODO: At first use, state that model-level work ratios accumulate convolution
 % FLOPs over all measured frames and layers before division.
+% TODO: Analyze useful-compute ratio, compute-stage throughput, construction
+% cost, and tile-local versus global worklist ordering.
 
-\subsection{Construction Overhead}
-\label{sec:eval:overhead}
+\subsection{Ablation Study}
+\label{sec:eval:ablation}
 
 % TODO
 
-\subsection{Task Accuracy}
-\label{sec:eval:accuracy}
+\subsection{Sensitivity Analysis}
+\label{sec:eval:sensitivity}
 
 % TODO

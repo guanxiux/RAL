@@ -92,7 +92,7 @@ correctness; traversal order within each interval is retained for locality.
 \sysname thus confines its ordering guarantee to each contiguous segment:
 coordinates retain the tile's dense traversal, while independently reserved
 segments provide no cross-boundary locality guarantee. As shown in
-\S\ref{sec:eval:efficiency}, this tile-local order achieves compute-stage
+\S\ref{sec:eval:microbenchmarks}, this tile-local order achieves compute-stage
 throughput comparable to global ordering, making the additional ordering pass
 an unfavorable end-to-end trade-off.
 

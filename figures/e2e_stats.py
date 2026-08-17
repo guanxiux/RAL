@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Derive end-to-end latency and energy data from the formal logs.
+"""Derive end-to-end latency, energy, and accuracy from the formal logs.
 
 The output contains one row per platform, workload, and execution path.  The
 two unmeasured discrete-GPU slots are emitted with empty measurements so the
@@ -28,6 +28,7 @@ HERE = Path(__file__).resolve().parent
 REPO = HERE.parents[1]
 LOGS = REPO / "logs"
 OUT_CSV = HERE / "e2e_stats.csv"
+OUT_ACCURACY_CSV = HERE / "e2e_accuracy.csv"
 
 PLATFORMS = [
     ("tbd-a", "TBD Discrete GPU A", "placeholder"),
@@ -166,6 +167,84 @@ def latency(platform: str, workload: str, backend: str) -> tuple[float, str]:
     raise KeyError(workload)
 
 
+def optical_accuracy(backend: str) -> tuple[float, str]:
+    """Aggregate AEE over every valid ground-truth timestamp."""
+    run = OPTICAL_RUN["3080"]
+    path = LOGS / "optical_flow" / backend / run / "summary.json"
+    summary = load_json(path)
+    weighted_sum = 0.0
+    sample_count = 0
+    for sequence in summary["sequences"].values():
+        accuracy = sequence.get("accuracy") or {}
+        aee = accuracy.get("aee")
+        if isinstance(aee, dict):
+            aee = aee.get("mean")
+        count = accuracy.get("valid_aee_frames")
+        if not isinstance(aee, (int, float)) or not isinstance(count, int) or count <= 0:
+            raise ValueError(f"invalid optical-flow accuracy in {path}")
+        weighted_sum += float(aee) * count
+        sample_count += count
+    if sample_count <= 0:
+        raise ValueError(f"empty optical-flow accuracy in {path}")
+    return weighted_sum / sample_count, str(path.relative_to(REPO))
+
+
+def yolo_accuracy(workload: str, backend: str) -> tuple[float, str]:
+    """Read COCO-style AP50:95 against the fixed teacher detections."""
+    path = LOGS / "yolov8_mot16" / YOLO_RUN["3080"][workload] / "summary.json"
+    summary = load_json(path)
+    aggregate = summary["backends"][backend].get("aggregate_accuracy") or {}
+    value = aggregate.get("pseudo_map50_95")
+    if not isinstance(value, (int, float)) or not 0.0 <= value <= 1.0:
+        raise ValueError(f"invalid detection accuracy for {backend} in {path}")
+    return 100.0 * float(value), str(path.relative_to(REPO))
+
+
+def pose_accuracy(backend: str) -> tuple[float, str]:
+    """Read model-level PCKh from the formal pose run."""
+    path = LOGS / "dynconv_pose" / POSE_RUN["3080"] / "summary.json"
+    summary = load_json(path)
+    actual = actual_backend("dynconv_pose", backend)
+    accuracy = summary["backends"][actual].get("accuracy") or {}
+    value = accuracy.get("pckh")
+    if not isinstance(value, (int, float)) or not 0.0 <= value <= 100.0:
+        raise ValueError(f"invalid pose accuracy for {actual} in {path}")
+    return float(value), str(path.relative_to(REPO))
+
+
+def accuracy_rows() -> list[dict[str, str]]:
+    """Return one platform-independent task-quality value per backend."""
+    rows = []
+    for workload, workload_label in WORKLOADS:
+        for backend, backend_label in BACKENDS:
+            if workload == "fireflownet":
+                value, source = optical_accuracy(backend)
+                metric, direction = "AEE", "lower"
+            elif workload in ("yolov8n", "yolov8m"):
+                value, source = yolo_accuracy(workload, backend)
+                metric, direction = "AP50:95 (%)", "higher"
+            elif workload == "dynconv_pose":
+                value, source = pose_accuracy(backend)
+                metric, direction = "PCKh (%)", "higher"
+            else:
+                raise KeyError(workload)
+            rows.append(
+                {
+                    "workload": workload,
+                    "workload_label": workload_label,
+                    "backend": backend,
+                    "backend_label": backend_label,
+                    "metric": metric,
+                    "direction": direction,
+                    "value": f"{value:.9f}",
+                    "source": source,
+                }
+            )
+    if len(rows) != len(WORKLOADS) * len(BACKENDS):
+        raise AssertionError(len(rows))
+    return rows
+
+
 def load_power_tools():
     path = REPO / "benchmarks" / "summarize_power_intervals.py"
     spec = importlib.util.spec_from_file_location("wiseconv_power_tools", path)
@@ -294,10 +373,19 @@ def main() -> None:
         writer.writeheader()
         writer.writerows(rows)
 
+    task_quality = accuracy_rows()
+    with OUT_ACCURACY_CSV.open("w", newline="", encoding="utf-8") as output:
+        writer = csv.DictWriter(
+            output, fieldnames=list(task_quality[0]), lineterminator="\n"
+        )
+        writer.writeheader()
+        writer.writerows(task_quality)
+
     measured = sum(bool(row["latency_ms"]) for row in rows)
     powered = sum(bool(row["energy_j_per_frame"]) for row in rows)
     print(f"wrote {OUT_CSV}")
     print(f"latency cells: {measured}; energy cells: {powered}")
+    print(f"wrote {OUT_ACCURACY_CSV}; accuracy cells: {len(task_quality)}")
 
 
 if __name__ == "__main__":

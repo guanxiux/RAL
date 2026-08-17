@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Render the end-to-end latency figure and Jetson energy table from CSV."""
+"""Render the end-to-end latency, energy, and accuracy results from CSV."""
 
 from __future__ import annotations
 
@@ -26,7 +26,9 @@ from bar_patterns import (
 
 HERE = Path(__file__).resolve().parent
 CSV_PATH = HERE / "e2e_stats.csv"
+ACCURACY_CSV_PATH = HERE / "e2e_accuracy.csv"
 LATENCY_PDF = HERE / "e2e_latency.pdf"
+ACCURACY_PDF = HERE / "e2e_accuracy.pdf"
 ENERGY_TEX = HERE / "e2e_energy_table.tex"
 
 for directory in (
@@ -96,8 +98,28 @@ def read_rows():
     return rows, by_key
 
 
+def read_accuracy_rows():
+    rows = list(csv.DictReader(ACCURACY_CSV_PATH.open(encoding="utf-8")))
+    expected = len(WORKLOADS) * len(BACKENDS)
+    if len(rows) != expected:
+        raise ValueError(f"expected {expected} accuracy rows, found {len(rows)}")
+    by_key = {}
+    for row in rows:
+        key = (row["workload"], row["backend"])
+        if key in by_key:
+            raise ValueError(f"duplicate accuracy row {key}")
+        by_key[key] = row
+    return rows, by_key
+
+
 def bar(ax, index: int, backend: str, value: float, width: float):
     return add_bar(ax, index, value, width, backend, linewidth=0.65)
+
+
+def contiguous_bar_x(index: int, width: float) -> float:
+    """Center a gap-free backend group within the categorical x range."""
+    group_center = (len(BACKENDS) - 1) / 2
+    return group_center + (index - group_center) * width
 
 
 def style_axis(ax) -> None:
@@ -144,8 +166,12 @@ def natural_ticks(max_value: float):
 def draw_regular_axis(fig, rect, values):
     ax = fig.add_axes(rect)
     patches = {}
+    bar_width = 0.68
     for index, backend in enumerate(BACKENDS):
-        patches[backend] = bar(ax, index, backend, values[backend], 0.68)
+        bar_x = contiguous_bar_x(index, bar_width)
+        patches[backend] = bar(
+            ax, bar_x, backend, values[backend], bar_width
+        )
     style_axis(ax)
     ticks, decimals = natural_ticks(max(values.values()))
     ax.set_ylim(0, ticks[-1])
@@ -168,11 +194,13 @@ def draw_broken_axis(fig, rect, values):
     )
 
     patches = {}
+    bar_width = 0.68
     for axis in (ax_bottom, ax_top):
         patches[axis] = {}
         for index, backend in enumerate(BACKENDS):
+            bar_x = contiguous_bar_x(index, bar_width)
             patches[axis][backend] = bar(
-                axis, index, backend, values[backend], 0.68
+                axis, bar_x, backend, values[backend], bar_width
             )
         style_axis(axis)
 
@@ -371,6 +399,99 @@ def draw_latency_figure(by_key) -> None:
     print(f"wrote {LATENCY_PDF}")
 
 
+def draw_accuracy_figure(by_key) -> None:
+    """Draw four metric-specific workload panels with a shared path legend."""
+    # acmart's sigplan layout uses a 3.334-inch column.  Emit at that width so
+    # LaTeX does not rescale the figure and its typography.
+    fig_width, fig_height = 3.334, 1.65
+    fig = plt.figure(figsize=(fig_width, fig_height))
+    margin_left, margin_right = 0.31, 0.01
+    margin_bottom, margin_top = 0.32, 0.34
+    panel_gap = 0.265
+    panel_width = (
+        fig_width - margin_left - margin_right - 3 * panel_gap
+    ) / 4
+    panel_height = fig_height - margin_bottom - margin_top
+
+    metric_labels = {
+        "AEE": "AEE",
+        "AP50:95 (%)": "AP (%)",
+        "PCKh (%)": "PCKh (%)",
+    }
+
+    for workload_index, workload in enumerate(WORKLOADS):
+        left = margin_left + workload_index * (panel_width + panel_gap)
+        ax = fig.add_axes(
+            [
+                left / fig_width,
+                margin_bottom / fig_height,
+                panel_width / fig_width,
+                panel_height / fig_height,
+            ]
+        )
+        rows = {backend: by_key[(workload, backend)] for backend in BACKENDS}
+        values = {backend: float(rows[backend]["value"]) for backend in BACKENDS}
+        metrics = {row["metric"] for row in rows.values()}
+        directions = {row["direction"] for row in rows.values()}
+        if len(metrics) != 1 or len(directions) != 1:
+            raise ValueError(f"inconsistent accuracy metadata for {workload}")
+        metric = metrics.pop()
+
+        bar_width = 0.68
+        for backend_index, backend in enumerate(BACKENDS):
+            # Match the latency bars' width while keeping the four paths in one
+            # contiguous comparison group centered within the workload panel.
+            bar_x = contiguous_bar_x(backend_index, bar_width)
+            bar(ax, bar_x, backend, values[backend], bar_width)
+
+        ticks, decimals = natural_ticks(max(values.values()))
+        ax.set_xlim(-0.52, len(BACKENDS) - 0.48)
+        ax.set_ylim(0, ticks[-1])
+        ax.set_yticks(ticks)
+        ax.yaxis.set_major_formatter(
+            FuncFormatter(
+                lambda value, _, digits=decimals: f"{value:.{digits}f}"
+            )
+        )
+        ax.set_xticks([])
+        ax.set_xlabel(
+            WORKLOAD_LABELS[workload],
+            fontsize=FS_WORKLOAD,
+            labelpad=2.5,
+            linespacing=0.88,
+        )
+        ax.set_ylabel(metric_labels[metric], fontsize=FS_AXIS, labelpad=0.8)
+        ax.yaxis.set_label_coords(-0.28, 0.5)
+        ax.tick_params(
+            axis="y", labelsize=FS_TICK, pad=0.8, length=1.8, width=0.6
+        )
+        ax.spines["top"].set_visible(False)
+        ax.spines["right"].set_visible(False)
+        ax.set_axisbelow(True)
+        ax.yaxis.grid(True, color="#bcbcbc", alpha=0.28, linewidth=0.35)
+
+    handles = legend_handles(BACKENDS)
+    legend = fig.legend(
+        handles=handles,
+        labels=[LABELS[backend] for backend in BACKENDS],
+        loc="upper center",
+        bbox_to_anchor=(0.5, 1.01),
+        ncol=4,
+        frameon=False,
+        fontsize=FS_LEG,
+        handlelength=0.9,
+        handletextpad=0.25,
+        columnspacing=0.55,
+    )
+    for text in legend.get_texts():
+        if text.get_text() == "WISEConv":
+            text.set_fontweight("bold")
+
+    fig.savefig(ACCURACY_PDF)
+    plt.close(fig)
+    print(f"wrote {ACCURACY_PDF}")
+
+
 def format_energy(value: float, best: bool) -> str:
     formatted = f"{value:.3f}"
     return f"\\textbf{{{formatted}}}" if best else formatted
@@ -386,33 +507,57 @@ def write_energy_table(by_key) -> None:
         "Lower is better.}",
         "  \\label{tab:e2e-energy}",
         "  \\footnotesize",
-        "  \\setlength{\\tabcolsep}{3.0pt}",
-        "  \\begin{tabular}{@{}lrrrr@{}}",
+        "  \\setlength{\\tabcolsep}{2.6pt}",
+        "  \\renewcommand{\\arraystretch}{1.08}",
+        "  \\begin{tabular}{@{}clrrrr@{}}",
         "    \\toprule",
-        "    Workload & Dense & Tile & Gather & \\textbf{WISEConv} \\\\",
+        "    \\rotatebox[origin=c]{90}{GPU} & System & FireFlowNet & "
+        "YOLOv8n & YOLOv8m & \\shortstack{DynConv\\\\Pose} \\\\",
         "    \\midrule",
     ]
 
+    platform_labels = {
+        "agx-orin": "AGX Orin",
+        "xavier-nx": "Xavier NX",
+    }
+    system_labels = {
+        "dense": "Dense",
+        "tile_skip": "Tile skip",
+        "gather_scatter": "Gather",
+        "wiseconv": "\\textbf{WISEConv}",
+    }
+
     for platform_index, platform in enumerate(platforms):
-        label = by_key[(platform, WORKLOADS[0], BACKENDS[0])]["platform_label"]
         if platform_index:
-            lines.append("    \\addlinespace[2pt]")
-        lines.append(f"    \\multicolumn{{5}}{{@{{}}l}}{{\\emph{{{label}}}}} \\\\")
-        for workload in WORKLOADS:
-            values = {
-                backend: float(
+            lines.append("    \\midrule")
+        best_values = {
+            workload: min(
+                float(
                     by_key[(platform, workload, backend)]["energy_j_per_frame"]
                 )
                 for backend in BACKENDS
-            }
-            best_value = min(values.values())
-            cells = [
-                format_energy(values[backend], values[backend] == best_value)
-                for backend in BACKENDS
-            ]
-            workload_label = WORKLOAD_LABELS[workload].replace("\n", " ")
+            )
+            for workload in WORKLOADS
+        }
+        for backend_index, backend in enumerate(BACKENDS):
+            cells = []
+            for workload in WORKLOADS:
+                value = float(
+                    by_key[(platform, workload, backend)]["energy_j_per_frame"]
+                )
+                cells.append(format_energy(value, value == best_values[workload]))
+            platform_cell = ""
+            if backend_index == 0:
+                platform_cell = (
+                    "\\multirow{4}{*}{\\rotatebox[origin=c]{90}{\\scriptsize "
+                    + platform_labels[platform]
+                    + "}}"
+                )
             lines.append(
-                f"    {workload_label} & " + " & ".join(cells) + " \\\\")
+                f"    {platform_cell} & {system_labels[backend]} & "
+                + " & ".join(cells)
+                + " \\\\"
+            )
 
     lines.extend(
         [
@@ -506,7 +651,9 @@ def print_ranges(rows) -> None:
 
 def main() -> None:
     rows, by_key = read_rows()
+    _, accuracy_by_key = read_accuracy_rows()
     draw_latency_figure(by_key)
+    draw_accuracy_figure(accuracy_by_key)
     write_energy_table(by_key)
     print_ranges(rows)
 

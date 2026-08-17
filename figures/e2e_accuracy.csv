@@ -1,0 +1,17 @@
+workload,workload_label,backend,backend_label,metric,direction,value,source
+fireflownet,FireFlowNet,dense,Dense,AEE,lower,1.903317789,logs/optical_flow/dense/3080-v23-full-r3-1800mhz/summary.json
+fireflownet,FireFlowNet,tile_skip,Tile skipping,AEE,lower,1.887515812,logs/optical_flow/tile_skip/3080-v23-full-r3-1800mhz/summary.json
+fireflownet,FireFlowNet,gather_scatter,Gather-scatter,AEE,lower,1.887514624,logs/optical_flow/gather_scatter/3080-v23-full-r3-1800mhz/summary.json
+fireflownet,FireFlowNet,wiseconv,WISEConv,AEE,lower,1.887509345,logs/optical_flow/wiseconv/3080-v23-full-r3-1800mhz/summary.json
+yolov8n,YOLOv8n,dense,Dense,AP50:95 (%),higher,68.227514206,logs/yolov8_mot16/3080-v23-yolov8n-full-r3-1800mhz/summary.json
+yolov8n,YOLOv8n,tile_skip,Tile skipping,AP50:95 (%),higher,67.373214396,logs/yolov8_mot16/3080-v23-yolov8n-full-r3-1800mhz/summary.json
+yolov8n,YOLOv8n,gather_scatter,Gather-scatter,AP50:95 (%),higher,67.118190965,logs/yolov8_mot16/3080-v23-yolov8n-full-r3-1800mhz/summary.json
+yolov8n,YOLOv8n,wiseconv,WISEConv,AP50:95 (%),higher,67.069415436,logs/yolov8_mot16/3080-v23-yolov8n-full-r3-1800mhz/summary.json
+yolov8m,YOLOv8m,dense,Dense,AP50:95 (%),higher,79.393054896,logs/yolov8_mot16/3080-v23-yolov8m-full-r3-1800mhz/summary.json
+yolov8m,YOLOv8m,tile_skip,Tile skipping,AP50:95 (%),higher,76.717459767,logs/yolov8_mot16/3080-v23-yolov8m-full-r3-1800mhz/summary.json
+yolov8m,YOLOv8m,gather_scatter,Gather-scatter,AP50:95 (%),higher,76.437228129,logs/yolov8_mot16/3080-v23-yolov8m-full-r3-1800mhz/summary.json
+yolov8m,YOLOv8m,wiseconv,WISEConv,AP50:95 (%),higher,76.636454176,logs/yolov8_mot16/3080-v23-yolov8m-full-r3-1800mhz/summary.json
+dynconv_pose,DynConv Pose,dense,Dense,PCKh (%),higher,88.064012490,logs/dynconv_pose/3080-v23-full-s0125-r3-1800mhz/summary.json
+dynconv_pose,DynConv Pose,tile_skip,Tile skipping,PCKh (%),higher,86.679677335,logs/dynconv_pose/3080-v23-full-s0125-r3-1800mhz/summary.json
+dynconv_pose,DynConv Pose,gather_scatter,Gather-scatter,PCKh (%),higher,86.679677335,logs/dynconv_pose/3080-v23-full-s0125-r3-1800mhz/summary.json
+dynconv_pose,DynConv Pose,wiseconv,WISEConv,PCKh (%),higher,86.679677335,logs/dynconv_pose/3080-v23-full-s0125-r3-1800mhz/summary.json

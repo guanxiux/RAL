@@ -4,22 +4,21 @@
   \caption{Per-frame board energy (J) on the Jetson platforms. Lower is better.}
   \label{tab:e2e-energy}
   \footnotesize
-  \setlength{\tabcolsep}{3.0pt}
-  \begin{tabular}{@{}lrrrr@{}}
+  \setlength{\tabcolsep}{2.6pt}
+  \renewcommand{\arraystretch}{1.08}
+  \begin{tabular}{@{}clrrrr@{}}
     \toprule
-    Workload & Dense & Tile & Gather & \textbf{WISEConv} \\
+    \rotatebox[origin=c]{90}{GPU} & System & FireFlowNet & YOLOv8n & YOLOv8m & \shortstack{DynConv\\Pose} \\
     \midrule
-    \multicolumn{5}{@{}l}{\emph{Jetson AGX Orin}} \\
-    FireFlowNet & 0.262 & 0.148 & 0.287 & \textbf{0.101} \\
-    YOLOv8n & 0.479 & 0.435 & 0.700 & \textbf{0.317} \\
-    YOLOv8m & 2.700 & 2.329 & 2.420 & \textbf{1.573} \\
-    DynConv Pose & 1.203 & 0.665 & 2.370 & \textbf{0.476} \\
-    \addlinespace[2pt]
-    \multicolumn{5}{@{}l}{\emph{Jetson Xavier NX}} \\
-    FireFlowNet & 0.279 & 0.127 & 0.327 & \textbf{0.077} \\
-    YOLOv8n & 0.485 & 0.418 & 0.853 & \textbf{0.347} \\
-    YOLOv8m & 2.585 & 2.270 & 3.184 & \textbf{1.782} \\
-    DynConv Pose & 1.084 & 0.537 & 2.827 & \textbf{0.341} \\
+    \multirow{4}{*}{\rotatebox[origin=c]{90}{\scriptsize AGX Orin}} & Dense & 0.262 & 0.479 & 2.700 & 1.203 \\
+     & Tile skip & 0.148 & 0.435 & 2.329 & 0.665 \\
+     & Gather & 0.287 & 0.700 & 2.420 & 2.370 \\
+     & \textbf{WISEConv} & \textbf{0.101} & \textbf{0.317} & \textbf{1.573} & \textbf{0.476} \\
+    \midrule
+    \multirow{4}{*}{\rotatebox[origin=c]{90}{\scriptsize Xavier NX}} & Dense & 0.279 & 0.485 & 2.585 & 1.084 \\
+     & Tile skip & 0.127 & 0.418 & 2.270 & 0.537 \\
+     & Gather & 0.327 & 0.853 & 3.184 & 2.827 \\
+     & \textbf{WISEConv} & \textbf{0.077} & \textbf{0.347} & \textbf{1.782} & \textbf{0.341} \\
     \bottomrule
   \end{tabular}
 \end{table}
