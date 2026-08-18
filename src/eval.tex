@@ -9,38 +9,39 @@
 We evaluate six GPU platforms spanning four discrete GPUs and two embedded
 SoCs. The discrete platforms are RTX~4070 Laptop, RTX~3080,
 \textit{TBD Discrete GPU A}, and \textit{TBD Discrete GPU B}.
-They span laptop- and desktop-class devices and test \sysname across commodity
-GPU performance tiers. Jetson Xavier NX and Jetson AGX Orin complement this
-coverage with resource- and power-constrained deployments, where we also
-measure board energy.
+The four discrete GPUs cover a range of compute capabilities. Jetson Xavier NX
+and Jetson AGX Orin extend the evaluation to embedded SoCs with limited compute
+and power budgets, where we also measure board energy.
 % TODO(platforms): Replace the two discrete-GPU placeholders once selected.
 % TODO: memory capacity, CUDA version, power mode, and fixed-clock settings.
 
 \paragraph{Models, tasks, and mask sources.}
 Our workloads span three vision tasks.
 
-\noindent\emph{Event-based optical flow.}
-We evaluate FireFlowNet~\cite{fireflownet}, a lightweight event-based
-optical-flow model that delivers high inference rates while retaining
-competitive accuracy, on MVSEC~\cite{mvsec}. MVSEC contains event-camera
-sequences and corresponding ground-truth flow from indoor quadrotor flight and
-outdoor driving. Following Ev-Conv~\cite{evconv}, consecutive 50-ms windows
-advance by 1~ms; events entering or leaving the window form the sparse
-increment from which we derive layer masks.
+\begin{itemize}
+  \item \textbf{Event-based optical flow.}
+        FireFlowNet~\cite{fireflownet} is a lightweight event-based optical-flow
+        model that delivers high inference rates while retaining competitive
+        accuracy. We evaluate it on MVSEC~\cite{mvsec}, which contains
+        event-camera sequences and corresponding ground-truth flow from indoor
+        quadrotor flight and outdoor driving. Following Ev-Conv~\cite{evconv},
+        consecutive 50-ms windows advance by 1~ms; events entering or leaving
+        the window form the sparse increment from which we derive layer masks.
 
-\noindent\emph{Detection.}
-We evaluate YOLOv8n and YOLOv8m~\cite{yolov8} on MOT16~\cite{mot16}, a
-collection of crowded pedestrian videos for multi-object tracking. Their
-two model sizes expose how scale affects sparse-execution efficiency.
-For both models, DeltaCNN's temporal policy~\cite{deltacnn} thresholds
-activation differences between successive frames and propagates the resulting
-masks across layers.
+  \item \textbf{Detection.} We evaluate YOLOv8n and
+        YOLOv8m~\cite{yolov8} on MOT16~\cite{mot16}, a collection of crowded
+        pedestrian videos for multi-object tracking. Their two model sizes
+        expose how scale affects sparse-execution efficiency. For both models,
+        DeltaCNN's temporal policy~\cite{deltacnn} thresholds activation
+        differences between successive frames and propagates the resulting
+        masks across layers.
 
-\noindent\emph{Human pose estimation.}
-We use the DynConv pose model~\cite{dynconv} on MPII~\cite{mpii}, which depicts
-people performing diverse activities and annotates their 2D body joints.
-DynConv's learned spatial gates produce an input-dependent mask for each gated
-block.
+  \item \textbf{Human pose estimation.} We use the DynConv pose
+        model~\cite{dynconv} on MPII~\cite{mpii}, which depicts people
+        performing diverse activities and annotates their 2D body joints.
+        DynConv's learned spatial gates produce an input-dependent mask for
+        each gated block.
+\end{itemize}
 
 
 Table~\ref{tab:models} summarizes the workloads and evaluation scales.
@@ -88,9 +89,9 @@ work:
   \item \textbf{Dense} executes the complete model with the native
         PyTorch/cuDNN backend~\cite{cudnn}.
 
-  \item \textbf{Tile skipping} retains the dense tiled pipeline and skips a
-        tile only when all its outputs are inactive, following SBNet, Ev-Conv, and
-        DeltaCNN~\cite{sbnet,evconv,deltacnn}.
+  \item \textbf{Tile skipping} adapts DeltaCNN's CUDA
+        implementation~\cite{deltacnn}, retaining the dense tiled pipeline and
+        skipping a tile only when all its outputs are inactive.
 
   \item \textbf{Gather-scatter} uses DynConv's original CUDA backend for
         pose~\cite{dynconv}. FireFlowNet and YOLO use an adaptation of MMCV's
