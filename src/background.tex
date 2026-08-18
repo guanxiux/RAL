@@ -105,17 +105,24 @@ $\mathcal{C}$.
 \begin{figure}[tb]
   \centering
   \includegraphics[width=\columnwidth]{figures/gap.pdf}
-  \caption{Statistics of DynConv~\cite{dynconv}, a pose estimator
-  with learned spatial gating, on the MPII human-pose dataset~\cite{mpii} and
-  Jetson AGX Orin, comparing the native cuDNN path (Dense) against the two
-  sparse paths.
-  (a)~End-to-end average per-frame latency (left axis; the dashed line marks the
-  dense latency scaled by the active ratio aggregated across layers) and PCKh
-  accuracy (right axis; PCKh evaluates the percentage of keypoints localized within half the head size). The
-  sparse paths apply the same mask, so their accuracy coincides. (b)~Raw
-  throughput $T$ and effective throughput $T_{\mathrm{eff}}$, aggregated across
-  the model's convolution layers. The dense useful-compute ratio equals the
-  active ratio set by DynConv's spatial gating ($\alpha\approx15.6\%$).}
+  \caption{FireFlowNet~\cite{fireflownet} using the
+  Ev-Conv~\cite{evconv} event-driven mask policy on MVSEC~\cite{mvsec} and
+  RTX~3080, comparing cuDNN (Dense), DeltaCNN tile
+  skipping~\cite{deltacnn}, and an MMCV-derived gather-scatter
+  path~\cite{mmcv}.
+  (a)~Mean full-model per-frame latency and average endpoint error (AEE; lower
+  is better). The dashed
+  line marks dense latency scaled by the active ratio aggregated across layers;
+  the
+  sparse paths use the same masks and produce nearly identical AEE.
+  (b)~Raw throughput $T$ and effective throughput $T_{\mathrm{eff}}$, each
+  normalized to dense raw throughput. The dense useful-compute ratio equals
+  the active ratio set by the Ev-Conv mask policy ($\alpha\approx26.3\%$).}
+  \Description{Two grouped bar charts compare Dense, DeltaCNN tile skipping,
+  and MMCV gather-scatter for FireFlowNet on RTX 3080. The first contrasts
+  full-model latency and average endpoint error and marks the proportional
+  latency reference. The second contrasts raw and effective throughput after
+  normalization to dense raw throughput.}
   \label{fig:gap}
 \end{figure}
 Existing systems execute a mask along one of two paths. \emph{Tile
@@ -151,20 +158,24 @@ $T$ without changing~$\eta$; the factor of two counts each multiply-accumulate
 as two FLOPs. Consequently, $T_{\mathrm{eff}}$ measures the rate of
 required-output computation and therefore determines its latency.
 
-Figure~\ref{fig:gap} traces this on Jetson AGX Orin for the sparsest workload in our evaluation.
-The policy marks 84.4\% of the convolution work unnecessary, and the sparse paths
-discard it with negligible accuracy loss. Scaling dense latency by the fraction
-of convolution work that remains gives a 9.6\,ms ideal proportional-scaling reference
-(Fig.~\ref{fig:gap}a, dashed). Neither path approaches it: tile
-skipping (DeltaCNN~\cite{deltacnn}) reaches 36.6\,ms, still 3.8$\times$ the reference,
-and gather-scatter, even with DynConv built to amortize its overhead, runs at
-193.5\,ms, far slower than dense convolution itself. The gap traces to low
-effective throughput on both paths. Tile skipping holds
-throughput near half of dense but at a useful-compute ratio of only 49.1\%;
-gather-scatter lifts the useful-compute ratio near one, yet extraction and data
-movement collapse its throughput to 5.0\% of dense (Fig.~\ref{fig:gap}b). For
-masked convolution, neither path efficiently converts the GPU's capability into
-effective throughput.
+Figure~\ref{fig:gap} traces this on RTX~3080 for
+FireFlowNet~\cite{fireflownet} under the Ev-Conv~\cite{evconv} mask policy.
+Event cameras expose microsecond-scale changes, and Ev-Conv evaluates optical
+flow on event-window inputs updated at 1~kHz.
+The policy marks 73.7\% of the
+convolution work unnecessary, and
+the sparse paths discard it without reducing accuracy. Scaling dense latency by
+the fraction of convolution work that remains gives a 0.274\,ms ideal
+proportional-scaling reference (Fig.~\ref{fig:gap}a, dashed). Neither path
+approaches it: tile skipping (DeltaCNN~\cite{deltacnn}) reaches 0.606\,ms, still
+2.21$\times$ the reference, and gather-scatter (MMCV~\cite{mmcv}) runs at
+2.052\,ms, almost twice the latency of dense convolution itself. The gap traces
+to low effective throughput on both paths. Tile skipping holds throughput at
+61.6\% of dense but at a useful-compute ratio of only 73.6\%; gather-scatter
+lifts the useful-compute ratio to one, yet extraction and data movement collapse
+its throughput to 13.4\% of dense (Fig.~\ref{fig:gap}b). For masked convolution,
+neither path efficiently converts the GPU's capability into effective
+throughput.
 
 
 \subsection{Distinction from Related Sparse Execution}

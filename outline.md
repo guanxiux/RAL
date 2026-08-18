@@ -136,7 +136,6 @@ SpConv/TorchSparse++ 面向 irregular point-cloud coordinates；WISEConv 面向�
 ### 5.1 Experimental Setup（已写，当前冻结）
 
 - **Platforms:** Jetson Xavier NX、Jetson AGX Orin、RTX 4070 Laptop、RTX 3080。
-  NX 的 slot 保留，但现有异常 logs 在受控复测前不得进入 claims。
 - **Models/tasks:** FireFlowNet optical flow、YOLOv8n/m detection、DynConv human pose。
 - **Mask sources:** Ev-Conv、DeltaCNN、DynConv learned gates。
 - **Datasets:** MVSEC、MOT16、MPII。

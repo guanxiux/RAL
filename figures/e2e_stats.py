@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Derive end-to-end latency, energy, and accuracy from the formal logs.
+"""Derive end-to-end latency, energy, accuracy, and reference data from logs.
 
 The output contains one row per platform, workload, and execution path.  The
 two unmeasured discrete-GPU slots are emitted with empty measurements so the
@@ -13,6 +13,13 @@ round's cumulative CUDA-event GPU time, then summed over rounds and divided by
 the total timed frames.  AGX Orin summaries already contain this quantity.  The
 legacy Xavier NX markers are upgraded in memory from their original latency
 JSONL files; the source logs are not modified.
+
+The ideal proportional-scaling reference applies each evaluation sequence's
+model-level active ratio to that sequence's dense latency before using the same
+aggregation as the latency bars.  Active ratios are platform-independent under
+the fixed inputs and mask policies, so the formal RTX 3080 work logs anchor them.
+The result is an idealized reference under proportional latency scaling, not a
+hard lower bound.
 """
 
 from __future__ import annotations
@@ -43,7 +50,7 @@ WORKLOADS = [
     ("fireflownet", "FireFlowNet"),
     ("yolov8n", "YOLOv8n"),
     ("yolov8m", "YOLOv8m"),
-    ("dynconv_pose", "DynConv Pose"),
+    ("dynconv_pose", "DynConv"),
 ]
 
 BACKENDS = [
@@ -85,6 +92,8 @@ POSE_RUN = {
     "agx-orin": "agx-orin-30w-locked-energy-v4-full-s0125-r3",
     "xavier-nx": "xavier-nx-20w-locked-full-s0125-r3",
 }
+
+ACTIVE_RATIO_PLATFORM = "3080"
 
 AGX_ENERGY = {
     "fireflownet": "fireflownet-full-r3-energy-v4.per_backend_energy.json",
@@ -165,6 +174,108 @@ def latency(platform: str, workload: str, backend: str) -> tuple[float, str]:
     if workload == "dynconv_pose":
         return pose_latency(platform, backend)
     raise KeyError(workload)
+
+
+def active_ratio_trace(workload: str) -> tuple[dict[str, float], str]:
+    """Return per-sequence model-level active ratios for a fixed mask policy."""
+    if workload == "fireflownet":
+        path = (
+            LOGS
+            / "optical_flow"
+            / "wiseconv"
+            / OPTICAL_RUN[ACTIVE_RATIO_PLATFORM]
+            / "summary.json"
+        )
+        sequences = load_json(path)["sequences"]
+        ratios = {
+            name: 1.0 - float(sequence["work"]["exact_flops_reduction"])
+            for name, sequence in sequences.items()
+        }
+    elif workload in ("yolov8n", "yolov8m"):
+        path = (
+            LOGS
+            / "yolov8_mot16"
+            / YOLO_RUN[ACTIVE_RATIO_PLATFORM][workload]
+            / "summary.json"
+        )
+        sequences = load_json(path)["backends"]["wiseconv"]
+        ratios = {
+            name: float(sequence["work"]["exact_flops_ratio"])
+            for name, sequence in sequences.items()
+            if name != "aggregate_accuracy"
+        }
+    elif workload == "dynconv_pose":
+        path = (
+            LOGS
+            / "dynconv_pose"
+            / POSE_RUN[ACTIVE_RATIO_PLATFORM]
+            / "summary.json"
+        )
+        ratio = float(
+            load_json(path)["backends"]["wiseconv"]["work"][
+                "conditional_mac_ratio"
+            ]
+        )
+        ratios = {"MPII-validation": ratio}
+    else:
+        raise KeyError(workload)
+
+    if not ratios or any(not 0.0 < ratio <= 1.0 for ratio in ratios.values()):
+        raise ValueError(f"invalid active ratios in {path}")
+    return ratios, str(path.relative_to(REPO))
+
+
+def proportional_reference(platform: str, workload: str) -> tuple[float, str]:
+    """Scale dense latency by active ratio before matching bar aggregation."""
+    ratios, ratio_source = active_ratio_trace(workload)
+    if workload == "fireflownet":
+        dense_path = (
+            LOGS
+            / "optical_flow"
+            / "dense"
+            / OPTICAL_RUN[platform]
+            / "summary.json"
+        )
+        sequences = load_json(dense_path)["sequences"]
+        if set(sequences) != set(ratios):
+            raise ValueError(f"sequence mismatch between {dense_path} and {ratio_source}")
+        values = [
+            float(sequence["latency"]["round_mean_gpu_ms"]["mean"])
+            * ratios[name]
+            for name, sequence in sequences.items()
+        ]
+    elif workload in ("yolov8n", "yolov8m"):
+        dense_path = (
+            LOGS
+            / "yolov8_mot16"
+            / YOLO_RUN[platform][workload]
+            / "summary.json"
+        )
+        sequences = load_json(dense_path)["backends"]["dense"]
+        sequence_names = {
+            name for name in sequences if name != "aggregate_accuracy"
+        }
+        if sequence_names != set(ratios):
+            raise ValueError(f"sequence mismatch between {dense_path} and {ratio_source}")
+        values = [
+            float(sequences[name]["latency"]["all_frames_gpu_ms"]["mean"])
+            * ratios[name]
+            for name in sequence_names
+        ]
+    elif workload == "dynconv_pose":
+        dense_path = LOGS / "dynconv_pose" / POSE_RUN[platform] / "summary.json"
+        dense_latency = float(
+            load_json(dense_path)["backends"]["dense"]["latency"]["mean"]
+        )
+        values = [dense_latency * next(iter(ratios.values()))]
+    else:
+        raise KeyError(workload)
+
+    reference = statistics.fmean(values)
+    if reference <= 0.0:
+        raise ValueError(f"invalid proportional reference for {platform}/{workload}")
+    source = f"{dense_path.relative_to(REPO)} + {ratio_source}"
+    return reference, source
 
 
 def optical_accuracy(backend: str) -> tuple[float, str]:
@@ -337,9 +448,22 @@ def energy_summaries() -> tuple[dict[tuple[str, str, str], float], dict]:
 
 def main() -> None:
     energies, energy_sources = energy_summaries()
+    model_active_ratios = {}
+    active_ratio_sources = {}
+    for workload, _ in WORKLOADS:
+        sequence_ratios, source = active_ratio_trace(workload)
+        model_active_ratios[workload] = statistics.fmean(sequence_ratios.values())
+        active_ratio_sources[workload] = source
+
     rows = []
     for platform, platform_label, status in PLATFORMS:
         for workload, workload_label in WORKLOADS:
+            reference_ms = None
+            reference_source = ""
+            if status == "measured":
+                reference_ms, reference_source = proportional_reference(
+                    platform, workload
+                )
             for backend, backend_label in BACKENDS:
                 latency_ms = None
                 latency_source = ""
@@ -353,11 +477,17 @@ def main() -> None:
                         "platform_status": status,
                         "workload": workload,
                         "workload_label": workload_label,
+                        "model_active_ratio": f"{model_active_ratios[workload]:.9f}",
                         "backend": backend,
                         "backend_label": backend_label,
                         "latency_ms": "" if latency_ms is None else f"{latency_ms:.9f}",
+                        "ideal_latency_ms": (
+                            "" if reference_ms is None else f"{reference_ms:.9f}"
+                        ),
                         "energy_j_per_frame": "" if energy_j is None else f"{energy_j:.9f}",
                         "latency_source": latency_source,
+                        "ideal_source": reference_source,
+                        "active_ratio_source": active_ratio_sources[workload],
                         "energy_source": energy_sources.get((platform, workload), ""),
                     }
                 )
@@ -382,9 +512,13 @@ def main() -> None:
         writer.writerows(task_quality)
 
     measured = sum(bool(row["latency_ms"]) for row in rows)
+    referenced = sum(bool(row["ideal_latency_ms"]) for row in rows)
     powered = sum(bool(row["energy_j_per_frame"]) for row in rows)
     print(f"wrote {OUT_CSV}")
-    print(f"latency cells: {measured}; energy cells: {powered}")
+    print(
+        f"latency cells: {measured}; proportional-reference cells: "
+        f"{referenced}; energy cells: {powered}"
+    )
     print(f"wrote {OUT_ACCURACY_CSV}; accuracy cells: {len(task_quality)}")
 
 

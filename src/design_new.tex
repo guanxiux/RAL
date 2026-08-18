@@ -198,7 +198,7 @@ to dense work. \sysname derives each configuration's persistent-grid capacity
 $g_{\mathrm{cap}}$ from the GPU's concurrent block residency and launches
 exactly that many blocks, independently of $n_{\mathcal{W}}$.
 
-\begin{algorithm}[t]
+\begin{algorithm}[htb]
 \caption{Persistent Worklist-Driven Implicit GEMM}
 \label{alg:compute}
 \begin{algorithmic}[1]
@@ -370,7 +370,7 @@ influence only the configuration: persistent compute still reads the current
 $n^l_{\mathcal{W}}$ on the device as the exact execution bound. Selection
 error can therefore affect performance but cannot omit scheduled coordinates.
 
-\begin{algorithm}[H]
+\begin{algorithm}[htb]
 \caption{Trace-Calibrated Nonblocking Configuration Selection}
 \label{alg:adapt}
 \begin{algorithmic}[1]

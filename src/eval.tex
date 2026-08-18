@@ -66,7 +66,7 @@ masked-convolution backend.
 \hline
  & \textbf{FireFlowNet} \cite{fireflownet}
  & \textbf{YOLOv8n/m} \cite{yolov8}
- & \textbf{DynConv Pose} \cite{dynconv} \\
+ & \textbf{DynConv} \cite{dynconv} \\
 \hline
 Task & Optical flow & Detection & Human pose \\
 Mask source & Ev-Conv~\cite{evconv} & DeltaCNN~\cite{deltacnn}
@@ -120,56 +120,85 @@ teacher~\cite{yolo26}.
 \begin{figure*}[t]
   \centering
   \includegraphics[width=\textwidth]{figures/e2e_latency.pdf}
-  \caption{Full-model mean per-frame latency across GPU platforms. Within each
-  platform, every workload uses its own y-axis to compare the four execution
-  paths; lower is better. Broken y-axes preserve resolution where
-  gather-scatter is substantially slower than the other paths.}
+  \caption{Full-model mean per-frame latency across GPU platforms. Each
+  workload uses an independent y-axis. Labels report $\hat{\alpha}$, the
+  model-level ratio of required to dense convolution FLOPs, accumulated over
+  frames and layers and averaged across evaluation sequences. Red dashed lines
+  mark ideal proportional scaling, computed by applying each sequence's ratio
+  to its dense latency before aggregation.}
   \Description{Grouped bar charts of full-model latency. Six platform panels
   each contain four workload groups comparing Dense, Tile skipping,
   Gather-scatter, and WISEConv. Two discrete-GPU panels are marked as awaiting
   results. Selected workload groups use broken y-axes for a much slower
-  gather-scatter path.}
+  gather-scatter path. Red dashed lines show the ideal proportional-scaling
+  reference for each workload and platform, and workload labels report their
+  aggregated active ratios.}
   \label{fig:e2e-latency}
 \end{figure*}
 
-\sysname is the fastest path in all 16 currently measured workload-platform
-pairs (Figure~\ref{fig:e2e-latency}). Relative to the fastest competing path
-for each pair, it reduces full-model latency by 22.1--46.5\%. The reduction is
-34.2--46.5\% on the discrete GPUs and 22.1--38.6\% on the Jetson platforms,
-showing that the benefit persists across both discrete GPUs and embedded SoCs.
-Existing sparse paths are inconsistent: even
-the faster of tile skipping and gather-scatter fails to beat dense execution
-in 8 of the 16 pairs. This outcome reflects the tension established in
-\S\ref{sec:bg:gap}: reducing scheduled work does not guarantee lower latency
-when the execution path sacrifices throughput.
+\paragraph{Latency.}
+\sysname is the fastest path in all 16 measured workload-platform pairs
+(Figure~\ref{fig:e2e-latency}). Relative to the fastest competing path for each
+pair, it reduces full-model latency by 34.2--46.5\% on the discrete GPUs and
+22.1--38.6\% on the Jetson SoCs. These gains persist across all four workloads
+and both device classes despite a more than two-order-of-magnitude span in
+absolute latency, from 0.399\,ms for FireFlowNet on RTX~3080 to 94.3\,ms for
+YOLOv8m on Xavier NX.
 
-These latency savings also translate into lower board energy. \sysname has the
-lowest per-frame energy in every Jetson workload-platform pair
+Existing sparse paths realize the available headroom only in narrow regimes:
+tile skipping needs low activity to offset tile-level waste, while
+gather-scatter needs sufficiently heavy convolution to amortize its overhead.
+FireFlowNet and DynConv leave enough removable work for tile skipping to
+cut dense latency by up to 42.0\% and 40.9\%, respectively. The higher-activity
+DeltaCNN masks for YOLOv8n and YOLOv8m leave less headroom, and tile skipping
+fails to turn it into a material speedup: it is near parity with dense on AGX
+Orin and slower in the other six pairs.
+Gather-scatter becomes
+the fastest existing path only for YOLOv8m on AGX Orin, where the heavier
+convolution makes the arithmetic saved by exact position selection outweigh
+gather-scatter's extraction and writeback overhead. Despite these
+regime-dependent baseline gains, \sysname remains fastest in every pair.
+
+Across all workloads, \sysname is substantially closer to the ideal reference
+than the fastest existing path. For FireFlowNet and the two YOLO models,
+\sysname runs at
+1.19--2.10$\times$ the reference, while the fastest existing path remains at
+1.88--3.21$\times$. As the active ratio falls, active convolution work shrinks
+while mask processing, worklist construction, and other fixed model work do
+not, magnifying these costs relative to the ideal reference. DynConv
+makes this effect most visible: it has the lowest active ratio and additionally
+runs learned mask-prediction kernels in every gated block. Even so, \sysname runs at
+2.34--3.66$\times$ the reference, while the fastest existing path remains at
+3.80--6.43$\times$.
+
+\paragraph{Energy.}
+\sysname's latency gains also reduce per-frame board energy on both Jetson
+platforms. It is the lowest-energy path for every workload
 (Table~\ref{tab:e2e-energy}), reducing energy by
-17.0--39.8\% relative to the fastest competing path and by 28.5--72.6\%
-relative to dense execution.
+17.0--39.8\% relative to the lowest-energy competing path in each pair and by
+28.5--72.6\% relative to dense execution.
 
 \input{figures/e2e_energy_table}
 
-Task accuracy remains determined by the upstream mask policy rather than the
-execution backend. Figure~\ref{fig:e2e-accuracy} reports each workload once on
-RTX~3080 because all platforms use the same weights, inputs, and masks. The
-three sparse paths agree within 0.31 AP points for detection and to the shown
-precision for optical flow and pose. Relative to dense execution, the selected
-mask policies change accuracy by at most 3.0 AP points for detection and 1.4
-PCKh points for pose, while slightly improving FireFlowNet's AEE. Thus the
-latency and energy comparisons do not exchange backend correctness for speed.
+\paragraph{Accuracy.}
+\sysname's latency and energy gains preserve the accuracy of the selected
+sparsity policies. For FireFlowNet and DynConv, its AEE and PCKh,
+respectively, match the other sparse paths at the reported precision. In the
+YOLOv8 models, small floating-point differences accumulate across frames under
+temporal execution; even so, \sysname's AP differs from the other sparse paths
+by at most 0.5\% in relative terms (Figure~\ref{fig:e2e-accuracy}). Compared
+with dense execution, the upstream sparsity policies lower AP and PCKh by only
+1.6--3.5\%, while lowering FireFlowNet's AEE by 0.8\%.
 
 \begin{figure}[t]
   \centering
   \includegraphics[width=\columnwidth]{figures/e2e_accuracy.pdf}
-  \caption{Task accuracy at the operating points used in the end-to-end
-  experiments. AEE is lower-is-better; AP and PCKh are
-  higher-is-better. We report accuracy once on RTX~3080 because the models,
-  inputs, and upstream masks are shared across platforms.}
+  \caption{Task accuracy on RTX~3080 under the evaluated upstream sparsity
+  policies, measured by AEE~($\downarrow$), AP~($\uparrow$), and
+  PCKh~($\uparrow$).}
   \Description{Four grouped bar charts compare Dense, Tile skipping,
   Gather-scatter, and WISEConv task accuracy. FireFlowNet reports average
-  endpoint error, YOLOv8n and YOLOv8m report AP, and DynConv Pose reports
+  endpoint error, YOLOv8n and YOLOv8m report AP, and DynConv reports
   PCKh. The three sparse execution paths have closely matching task accuracy in
   every workload.}
   \label{fig:e2e-accuracy}

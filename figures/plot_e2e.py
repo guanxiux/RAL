@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Render the end-to-end latency, energy, and accuracy results from CSV."""
+"""Render end-to-end latency, energy, accuracy, and reference data from CSV."""
 
 from __future__ import annotations
 
@@ -15,6 +15,7 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.font_manager as fm
 import matplotlib.pyplot as plt
+from matplotlib.lines import Line2D
 from matplotlib.patches import Rectangle
 from matplotlib.ticker import FuncFormatter, MaxNLocator
 
@@ -45,7 +46,10 @@ plt.rcParams.update(
     {
         "font.family": "serif",
         "font.serif": ["TeX Gyre Termes", "Nimbus Roman", "DejaVu Serif"],
-        "mathtext.fontset": "cm",
+        "mathtext.fontset": "custom",
+        "mathtext.rm": "TeX Gyre Termes",
+        "mathtext.it": "TeX Gyre Termes:italic",
+        "mathtext.bf": "TeX Gyre Termes:bold",
         "pdf.fonttype": 42,
         "ps.fonttype": 42,
         "axes.linewidth": 0.65,
@@ -74,14 +78,16 @@ WORKLOAD_LABELS = {
     "fireflownet": "FireFlowNet",
     "yolov8n": "YOLOv8n",
     "yolov8m": "YOLOv8m",
-    "dynconv_pose": "DynConv\nPose",
+    "dynconv_pose": "DynConv",
 }
 
-# Exact ACM sigplan width under the repository's acmart.cls.  The slightly
-# taller canvas reserves enough room for bottom-row workload labels at 1:1 size.
-FIG_W, FIG_H = 7.00, 4.25
+# Exact ACM sigplan width under the repository's acmart.cls.  The canvas
+# reserves enough room for the two-line bottom-row workload labels at 1:1 size.
+FIG_W, FIG_H = 7.00, 4.12
 FS_TICK, FS_AXIS, FS_PANEL, FS_LEG, FS_WORKLOAD = 6.1, 7.2, 7.0, 7.2, 6.9
 BREAK_RATIO = 1.75
+IDEAL_COLOR = "#b23b3b"
+IDEAL_LINESTYLE = (0, (4, 2))
 
 
 def read_rows():
@@ -163,7 +169,17 @@ def natural_ticks(max_value: float):
     return ticks, decimals
 
 
-def draw_regular_axis(fig, rect, values):
+def draw_ideal_reference(ax, reference: float) -> None:
+    ax.axhline(
+        reference,
+        color=IDEAL_COLOR,
+        linestyle=IDEAL_LINESTYLE,
+        linewidth=0.85,
+        zorder=4,
+    )
+
+
+def draw_regular_axis(fig, rect, values, reference):
     ax = fig.add_axes(rect)
     patches = {}
     bar_width = 0.68
@@ -179,9 +195,10 @@ def draw_regular_axis(fig, rect, values):
     ax.yaxis.set_major_formatter(
         FuncFormatter(lambda value, _: f"{value:.{decimals}f}")
     )
+    draw_ideal_reference(ax, reference)
 
 
-def draw_broken_axis(fig, rect, values):
+def draw_broken_axis(fig, rect, values, reference):
     left, bottom, width, height = rect
     bottom_fraction = 0.72
     gap_fraction = 0.07
@@ -214,6 +231,7 @@ def draw_broken_axis(fig, rect, values):
     ax_top.spines["bottom"].set_visible(False)
     ax_top.tick_params(axis="x", bottom=False)
     ax_top.yaxis.grid(False)
+    draw_ideal_reference(ax_bottom, reference)
 
     # Match fig:gap: two dashed diagonal marks on the left spine.
     mark = 0.0065
@@ -252,7 +270,7 @@ def draw_latency_figure(by_key) -> None:
     # and the four independent workload axes receive enough horizontal space
     # for their own tick labels.
     margin_left, margin_right = 0.04, 0.04
-    margin_top, margin_bottom = 0.36, 0.56
+    margin_top, margin_bottom = 0.36, 0.43
     panel_gap_x, panel_gap_y = 0.14, 0.18
     platform_label_width = 0.25
     panel_unit_width = (
@@ -275,6 +293,17 @@ def draw_latency_figure(by_key) -> None:
             row["platform_label"],
             row["platform_status"],
         )
+
+    model_active_ratios = {}
+    for workload in WORKLOADS:
+        ratios = {
+            float(by_key[(platform, workload, backend)]["model_active_ratio"])
+            for platform in PLATFORMS
+            for backend in BACKENDS
+        }
+        if len(ratios) != 1:
+            raise ValueError(f"inconsistent model active ratio for {workload}")
+        model_active_ratios[workload] = ratios.pop()
 
     for panel_index, platform in enumerate(PLATFORMS):
         row_index, column_index = divmod(panel_index, 2)
@@ -344,20 +373,37 @@ def draw_latency_figure(by_key) -> None:
                     )
                     for backend in BACKENDS
                 }
+                references = {
+                    float(
+                        by_key[(platform, workload, backend)][
+                            "ideal_latency_ms"
+                        ]
+                    )
+                    for backend in BACKENDS
+                }
+                if len(references) != 1:
+                    raise ValueError(
+                        f"inconsistent ideal reference for {platform}/{workload}"
+                    )
+                reference = references.pop()
                 if needs_break(values):
-                    draw_broken_axis(fig, rect, values)
+                    draw_broken_axis(fig, rect, values, reference)
                 else:
-                    draw_regular_axis(fig, rect, values)
+                    draw_regular_axis(fig, rect, values, reference)
 
                 if row_index == 2:
+                    active_ratio_label = (
+                        rf"$\hat{{\alpha}}\approx"
+                        rf"{100.0 * model_active_ratios[workload]:.1f}\%$"
+                    )
                     fig.text(
                         left + 0.5 * workload_width / FIG_W,
                         (y_origin - 0.13) / FIG_H,
-                        WORKLOAD_LABELS[workload],
+                        f"{WORKLOAD_LABELS[workload]}\n{active_ratio_label}",
                         ha="center",
                         va="top",
                         fontsize=FS_WORKLOAD,
-                        linespacing=0.88,
+                        linespacing=1.25,
                     )
 
         pad_y = 0.05
@@ -377,18 +423,26 @@ def draw_latency_figure(by_key) -> None:
         )
         fig.patches.append(border)
 
-    handles = legend_handles(BACKENDS)
+    handles = legend_handles(BACKENDS) + [
+        Line2D(
+            [0],
+            [0],
+            color=IDEAL_COLOR,
+            linestyle=IDEAL_LINESTYLE,
+            linewidth=0.9,
+        )
+    ]
     legend = fig.legend(
         handles=handles,
-        labels=[LABELS[backend] for backend in BACKENDS],
+        labels=[LABELS[backend] for backend in BACKENDS] + ["Ideal"],
         loc="upper center",
         bbox_to_anchor=(0.5, 0.995),
-        ncol=4,
+        ncol=5,
         frameon=False,
         fontsize=FS_LEG,
         handlelength=1.35,
         handletextpad=0.4,
-        columnspacing=1.25,
+        columnspacing=1.0,
     )
     for text in legend.get_texts():
         if text.get_text() == "WISEConv":
@@ -403,10 +457,10 @@ def draw_accuracy_figure(by_key) -> None:
     """Draw four metric-specific workload panels with a shared path legend."""
     # acmart's sigplan layout uses a 3.334-inch column.  Emit at that width so
     # LaTeX does not rescale the figure and its typography.
-    fig_width, fig_height = 3.334, 1.65
+    fig_width, fig_height = 3.334, 1.53
     fig = plt.figure(figsize=(fig_width, fig_height))
     margin_left, margin_right = 0.31, 0.01
-    margin_bottom, margin_top = 0.32, 0.34
+    margin_bottom, margin_top = 0.20, 0.34
     panel_gap = 0.265
     panel_width = (
         fig_width - margin_left - margin_right - 3 * panel_gap
@@ -458,7 +512,7 @@ def draw_accuracy_figure(by_key) -> None:
             WORKLOAD_LABELS[workload],
             fontsize=FS_WORKLOAD,
             labelpad=2.5,
-            linespacing=0.88,
+            linespacing=1.25,
         )
         ax.set_ylabel(metric_labels[metric], fontsize=FS_AXIS, labelpad=0.8)
         ax.yaxis.set_label_coords(-0.28, 0.5)
@@ -492,9 +546,14 @@ def draw_accuracy_figure(by_key) -> None:
     print(f"wrote {ACCURACY_PDF}")
 
 
-def format_energy(value: float, best: bool) -> str:
-    formatted = f"{value:.3f}"
-    return f"\\textbf{{{formatted}}}" if best else formatted
+def format_energy(
+    value: float, best: bool, relative_change_pct: float | None = None
+) -> str:
+    formatted = f"{value:.2f}"
+    formatted = f"\\textbf{{{formatted}}}" if best else formatted
+    if relative_change_pct is None:
+        return formatted
+    return f"{formatted}\\,({relative_change_pct:+.1f}\\%)"
 
 
 def write_energy_table(by_key) -> None:
@@ -504,15 +563,19 @@ def write_energy_table(by_key) -> None:
         "\\begin{table}[b]",
         "  \\centering",
         "  \\caption{Per-frame board energy (J) on the Jetson platforms. "
-        "Lower is better.}",
+        "Parentheses report each sparse path's change relative to Dense.}",
         "  \\label{tab:e2e-energy}",
         "  \\footnotesize",
-        "  \\setlength{\\tabcolsep}{2.6pt}",
+        "  \\setlength{\\tabcolsep}{1.2pt}",
         "  \\renewcommand{\\arraystretch}{1.08}",
-        "  \\begin{tabular}{@{}clrrrr@{}}",
+        "  \\begin{tabular}{@{}cc@{\\hspace{4.0pt}}cccc@{}}",
         "    \\toprule",
-        "    \\rotatebox[origin=c]{90}{GPU} & System & FireFlowNet & "
-        "YOLOv8n & YOLOv8m & \\shortstack{DynConv\\\\Pose} \\\\",
+        "    \\begin{tabular}[c]{@{}c@{}}GPU\\end{tabular} & "
+        "\\begin{tabular}[c]{@{}c@{}}System\\end{tabular} & "
+        "\\begin{tabular}[c]{@{}c@{}}FireFlowNet\\end{tabular} & "
+        "\\begin{tabular}[c]{@{}c@{}}YOLOv8n\\end{tabular} & "
+        "\\begin{tabular}[c]{@{}c@{}}YOLOv8m\\end{tabular} & "
+        "\\begin{tabular}[c]{@{}c@{}}DynConv\\end{tabular} \\\\",
         "    \\midrule",
     ]
 
@@ -539,17 +602,34 @@ def write_energy_table(by_key) -> None:
             )
             for workload in WORKLOADS
         }
+        dense_values = {
+            workload: float(
+                by_key[(platform, workload, "dense")]["energy_j_per_frame"]
+            )
+            for workload in WORKLOADS
+        }
         for backend_index, backend in enumerate(BACKENDS):
             cells = []
             for workload in WORKLOADS:
                 value = float(
                     by_key[(platform, workload, backend)]["energy_j_per_frame"]
                 )
-                cells.append(format_energy(value, value == best_values[workload]))
+                relative_change_pct = None
+                if backend != "dense":
+                    relative_change_pct = 100.0 * (
+                        value / dense_values[workload] - 1.0
+                    )
+                cells.append(
+                    format_energy(
+                        value,
+                        value == best_values[workload],
+                        relative_change_pct,
+                    )
+                )
             platform_cell = ""
             if backend_index == 0:
                 platform_cell = (
-                    "\\multirow{4}{*}{\\rotatebox[origin=c]{90}{\\scriptsize "
+                    "\\multirow{4}{*}{\\rotatebox[origin=c]{90}{"
                     + platform_labels[platform]
                     + "}}"
                 )
@@ -585,12 +665,27 @@ def print_ranges(rows) -> None:
             )
 
     latency_cuts = []
+    ideal_gaps = []
     wiseconv_fastest = 0
     sparse_not_faster_than_dense = 0
     for (platform, workload), values in latency_groups.items():
         rival = min(value for key, value in values.items() if key != "wiseconv")
         latency_cuts.append(
             (platform, workload, 1.0 - values["wiseconv"] / rival)
+        )
+        reference_values = {
+            float(row["ideal_latency_ms"])
+            for row in rows
+            if row["platform"] == platform
+            and row["workload"] == workload
+            and row["ideal_latency_ms"]
+        }
+        if len(reference_values) != 1:
+            raise ValueError(
+                f"missing or inconsistent ideal reference for {platform}/{workload}"
+            )
+        ideal_gaps.append(
+            (platform, workload, values["wiseconv"] / reference_values.pop())
         )
         if values["wiseconv"] < rival:
             wiseconv_fastest += 1
@@ -632,6 +727,14 @@ def print_ranges(rows) -> None:
             f"  {label}: {100 * min(cuts):.1f}--{100 * max(cuts):.1f}%"
         )
     print(f"WISEConv fastest latency: {wiseconv_fastest}/{len(latency_groups)} pairs")
+    print(
+        "WISEConv / ideal proportional reference: "
+        f"{min(gap for _, _, gap in ideal_gaps):.2f}--"
+        f"{max(gap for _, _, gap in ideal_gaps):.2f}x"
+    )
+    for workload in WORKLOADS:
+        gaps = [gap for _, name, gap in ideal_gaps if name == workload]
+        print(f"  {workload}: {min(gaps):.2f}--{max(gaps):.2f}x")
     print(
         "fastest existing sparse path does not beat dense: "
         f"{sparse_not_faster_than_dense}/{len(latency_groups)} pairs"

@@ -11,7 +11,7 @@ yolov8m,YOLOv8m,dense,Dense,AP50:95 (%),higher,79.393054896,logs/yolov8_mot16/30
 yolov8m,YOLOv8m,tile_skip,Tile skipping,AP50:95 (%),higher,76.717459767,logs/yolov8_mot16/3080-v23-yolov8m-full-r3-1800mhz/summary.json
 yolov8m,YOLOv8m,gather_scatter,Gather-scatter,AP50:95 (%),higher,76.437228129,logs/yolov8_mot16/3080-v23-yolov8m-full-r3-1800mhz/summary.json
 yolov8m,YOLOv8m,wiseconv,WISEConv,AP50:95 (%),higher,76.636454176,logs/yolov8_mot16/3080-v23-yolov8m-full-r3-1800mhz/summary.json
-dynconv_pose,DynConv Pose,dense,Dense,PCKh (%),higher,88.064012490,logs/dynconv_pose/3080-v23-full-s0125-r3-1800mhz/summary.json
-dynconv_pose,DynConv Pose,tile_skip,Tile skipping,PCKh (%),higher,86.679677335,logs/dynconv_pose/3080-v23-full-s0125-r3-1800mhz/summary.json
-dynconv_pose,DynConv Pose,gather_scatter,Gather-scatter,PCKh (%),higher,86.679677335,logs/dynconv_pose/3080-v23-full-s0125-r3-1800mhz/summary.json
-dynconv_pose,DynConv Pose,wiseconv,WISEConv,PCKh (%),higher,86.679677335,logs/dynconv_pose/3080-v23-full-s0125-r3-1800mhz/summary.json
+dynconv_pose,DynConv,dense,Dense,PCKh (%),higher,88.064012490,logs/dynconv_pose/3080-v23-full-s0125-r3-1800mhz/summary.json
+dynconv_pose,DynConv,tile_skip,Tile skipping,PCKh (%),higher,86.679677335,logs/dynconv_pose/3080-v23-full-s0125-r3-1800mhz/summary.json
+dynconv_pose,DynConv,gather_scatter,Gather-scatter,PCKh (%),higher,86.679677335,logs/dynconv_pose/3080-v23-full-s0125-r3-1800mhz/summary.json
+dynconv_pose,DynConv,wiseconv,WISEConv,PCKh (%),higher,86.679677335,logs/dynconv_pose/3080-v23-full-s0125-r3-1800mhz/summary.json

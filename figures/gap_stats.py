@@ -1,176 +1,214 @@
 #!/usr/bin/env python3
-"""Derive the fig:gap efficiency-profile stats from measured logs into a CSV.
+"""Derive the Background sparsity-to-latency example from measured logs.
 
-No number is hand-entered: everything below is read from the logs and computed.
-Two sources are combined.
+The figure combines two sources without hand-entered results:
 
-  1. WORK anchor (hardware-independent mask/model geometry) --
-     logs/tile_skip_amplification/summary.json, workload block WORKLOAD.
-     Gives the absolute per-run MAC counters (A, Ddc) and the scheduled/useful
-     ratios (A/D, E/D). D_ours = Ddc / D_dc_over_D; E = (E/D) * D_ours.
+1. ``logs/tile_skip_amplification/summary.json`` supplies the mask-geometry
+   ratios for FireFlowNet.  ``E/D`` is the required convolution work, while
+   ``A/D`` is the work scheduled by DeltaCNN tile skipping.
+2. The formal RTX 3080 FireFlowNet summaries supply full-model GPU latency and
+   AEE for Dense, Tile skipping, and Gather-scatter on the same held-out
+   sequences and mask policy.
 
-  2. LATENCY (device-specific) -- the dynconv_pose run at LATENCY_RUN,
-     per-backend mean/median/std of GPU-event latency (torch.cuda.Event, full
-     model, per frame). No CPU/wall field exists in these logs.
+Raw and effective throughput are normalized to dense raw throughput.  This
+keeps the comparison tied to measured latency and work ratios:
 
-Unit: the counters are MACs. DeltaCNN's n_active_flops (conv_kernel.cu) and
-dynconv's flops_per_position (layers.py) both accumulate out*in*kh*kw with no
-x2, i.e. multiply-accumulates. The paper reports FLOPS = 2 * MAC; MAC_TO_FLOP
-makes that explicit.
+  T_path / T_dense       = (issued_path / D) * (t_dense / t_path)
+  T_eff,path / T_dense   = (E / D) * (t_dense / t_path)
 
-Throughput (the required approximation): dense-model FLOPS scaled by the
-fraction of dense work a path issues, divided by latency.
-  issued work:  dense = D (all pixels), tile skipping = A (scheduled tiles),
-                gather-scatter = E (exact active set).
-  useful work:  E for every path (the mask's required minimum).
-  raw   T     = issued_FLOP / latency
-  eff   T_eff = useful_FLOP / latency = eta * T
-  ideal floor = t_dense * (E/D): latency if useful work ran at dense throughput.
-
-Edit CONFIG to retarget another device run / workload; the work anchor is
-device-independent, so only LATENCY_RUN changes across platforms.
+The proportional-latency reference is ``t_dense * E/D``.  It is a reference
+under unchanged per-work throughput, not a hard lower bound.
 """
+
+from __future__ import annotations
+
 import csv
 import json
-import os
+import math
+import statistics
+from pathlib import Path
 
-# ------------------------------------------------------------------- CONFIG
-REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-LOGS = os.path.join(REPO, "logs")
-AMP_SUMMARY = os.path.join(LOGS, "tile_skip_amplification", "summary.json")
-WORKLOAD = "dynconv_pose"
-LATENCY_RUN = os.path.join(
-    LOGS, "dynconv_pose", "agx-orin-30w-locked-energy-v4-full-s0125-r3", "summary.json"
-)
-# Accuracy is set by the mask, not the device, so it is read once from the run
-# that evaluated it (the AGX latency run skips accuracy). PCKh on MPII.
-ACCURACY_RUN = os.path.join(
-    LOGS, "dynconv_pose", "3080-v23-full-s0125-r3-1800mhz", "summary.json"
-)
-DEVICE_LABEL = "Jetson AGX Orin (30 W)"
-MAC_TO_FLOP = 2
 
-# backend key in the logs -> (display name, issued-work quantity: D | A | E)
+HERE = Path(__file__).resolve().parent
+REPO = HERE.parents[1]
+LOGS = REPO / "logs"
+AMP_SUMMARY = LOGS / "tile_skip_amplification" / "summary.json"
+WORKLOAD = "fireflownet"
+RUN = "3080-v23-full-r3-1800mhz"
+DEVICE_LABEL = "RTX 3080"
+OUT_CSV = HERE / "gap_stats.csv"
+
+# Log backend, paper label, and the issued-work ratio used by that path.
 SYSTEMS = [
     ("dense", "Dense", "D"),
     ("tile_skip", "Tile skipping", "A"),
-    ("dynconv", "Gather-scatter", "E"),
+    ("gather_scatter", "Gather-scatter", "E"),
 ]
-OUT_CSV = os.path.join(REPO, "RAL", "figures", "gap_stats.csv")
 
 
-def load_work_anchor():
-    """Absolute per-frame MAC work (D, A, E) and ratios from the amp summary."""
-    amp = json.load(open(AMP_SUMMARY))
-    w = amp["workloads"][WORKLOAD]
-    frames = w["frames"]
-    raw = w["raw_counters"]
-    Ddc = raw["Ddc"]                       # DeltaCNN padded-grid dense MACs (run total)
-    A_run = raw["A"]                       # tile_skip scheduled MACs (run total)
-    D_dc_over_D = w["D_dc_over_D"]
-    E_over_D = w["E_over_D"]
-    A_over_D = w["A_over_D"]
-    D_run = Ddc / D_dc_over_D               # real-pixel dense MACs (run total)
-    E_run = E_over_D * D_run                # exact useful MACs (run total)
-    # cross-check: A_run/D_run should reproduce the logged A_over_D
-    assert abs(A_run / D_run - A_over_D) < 5e-3, (A_run / D_run, A_over_D)
-    per = lambda run: run / frames
+def load_json(path: Path) -> dict:
+    if not path.exists():
+        raise FileNotFoundError(path)
+    with path.open(encoding="utf-8") as source:
+        value = json.load(source)
+    if not isinstance(value, dict):
+        raise ValueError(f"expected JSON object at {path}")
+    return value
+
+
+def load_work_ratios() -> dict[str, float | int]:
+    """Load hardware-independent D, A, and E ratios for FireFlowNet."""
+    workload = load_json(AMP_SUMMARY)["workloads"][WORKLOAD]
+    scheduled = float(workload["A_over_D"])
+    required = float(workload["E_over_D"])
+    eta = float(workload["eta"])
+    amplification = float(workload["alpha"])
+    if not 0.0 < required <= scheduled <= 1.0:
+        raise ValueError((required, scheduled))
+    if not math.isclose(required / scheduled, eta, rel_tol=2e-3):
+        raise ValueError("E/A does not reproduce the stored eta")
+    if not math.isclose(scheduled / required, amplification, rel_tol=2e-3):
+        raise ValueError("A/E does not reproduce the stored amplification")
     return {
-        "frames": frames,
-        "eta_tile": w["eta"],
-        "alpha_tile": w["alpha"],
-        "E_over_D": E_over_D,
-        "A_over_D": A_over_D,
-        # per-frame MACs
-        "D": per(D_run),
-        "A": per(A_run),
-        "E": per(E_run),
+        "frames": int(workload["frames"]),
+        "D": 1.0,
+        "A": scheduled,
+        "E": required,
+        "eta_tile": eta,
+        "amplification": amplification,
     }
 
 
-def load_latency():
-    """Per-backend GPU-event latency stats (ms) from the device run."""
-    s = json.load(open(LATENCY_RUN))
-    out = {}
-    for backend, entry in s["backends"].items():
-        lat = entry.get("latency") or {}
-        out[backend] = {
-            "mean": lat.get("mean"),
-            "median": lat.get("median"),
-            "std": lat.get("std"),
-            "count": lat.get("count"),
-        }
-    return out, s["backends"]["dense"].get("tf32")
+def read_aee(sequence: dict, path: Path) -> tuple[float, int]:
+    accuracy = sequence.get("accuracy") or {}
+    value = accuracy.get("aee")
+    if isinstance(value, dict):
+        value = value.get("mean")
+    count = accuracy.get("valid_aee_frames")
+    if not isinstance(value, (int, float)) or not isinstance(count, int):
+        raise ValueError(f"invalid AEE in {path}")
+    if value < 0.0 or count <= 0:
+        raise ValueError(f"invalid AEE in {path}")
+    return float(value), count
 
 
-def load_accuracy():
-    """Per-backend PCKh (%) from the run that evaluated accuracy."""
-    s = json.load(open(ACCURACY_RUN))
-    out = {}
-    for backend, entry in s["backends"].items():
-        acc = (entry or {}).get("accuracy") or {}
-        out[backend] = acc.get("pckh")
-    return out
+def load_backend(backend: str) -> dict[str, float | int | bool | str]:
+    """Aggregate one formal backend run using the Evaluation methodology."""
+    run_dir = LOGS / "optical_flow" / backend / RUN
+    summary_path = run_dir / "summary.json"
+    run_path = run_dir / "run.json"
+    summary = load_json(summary_path)
+    metadata = load_json(run_path)
+    if metadata.get("status") != "complete" or metadata.get("backend") != backend:
+        raise ValueError(f"incomplete or mismatched run at {run_path}")
+
+    sequence_names = tuple(metadata.get("evaluated_sequences") or ())
+    if set(sequence_names) != set(summary.get("sequences") or {}):
+        raise ValueError(f"sequence mismatch at {summary_path}")
+
+    sequence_latencies = []
+    timed_frames = 0
+    weighted_aee = 0.0
+    aee_frames = 0
+    for name in sequence_names:
+        sequence = summary["sequences"][name]
+        latency = sequence["latency"]
+        sequence_latencies.append(float(latency["round_mean_gpu_ms"]["mean"]))
+        frames_per_round = latency["frames_per_round"]
+        if not frames_per_round or len(set(frames_per_round)) != 1:
+            raise ValueError(f"inconsistent rounds for {name} in {summary_path}")
+        timed_frames += int(frames_per_round[0])
+        aee, count = read_aee(sequence, summary_path)
+        weighted_aee += aee * count
+        aee_frames += count
+
+    if not sequence_latencies or min(sequence_latencies) <= 0.0:
+        raise ValueError(f"invalid latency at {summary_path}")
+    return {
+        "latency_ms": statistics.fmean(sequence_latencies),
+        "aee": weighted_aee / aee_frames,
+        "timed_frames": timed_frames,
+        "aee_frames": aee_frames,
+        "tf32": bool(metadata.get("tf32")),
+        "source": str(summary_path.relative_to(REPO)),
+    }
 
 
-def main():
-    work = load_work_anchor()
-    lat, tf32 = load_latency()
-    acc = load_accuracy()
-    D_gflop = work["D"] * MAC_TO_FLOP / 1e9          # dense FLOP/frame
-    E_gflop = work["E"] * MAC_TO_FLOP / 1e9          # useful FLOP/frame
-    issued_mac = {"D": work["D"], "A": work["A"], "E": work["E"]}
+def main() -> None:
+    work = load_work_ratios()
+    measured = {backend: load_backend(backend) for backend, _, _ in SYSTEMS}
+    frame_counts = {int(value["timed_frames"]) for value in measured.values()}
+    aee_counts = {int(value["aee_frames"]) for value in measured.values()}
+    tf32_values = {bool(value["tf32"]) for value in measured.values()}
+    if frame_counts != {int(work["frames"])}:
+        raise ValueError((frame_counts, work["frames"]))
+    if len(aee_counts) != 1 or len(tf32_values) != 1:
+        raise ValueError((aee_counts, tf32_values))
 
-    t_dense = lat["dense"]["mean"]
-    ideal_floor_ms = t_dense * work["E_over_D"]      # useful work at dense T
+    dense_latency = float(measured["dense"]["latency_ms"])
+    active_ratio = float(work["E"])
+    reference_ms = dense_latency * active_ratio
+    issued_ratio = {
+        "D": float(work["D"]),
+        "A": float(work["A"]),
+        "E": active_ratio,
+    }
 
     rows = []
-    for backend, name, qty in SYSTEMS:
-        t = lat[backend]["mean"]
-        issued_gflop = issued_mac[qty] * MAC_TO_FLOP / 1e9
-        raw_tflops = issued_gflop / t                # GFLOP/ms == TFLOPS
-        eff_tflops = E_gflop / t                     # useful/t == eta*T
-        rows.append({
-            "system": name,
-            "backend": backend,
-            "device": DEVICE_LABEL,
-            "tf32": tf32,
-            "frames": work["frames"],
-            "latency_ms_mean": round(t, 3),
-            "latency_ms_median": round(lat[backend]["median"], 3),
-            "latency_ms_std": round(lat[backend]["std"], 3),
-            "eta": round(work["eta_tile"], 4) if backend == "tile_skip"
-                   else (1.0 if backend == "dynconv" else round(work["E_over_D"], 4)),
-            "issued_gflop_per_frame": round(issued_gflop, 4),
-            "useful_gflop_per_frame": round(E_gflop, 4),
-            "dense_gflop_per_frame": round(D_gflop, 4),
-            "raw_tflops": round(raw_tflops, 5),
-            "eff_tflops": round(eff_tflops, 5),
-            "pckh": round(acc[backend], 2) if acc.get(backend) is not None else "",
-            "speedup_vs_dense": round(t_dense / t, 3),
-            "ideal_floor_ms": round(ideal_floor_ms, 3),
-            "gap_to_floor_x": round(t / ideal_floor_ms, 3),
-        })
+    for backend, name, quantity in SYSTEMS:
+        latency = float(measured[backend]["latency_ms"])
+        issued = issued_ratio[quantity]
+        raw_relative = issued * dense_latency / latency
+        effective_relative = active_ratio * dense_latency / latency
+        rows.append(
+            {
+                "system": name,
+                "backend": backend,
+                "device": DEVICE_LABEL,
+                "tf32": next(iter(tf32_values)),
+                "frames": int(work["frames"]),
+                "latency_ms": f"{latency:.9f}",
+                "aee": f"{float(measured[backend]['aee']):.9f}",
+                "issued_work_ratio": f"{issued:.9f}",
+                "active_ratio": f"{active_ratio:.9f}",
+                "eta": f"{effective_relative / raw_relative:.9f}",
+                "raw_throughput_vs_dense": f"{raw_relative:.9f}",
+                "effective_throughput_vs_dense": f"{effective_relative:.9f}",
+                "speedup_vs_dense": f"{dense_latency / latency:.9f}",
+                "proportional_reference_ms": f"{reference_ms:.9f}",
+                "gap_to_reference_x": f"{latency / reference_ms:.9f}",
+                "source": measured[backend]["source"],
+            }
+        )
 
-    os.makedirs(os.path.dirname(OUT_CSV), exist_ok=True)
-    with open(OUT_CSV, "w", newline="") as f:
-        w = csv.DictWriter(f, fieldnames=list(rows[0].keys()))
-        w.writeheader()
-        w.writerows(rows)
+    with OUT_CSV.open("w", newline="", encoding="utf-8") as destination:
+        writer = csv.DictWriter(
+            destination, fieldnames=list(rows[0]), lineterminator="\n"
+        )
+        writer.writeheader()
+        writer.writerows(rows)
 
-    # human-readable echo so the numbers are auditable at generation time
-    print(f"# work anchor : {AMP_SUMMARY}  ({WORKLOAD}, {work['frames']} frames)")
-    print(f"# latency run : {LATENCY_RUN}  (tf32={tf32})")
-    print(f"# dense FLOP/frame = {D_gflop:.3f} GFLOP ; useful = {E_gflop:.3f} GFLOP "
-          f"(eta_tile={work['eta_tile']:.4f}, alpha={work['alpha_tile']:.3f})")
-    print(f"# ideal sparsity floor = {ideal_floor_ms:.2f} ms (= t_dense*E/D)")
-    hdr = ("system", "lat(ms)", "issued_GF", "raw_TF", "eff_TF", "spdup", "gap/floor")
-    print("{:<15}{:>9}{:>11}{:>9}{:>9}{:>8}{:>10}".format(*hdr))
-    for r in rows:
-        print("{:<15}{:>9.2f}{:>11.3f}{:>9.4f}{:>9.4f}{:>8.2f}{:>10.2f}".format(
-            r["system"], r["latency_ms_mean"], r["issued_gflop_per_frame"],
-            r["raw_tflops"], r["eff_tflops"], r["speedup_vs_dense"],
-            r["gap_to_floor_x"]))
+    print(f"# work anchor : {AMP_SUMMARY} ({WORKLOAD}, {work['frames']} frames)")
+    print(f"# latency/AEE : optical_flow/{{backend}}/{RUN}/summary.json")
+    print(
+        f"# active E/D={active_ratio:.4f}; tile A/D={float(work['A']):.4f}; "
+        f"tile eta={float(work['eta_tile']):.4f}"
+    )
+    print(f"# proportional reference = {reference_ms:.3f} ms")
+    header = ("system", "lat(ms)", "AEE", "eta", "T/Td", "Teff/Td", "gap/ref")
+    print("{:<16}{:>9}{:>9}{:>9}{:>9}{:>11}{:>10}".format(*header))
+    for row in rows:
+        print(
+            "{:<16}{:>9.3f}{:>9.4f}{:>9.3f}{:>9.3f}{:>11.3f}{:>10.2f}".format(
+                row["system"],
+                float(row["latency_ms"]),
+                float(row["aee"]),
+                float(row["eta"]),
+                float(row["raw_throughput_vs_dense"]),
+                float(row["effective_throughput_vs_dense"]),
+                float(row["gap_to_reference_x"]),
+            )
+        )
     print(f"\nwrote {OUT_CSV}")
 
 

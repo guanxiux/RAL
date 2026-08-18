@@ -46,16 +46,16 @@ positions exactly, materializes receptive fields, and scatters the computation r
 to the dense grid, sacrificing regularity and incurring extraction,
 irregular access, and writeback overhead.
 
-We characterize this trade-off along two axes (\S\ref{sec:bg:gap}):
+We characterize this trade-off along two axes:
 \emph{throughput} (operations per second) and
 \emph{useful-compute ratio} (the fraction of issued operations that produce
-needed outputs). In our sparsest workload (the DynConv-gated model,
-\S\ref{sec:eval:end-to-end}), the masks render 84.4\%
+needed outputs). In one of our workloads (FireFlowNet~\cite{fireflownet} under
+an event camera~\cite{evconv} mask policy, \S\ref{sec:bg:gap}), the masks render 73.7\%
 of the convolution work unnecessary, yet neither approach turns this into
 proportional latency reduction. Tile skipping~\cite{deltacnn}
-suffers a useful-compute ratio of only 49.1\% and cuts latency by at most 40.6\%.
-Gather-scatter drives the useful-compute ratio near one but sustains only 9.3\% of
-tile skipping's throughput, running 3.1$\times$ slower than the dense path.
+still wastes 26.4\% of its issued operations and only cuts latency by at most 42.0\%.
+Gather-scatter drives the useful-compute ratio near one but sustains only 21.7\% of
+tile skipping's throughput, running 1.97$\times$ slower than the dense path.
 
 Our key insight is that position-level selectivity does not require abandoning
 the dense convolution pipeline. A dense tile already derives its reads and
