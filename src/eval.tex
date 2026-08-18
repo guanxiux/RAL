@@ -210,15 +210,101 @@ with dense execution, the upstream sparsity policies lower AP and PCKh by only
 
 % TODO: At first use, state that model-level work ratios accumulate convolution
 % FLOPs over all measured frames and layers before division.
-% TODO: Analyze useful-compute ratio, compute-stage throughput, construction
-% cost, and tile-local versus global worklist ordering.
+% Microbenchmark plan:
+%
+% 1. Effective-throughput decomposition.  Use the formal held-out frames on
+%    RTX~3080 for all four workloads and the same masks, weights, and runtime
+%    configurations as the end-to-end evaluation.  For each workload and
+%    execution path, split raw throughput T into effective throughput
+%    T_eff = eta T and wasted throughput T - T_eff.  Normalize both parts to
+%    the dense raw throughput of that workload and aggregate by total required
+%    and issued work rather than by averaging per-frame ratios.  Render one
+%    single-column stacked-bar figure: each workload is a group containing
+%    Dense, Tile skipping, Gather-scatter, and WISEConv; the lower segment of
+%    every bar is effective throughput and the upper segment is wasted
+%    throughput.  Use one common visual encoding for the wasted segment across
+%    every workload and backend so the figure retains a single color/texture
+%    for wasted work.  This figure should explain the two-axis result directly,
+%    rather than repeat the end-to-end latency bars.
+%
+% 2. Real stage-cost decomposition.  Profile WISEConv on RTX~3080 with three
+%    quantile bins of real frame activity/work for YOLOv8n and DynConv.  Use
+%    the existing full-frame timing and NVTX stage ranges, sampling dozens to
+%    roughly one hundred held-out frames per bin rather than generating
+%    synthetic masks.  Report a compact table with one row per workload/bin
+%    and columns for construction, convolution compute, other fixed work, and
+%    total latency.  Each stage cell reports absolute milliseconds followed by
+%    its percentage of full-frame latency.  Construction covers WISEConv mask
+%    and worklist metadata work; convolution compute covers the worklist-driven
+%    convolution path; the residual is labeled other fixed work unless the
+%    trace independently identifies a more specific category.  The table
+%    should show compute shrinking with real activity while construction and
+%    residual costs form the low-activity latency floor.
+%
+% Optional CUDA-level diagnostics are not a third required microbenchmark.
+% If the two figures leave a concrete locality question, the useful diagnostic
+% is whether tile-local worklists preserve dense-like cache behavior on the
+% same real frames: collect L2 hit rate together with L2/DRAM traffic per
+% required FLOP for Dense, WISEConv, and a sparse comparator.  L2 hit rate alone
+% is insufficient because a path may issue fewer requests or transfer more
+% bytes per useful output; report it only with traffic and the measured
+% throughput, and keep the result as a small diagnostic rather than a
+% standalone counter survey.
 
-\subsection{Ablation Study}
-\label{sec:eval:ablation}
+\subsection{Ablation Study and Sensitivity Analysis}
+\label{sec:eval:ablation-sensitivity}
 
-% TODO
+% Ablation plan:
+% Use YOLOv8n on RTX~3080 and replay the same held-out frames, masks, and
+% weights for every row.  Add YOLOv8m only if it changes the conclusion rather
+% than repeating it.  The table reports absolute milliseconds only, with
+% columns Construction, Convolution compute, Other fixed work, and Total.  It
+% should isolate the two design choices without introducing a synthetic
+% operator or a new mask distribution.  Keep the row labels short in the
+% table and define them in the caption or surrounding text as follows.
+%
+% Worklist-order rows:
+%   * Sort: compact the exact active set and impose a globally ordered
+%     coordinate stream.  The extra sorting pass is charged to Construction.
+%   * Random: emit the same exact active set without global sorting, with
+%     coordinates in an intentionally unordered order.  This row exposes the
+%     compute cost of losing tile-local structure; if producing that order
+%     requires an extra pass, report that pass explicitly rather than hiding it
+%     in the construction-only comparison.
+%
+% Level-selection rows:
+%   * Fixed: one activity level, selected offline as the best single level for
+%     the complete trace, is used by every layer and frame.
+%   * Ideal: each layer uses its current measured activity to select
+%     \mathcal{L}_l[d].  The required synchronous observation/readback cost is
+%     included in Other fixed work, so this is an execution oracle rather than
+%     an unrealistically free configuration lookup.
+%   * Ours: tile-local construction and one lagged input observation predict
+%     layer-specific levels through \mathcal{A}, without per-layer
+%     synchronization.
+% The table rows are therefore simply Sort, Random, Fixed, Ideal, and Ours;
+% order and level variants can be separated by a horizontal rule.  A single
+% workload is sufficient because the end-to-end section already covers
+% cross-workload and cross-platform robustness.
 
-\subsection{Sensitivity Analysis}
-\label{sec:eval:sensitivity}
+% Sensitivity plan: cross-sequence batching.
+% Use YOLOv8n on RTX~3080, adding YOLOv8m only if its larger shape changes the
+% batching trend.  Form batches from independent subsequences of the same held-out sequence,
+% preserving one recurrent/state buffer per subsequence and using the same
+% total frame population across batch sizes.  Splitting a long sequence into
+% disjoint subsequences is acceptable, but each subsequence must be warmed and
+% reset independently so that batching does not change the mask policy or the
+% temporal state semantics.  Evaluate batch sizes that fit all selected paths
+% (for example B=1,2,4,8) and report per-frame latency and aggregate frame
+% throughput for Dense, the available sparse baselines, and WISEConv.  The
+% purpose is to show how batching amortizes gather/scatter and fixed work, and
+% whether WISEConv's advantage persists beyond the batch-one deployment point;
+% do not treat it as a new accuracy experiment.
 
-% TODO
+% Tensor-Core sensitivity:
+% Use the same YOLOv8n frames on RTX~3080 and add a compact two-bar result with
+% only Dense~FP16 and WISEConv~FP16.  Report compute-stage latency or effective
+% throughput under the same real shapes and masks.  The other sparse backends
+% are intentionally absent because they do not expose an equivalent Tensor-
+% Core path.  Restrict the measurement to supported aligned layers and omit
+% YOLOv8m unless it adds a distinct shape regime.
