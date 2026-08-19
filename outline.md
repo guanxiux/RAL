@@ -84,9 +84,9 @@ spatial gating。
 
 ### 2.5 Sparsity-to-Latency Gap
 
-- 定义 required work、executed work、useful-compute ratio 与 sustained throughput。
+- 定义 active ratio、executed work、useful-compute ratio 与 sustained throughput。
 - 用 `t approximately W_req / (eta * Theta) + t_oh` 解释 latency。
-- 用 MAC-weighted required-work ratio 代替无权 layer-average activity。
+- 用 MAC-weighted active ratio 代替无权 layer-average activity。
 
 ### 2.6 Relation to 3D Sparse Convolution
 
@@ -143,7 +143,7 @@ SpConv/TorchSparse++ 面向 irregular point-cloud coordinates；WISEConv 面向�
   gather-scatter。
 - **Primary metric:** complete held-out sequences 上的 full-model GPU latency，timed region
   包含 mask propagation、construction、all network operators 和 output update。
-- **Analysis metrics:** required-work ratio、useful-compute ratio、sustained convolution
+- **Analysis metrics:** active ratio、useful-compute ratio、sustained convolution
   throughput、construction fraction、task quality 与 operator correctness。
 
 ### 5.2 Result Sections（结构已建，正文待填）

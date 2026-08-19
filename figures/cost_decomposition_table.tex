@@ -1,0 +1,39 @@
+\begin{table}[!ht]
+  \centering
+  \caption{Full-model YOLOv8n cost decomposition in time (ms) and
+  percentage on RTX~3080. Cost is classified into worklist construction
+  (Cons.), convolution (Conv.), elementwise operators (Elem.), and other
+  cost.}
+  \Description{A table divides every YOLOv8n frame into low- and
+  high-activity halves and compares full-model latency attributed to
+  construction, convolution, elementwise, and other work for Dense, Tile
+  skipping, Gather-scatter, and WISEConv. Construction is applicable only
+  to WISEConv.}
+  \label{tab:cost-decomposition}
+  \footnotesize
+  \setlength{\tabcolsep}{1.2pt}
+  \renewcommand{\arraystretch}{1.15}
+  \begin{tabular}{@{}c c c c c c c@{}}
+    \hline
+      & \textbf{System} & \textbf{Tot.} & \textbf{Cons.} &
+      \textbf{Conv.} & \textbf{Elem.} & \textbf{Other} \\
+    \hline
+    \multirow{4}{*}{\rotatebox[origin=c]{90}{Low (40.7\%)}} & Dense & 2.79 & \textemdash{} & 2.54(91.2\%) & 0.14(5.0\%) & 0.10(3.7\%) \\
+    & Tile skipping & 3.42 & \textemdash{} & 3.09(90.3\%) & 0.16(4.6\%) & 0.17(5.1\%) \\
+    & Gather & 11.81 & \textemdash{} & 0.73(6.2\%) & 0.09(0.7\%) & 11.00(93.1\%) \\
+    & \textbf{WISEConv} & 1.47 & 0.10(7.1\%) & 1.09(73.8\%) & 0.12(8.2\%) & 0.16(10.9\%) \\
+    \hline
+    \multirow{4}{*}{\rotatebox[origin=c]{90}{High (56.7\%)}} & Dense & 2.79 & \textemdash{} & 2.54(91.2\%) & 0.14(5.0\%) & 0.10(3.7\%) \\
+    & Tile skipping & 3.59 & \textemdash{} & 3.25(90.4\%) & 0.17(4.7\%) & 0.18(4.9\%) \\
+    & Gather & 11.82 & \textemdash{} & 0.83(7.0\%) & 0.09(0.8\%) & 10.90(92.2\%) \\
+    & \textbf{WISEConv} & 1.69 & 0.11(6.2\%) & 1.29(76.3\%) & 0.13(7.7\%) & 0.17(9.8\%) \\
+    \hline
+  \end{tabular}
+  \par\vspace{6pt}
+  \noindent\parbox{\columnwidth}{\footnotesize\textit{Notes.} Low and High split
+  all frames from the evaluated MOT16 test sequences at the median
+  per-frame active ratio; their parenthesized labels report bin means.
+  We obtain each stage time by multiplying its per-frame NSYS fraction
+  by the corresponding CUDA-event latency from the end-to-end
+  evaluation.}
+\end{table}

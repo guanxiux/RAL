@@ -208,39 +208,63 @@ with dense execution, the upstream sparsity policies lower AP and PCKh by only
 \subsection{Microbenchmarks}
 \label{sec:eval:microbenchmarks}
 
-% TODO: At first use, state that model-level work ratios accumulate convolution
-% FLOPs over all measured frames and layers before division.
-% Microbenchmark plan:
-%
-% 1. Effective-throughput decomposition.  Use the formal held-out frames on
-%    RTX~3080 for all four workloads and the same masks, weights, and runtime
-%    configurations as the end-to-end evaluation.  For each workload and
-%    execution path, split raw throughput T into effective throughput
-%    T_eff = eta T and wasted throughput T - T_eff.  Normalize both parts to
-%    the dense raw throughput of that workload and aggregate by total required
-%    and issued work rather than by averaging per-frame ratios.  Render one
-%    single-column stacked-bar figure: each workload is a group containing
-%    Dense, Tile skipping, Gather-scatter, and WISEConv; the lower segment of
-%    every bar is effective throughput and the upper segment is wasted
-%    throughput.  Use one common visual encoding for the wasted segment across
-%    every workload and backend so the figure retains a single color/texture
-%    for wasted work.  This figure should explain the two-axis result directly,
-%    rather than repeat the end-to-end latency bars.
-%
-% 2. Real stage-cost decomposition.  Profile WISEConv on RTX~3080 with three
-%    quantile bins of real frame activity/work for YOLOv8n and DynConv.  Use
-%    the existing full-frame timing and NVTX stage ranges, sampling dozens to
-%    roughly one hundred held-out frames per bin rather than generating
-%    synthetic masks.  Report a compact table with one row per workload/bin
-%    and columns for construction, convolution compute, other fixed work, and
-%    total latency.  Each stage cell reports absolute milliseconds followed by
-%    its percentage of full-frame latency.  Construction covers WISEConv mask
-%    and worklist metadata work; convolution compute covers the worklist-driven
-%    convolution path; the residual is labeled other fixed work unless the
-%    trace independently identifies a more specific category.  The table
-%    should show compute shrinking with real activity while construction and
-%    residual costs form the low-activity latency floor.
-%
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=\columnwidth]{figures/effective_throughput.pdf}
+  \caption{Full-model effective throughput $\eta T$ and wasted throughput
+  $(1-\eta)T$ on RTX~3080, normalized per frame to dense raw throughput and
+  averaged across layers and frames.}
+  \Description{Four workload groups compare Dense, Tile skipping,
+  Gather-scatter, and WISEConv with stacked bars. The lower colored segment is
+  effective throughput and the upper uniformly patterned gray segment is
+  wasted throughput, both relative to dense raw throughput. WISEConv combines
+  high effective throughput with little wasted throughput across all four
+  workloads.}
+  \label{fig:effective-throughput}
+\end{figure}
+
+\paragraph{Effective throughput.}
+Under the same execution settings as the end-to-end evaluation, we estimate
+full-model throughput $T$ and effective throughput $\eta T$ on RTX~3080
+(Figure~\ref{fig:effective-throughput}). \sysname sustains 35.3--89.7\% of
+dense throughput, the highest among the sparse paths in every workload and
+1.10--1.99$\times$ that of the next-highest sparse path; the two YOLO
+workloads lie at the upper end because their higher active ratios produce
+longer worklists that expose more parallel work and better amortize fixed
+costs. Its useful-compute ratio reaches 95.2--98.9\% for FireFlowNet and the
+two YOLO workloads. DynConv reaches 81.7\% because it repeatedly
+applies convolutions to $16{\times}16$, $8{\times}8$, and
+$4{\times}4$ feature maps; even with \sysname's adaptive workload
+decomposition, the resulting short worklists increase padding in the issued
+position sequence $\mathcal{C}$ and reduce $\eta_{\mathrm{compute}}$.
+Combining these two axes, \sysname achieves the highest effective throughput
+in every workload, reaching
+1.51--1.86$\times$ that of the strongest competing path.
+
+\input{figures/cost_decomposition_table}
+
+\paragraph{Latency cost decomposition.}
+We decompose full-model YOLOv8n latency on RTX~3080 into worklist
+construction, convolution, elementwise operators (e.g., activation), and other costs
+(Table~\ref{tab:cost-decomposition}). We split the frames from MOT~\cite{mot16} at their median
+per-frame active ratio, producing bins with mean active ratios of 40.7\% (low) and
+56.7\% (high).
+As predicted by its full-grid mask scan, \sysname's construction time remains
+nearly constant at 0.105 and 0.106\,ms across the two bins. Convolution time,
+in contrast, grows from 1.09 to 1.29\,ms with the additional active work.
+Construction consequently occupies a larger fraction of latency in the
+lower-activity bin (7.1\% versus 6.2\%), but remains small enough for \sysname
+to reduce total latency relative to the fastest competing path by 47.1\% and
+39.4\% in the two bins.
+
+It explains why exact selection alone is insufficient.
+Gather-scatter spends only 0.73--0.83\,ms in convolution, the lowest among all paths, but its extraction,
+setup, and writeback costs dominate the \emph{Other} category, which reaches
+10.9--11.0\,ms and 92.2--93.1\% of total latency. In contrast, \sysname keeps
+coordinate processing in the metadata-only construction stage and consumes
+the resulting worklist directly, so convolution remains the dominant cost
+without the gather-scatter path's extra data movement.
+
 % Optional CUDA-level diagnostics are not a third required microbenchmark.
 % If the two figures leave a concrete locality question, the useful diagnostic
 % is whether tile-local worklists preserve dense-like cache behavior on the
