@@ -290,38 +290,31 @@ gather-scatter path's data-movement bottleneck.
 \subsection{Ablation Study and Sensitivity Analysis}
 \label{sec:eval:ablation-sensitivity}
 
-% Ablation plan:
-% Use YOLOv8n on RTX~3080 and replay the same held-out frames, masks, and
-% weights for every row.  Add YOLOv8m only if it changes the conclusion rather
-% than repeating it.  The table reports absolute milliseconds only, with
-% columns Construction, Convolution compute, Other fixed work, and Total.  It
-% should isolate the two design choices without introducing a synthetic
-% operator or a new mask distribution.  Keep the row labels short in the
-% table and define them in the caption or surrounding text as follows.
-%
-% Worklist-order rows:
-%   * Sort: compact the exact active set and impose a globally ordered
-%     coordinate stream.  The extra sorting pass is charged to Construction.
-%   * Random: emit the same exact active set without global sorting, with
-%     coordinates in an intentionally unordered order.  This row exposes the
-%     compute cost of losing tile-local structure; if producing that order
-%     requires an extra pass, report that pass explicitly rather than hiding it
-%     in the construction-only comparison.
-%
-% Level-selection rows:
-%   * Fixed: one activity level, selected offline as the best single level for
-%     the complete trace, is used by every layer and frame.
-%   * Ideal: each layer uses its current measured activity to select
-%     \mathcal{L}_l[d].  The required synchronous observation/readback cost is
-%     included in Other fixed work, so this is an execution oracle rather than
-%     an unrealistically free configuration lookup.
-%   * Ours: tile-local construction and one lagged input observation predict
-%     layer-specific levels through \mathcal{A}, without per-layer
-%     synchronization.
-% The table rows are therefore simply Sort, Random, Fixed, Ideal, and Ours;
-% order and level variants can be separated by a horizontal rule.  A single
-% workload is sufficient because the end-to-end section already covers
-% cross-workload and cross-platform robustness.
+% Source: logs/yolov8n_ablation/ablation_table.json
+\begin{table}[H]
+  \centering
+  \caption{YOLOv8n ablations on RTX~3080. $\eta$ and Total average all
+  held-out MOT16 frames; Cons. and Conv. attribute 300 MOT16-03 frames balanced
+  across active-ratio terciles.}
+  \label{tab:ablation}
+  \footnotesize
+  \setlength{\tabcolsep}{4.2pt}
+  \renewcommand{\arraystretch}{1.06}
+  \begin{tabular}{@{}lrrrr@{}}
+    \hline
+    & $\eta$ & \multicolumn{3}{c}{Latency (ms)} \\
+    \cline{3-5}
+    Variant & (\%) & Cons. & Conv. & Total \\
+    \hline
+    Atomic append & 95.65 & 0.103 & 1.170 & 1.581 \\
+    Global order  & 95.60 & 0.246 & 1.163 & 1.719 \\
+    No reuse      & 96.98 & 0.122 & 1.174 & 1.600 \\
+    Static level  & 95.61 & 0.105 & 1.231 & 1.642 \\
+    Ideal level   & 95.79 & 0.105 & 1.141 & 1.543 \\
+    Ours          & 95.57 & 0.105 & 1.174 & 1.583 \\
+    \hline
+  \end{tabular}
+\end{table}
 
 % Sensitivity plan: cross-sequence batching.
 % Use YOLOv8n on RTX~3080, adding YOLOv8m only if its larger shape changes the
