@@ -90,7 +90,8 @@ work:
         PyTorch/cuDNN backend~\cite{cudnn}.
 
   \item \textbf{Tile skipping} adapts DeltaCNN's CUDA
-        implementation~\cite{deltacnn}, retaining the dense tiled pipeline and
+        implementation~\cite{deltacnn}, retaining the dense tiled pipeline with a fused selective
+        path and
         skipping a tile only when all its outputs are inactive.
 
   \item \textbf{Gather-scatter} uses DynConv's original CUDA backend for
@@ -104,10 +105,12 @@ We measure per-frame full-model GPU latency over the complete evaluation data
 above with CUDA events; every sequence or split is repeated three times. Timing
 covers mask propagation, worklist construction, all network operators, and
 output update; it excludes input transfer, offline calibration and autotuning,
-and one-time state initialization. On the Jetson platforms, we integrate
-board-level \texttt{VDD\_IN} over each timed round to obtain its mean power,
-multiply that value by the round's cumulative CUDA-event time, and aggregate
-across rounds to obtain per-frame board energy. We follow the original workload
+and one-time state initialization. Since we focus on end-to-end performance,
+we report $\eta$, $T$, and $T_{\mathrm{eff}}$ at the model level by
+accumulating required and issued convolution work across all layers within each
+frame before applying Eq.~\ref{eq:efficiency-framework}, then averaging the
+frame-level values across frames. On the Jetson platforms, we integrate
+board-level \texttt{VDD\_IN} over each timed round to obtain per-frame board energy. We follow the original workload
 protocols: AEE for optical flow~\cite{evconv}, COCO-style average precision
 (AP) for detection, averaged over IoU thresholds from 0.50 to
 0.95~\cite{deltacnn}, and PCKh for human pose~\cite{dynconv}. Because
@@ -212,8 +215,7 @@ with dense execution, the upstream sparsity policies lower AP and PCKh by only
   \centering
   \includegraphics[width=\columnwidth]{figures/effective_throughput.pdf}
   \caption{Full-model effective throughput $\eta T$ and wasted throughput
-  $(1-\eta)T$ on RTX~3080, normalized per frame to dense raw throughput and
-  averaged across layers and frames.}
+  $(1-\eta)T$ on RTX~3080, normalized to dense raw throughput.}
   \Description{Four workload groups compare Dense, Tile skipping,
   Gather-scatter, and WISEConv with stacked bars. The lower colored segment is
   effective throughput and the upper uniformly patterned gray segment is

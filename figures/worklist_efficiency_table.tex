@@ -1,12 +1,12 @@
 \begin{table}[!t]
   \centering
   \caption{WISEConv $\eta$ decomposition and worklist-length statistics
-  on RTX~3080. The $\eta$ values are averaged over layers and frames;
-  $n_{\mathcal{W}}$ percentiles are taken over all layer--frame samples.}
+  on RTX~3080. The $n_{\mathcal{W}}$ percentiles are computed from worklist
+  lengths pooled across all layers and frames.}
   \Description{A table reports eta construct, eta compute, eta, and the
   P10, P50, and P90 worklist lengths for FireFlowNet, YOLOv8n, YOLOv8m,
-  and DynConv on RTX 3080. Eta values are averaged over layers and frames;
-  worklist-length statistics use all layer-frame samples.}
+  and DynConv on RTX 3080. Worklist-length statistics are computed from samples
+  pooled across all layers and frames.}
   \label{tab:worklist-efficiency}
   \footnotesize
   \setlength{\tabcolsep}{1.5pt}
