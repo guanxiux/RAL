@@ -223,47 +223,60 @@ with dense execution, the upstream sparsity policies lower AP and PCKh by only
   \label{fig:effective-throughput}
 \end{figure}
 
+\input{figures/worklist_efficiency_table}
+
 \paragraph{Effective throughput.}
 Under the same execution settings as the end-to-end evaluation, we estimate
 full-model throughput $T$ and effective throughput $\eta T$ on RTX~3080
-(Figure~\ref{fig:effective-throughput}). \sysname sustains 35.3--89.7\% of
-dense throughput, the highest among the sparse paths in every workload and
-1.10--1.99$\times$ that of the next-highest sparse path; the two YOLO
-workloads lie at the upper end because their higher active ratios produce
-longer worklists that expose more parallel work and better amortize fixed
-costs. Its useful-compute ratio reaches 95.2--98.9\% for FireFlowNet and the
-two YOLO workloads. DynConv reaches 81.7\% because it repeatedly
-applies convolutions to $16{\times}16$, $8{\times}8$, and
-$4{\times}4$ feature maps; even with \sysname's adaptive workload
-decomposition, the resulting short worklists increase padding in the issued
-position sequence $\mathcal{C}$ and reduce $\eta_{\mathrm{compute}}$.
-Combining these two axes, \sysname achieves the highest effective throughput
-in every workload, reaching
-1.51--1.86$\times$ that of the strongest competing path.
+(Figure~\ref{fig:effective-throughput}). Table~\ref{tab:worklist-efficiency}
+reports \sysname's $\eta$ decomposition and worklist-length distribution.
+\sysname sustains 35.3--89.7\% of dense throughput, the highest among sparse
+paths in every workload at 1.10--1.99$\times$ the raw throughput of the
+next-highest sparse path. The two YOLO workloads lie at the upper end because
+their higher active ratios leave more active work per layer to expose
+parallelism and amortize fixed costs. \sysname's useful-compute ratio is 98.9\%,
+96.2\%, and 95.2\% for FireFlowNet, YOLOv8n, and YOLOv8m, respectively.
+DynConv is lower at 81.7\%; its low active ratio and small spatial grids yield
+exceptionally short worklists, with P10, P50, and P90 lengths of 3, 43, and 389.
+Padding in the issued position sequence $\mathcal{C}$ is therefore difficult
+to avoid. DynConv's layer-specific gates provide no shared activity signal
+across layers, and the evaluated MPII~\cite{mpii} samples are not temporally
+related and thus cannot support lagged prediction; yet its useful-compute ratio
+remains well above tile skipping's 48.9\%.
+Combining throughput and useful-compute ratio, \sysname achieves the
+highest effective throughput in every workload, reaching 1.51--1.86$\times$
+that of the strongest competing path.
+
+Table~\ref{tab:worklist-efficiency} localizes the remaining wasted work:
+despite cross-operator reuse, $\eta_{\mathrm{construct}}$ remains at
+98.5--100.0\%. The selected decompositions give $\eta_{\mathrm{compute}}$
+values of 99.1\%, 97.7\%, and 96.5\% for FireFlowNet, YOLOv8n, and YOLOv8m,
+respectively; because DynConv has $\eta_{\mathrm{construct}}=100.0\%$, its
+lower $\eta$ comes entirely from compute-stage padding of its short worklists.
 
 \input{figures/cost_decomposition_table}
 
 \paragraph{Latency cost decomposition.}
 We decompose full-model YOLOv8n latency on RTX~3080 into worklist
-construction, convolution, elementwise operators (e.g., activation), and other costs
-(Table~\ref{tab:cost-decomposition}). We split the frames from MOT~\cite{mot16} at their median
-per-frame active ratio, producing bins with mean active ratios of 40.7\% (low) and
-56.7\% (high).
-As predicted by its full-grid mask scan, \sysname's construction time remains
-nearly constant at 0.105 and 0.106\,ms across the two bins. Convolution time,
-in contrast, grows from 1.09 to 1.29\,ms with the additional active work.
-Construction consequently occupies a larger fraction of latency in the
-lower-activity bin (7.1\% versus 6.2\%), but remains small enough for \sysname
-to reduce total latency relative to the fastest competing path by 47.1\% and
-39.4\% in the two bins.
+construction, convolution, elementwise operators, and other work
+(Table~\ref{tab:cost-decomposition}). A median split of the
+MOT16~\cite{mot16} frames by per-frame active ratio produces low- and
+high-activity bins averaging 40.7\% and 56.7\%, respectively.
+\sysname's construction time is nearly insensitive to activity, measuring
+0.105 and 0.106\,ms in the two bins, respectively. Convolution time instead
+grows from 1.09 to 1.29\,ms with the additional active work. Construction
+consequently occupies a larger fraction of latency in the lower-activity bin (7.1\% versus
+6.2\%), but \sysname still reduces total latency relative to the fastest
+competing path by 47.1\% and 39.4\% in the two bins, respectively.
 
-It explains why exact selection alone is insufficient.
-Gather-scatter spends only 0.73--0.83\,ms in convolution, the lowest among all paths, but its extraction,
+Gather-scatter shows why exact selection alone is insufficient. It spends only
+0.73--0.83\,ms in convolution, the lowest among all paths, but its extraction,
 setup, and writeback costs dominate the \emph{Other} category, which reaches
-10.9--11.0\,ms and 92.2--93.1\% of total latency. In contrast, \sysname keeps
-coordinate processing in the metadata-only construction stage and consumes
-the resulting worklist directly, so convolution remains the dominant cost
-without the gather-scatter path's extra data movement.
+10.9--11.0\,ms and 92.2--93.1\% of total latency. In contrast, \sysname's
+\emph{Other} category accounts for only 0.160--0.165\,ms, or 9.8--10.9\% of
+latency, while convolution remains the dominant component at 73.8--76.3\%. Direct
+worklist consumption therefore avoids the gather-scatter path's data-movement
+bottleneck.
 
 % Optional CUDA-level diagnostics are not a third required microbenchmark.
 % If the two figures leave a concrete locality question, the useful diagnostic
