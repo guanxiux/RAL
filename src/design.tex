@@ -515,7 +515,7 @@ For operators whose shape cuDNN supports (standard and grouped convolutions
 with supported padding modes), the candidate set includes the dense cuDNN path,
 which issues the full grid ($\eta=\alpha$). Let $T_{\mathrm{wl}}$ and
 $T_{\mathrm{dense}}$ denote the per-slot throughput of the worklist and dense
-paths respectively. Their effective throughputs are
+paths. Their effective throughputs are
 $\eta_{\mathrm{cov}}\,\eta_{\mathrm{pack}}\,T_{\mathrm{wl}}$ and
 $\alpha\,T_{\mathrm{dense}}$, so the dense candidate is faster when
 \begin{equation*}

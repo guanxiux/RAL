@@ -150,7 +150,7 @@ Existing sparse paths realize the available headroom only in narrow regimes:
 tile skipping needs low activity to offset tile-level waste, while
 gather-scatter needs sufficiently heavy convolution to amortize its overhead.
 FireFlowNet and DynConv leave enough removable work for tile skipping to
-cut dense latency by up to 42.0\% and 40.9\%, respectively. The higher-activity
+cut dense latency by up to 42.0\% and 40.9\%. The higher-activity
 DeltaCNN masks for YOLOv8n and YOLOv8m leave less headroom, and tile skipping
 fails to turn it into a material speedup: it is near parity with dense on AGX
 Orin and slower in the other six pairs.
@@ -183,8 +183,8 @@ platforms. It is the lowest-energy path for every workload
 
 \paragraph{Accuracy.}
 \sysname's latency and energy gains preserve the accuracy of the selected
-sparsity policies. For FireFlowNet and DynConv, its AEE and PCKh,
-respectively, match the other sparse paths at the reported precision. In the
+sparsity policies. For FireFlowNet and DynConv, its AEE and PCKh match the
+other sparse paths at the reported precision. In the
 YOLOv8 models, small floating-point differences accumulate across frames under
 temporal execution; even so, \sysname's AP differs from the other sparse paths
 by at most 0.5\% in relative terms (Figure~\ref{fig:e2e-accuracy}). Compared
@@ -231,15 +231,20 @@ full-model throughput $T$ and effective throughput $\eta T$ on RTX~3080
 (Figure~\ref{fig:effective-throughput}). Table~\ref{tab:worklist-efficiency}
 reports \sysname's $\eta$ decomposition and worklist-length distribution.
 \sysname sustains 35.3--89.7\% of dense throughput, the highest among sparse
-paths in every workload at 1.10--1.99$\times$ the raw throughput of the
-next-highest sparse path. The two YOLO workloads lie at the upper end because
-their higher active ratios leave more active work per layer to expose
-parallelism and amortize fixed costs. \sysname's useful-compute ratio is 98.9\%,
-96.2\%, and 95.2\% for FireFlowNet, YOLOv8n, and YOLOv8m, respectively.
+paths in every workload at 1.10--1.99$\times$ that of the next-highest sparse
+path.
+DeltaCNN's lower raw throughput reflects the impact of routing very sparse
+tiles through its fused selective path~\cite{deltacnn}. The two YOLO workloads
+lie at the upper end
+because their higher active ratios expose more parallelism and amortize fixed
+costs.
+
+\sysname's useful-compute ratio is 98.9\%,
+96.2\%, and 95.2\% for FireFlowNet, YOLOv8n, and YOLOv8m.
 DynConv is lower at 81.7\%; its low active ratio and small spatial grids yield
 exceptionally short worklists, with P10, P50, and P90 lengths of 3, 43, and 389.
 Padding in the issued position sequence $\mathcal{C}$ is therefore difficult
-to avoid. DynConv's layer-specific gates provide no shared activity signal
+to avoid. DynConv's layer-specific gates also provide no shared activity signal
 across layers, and the evaluated MPII~\cite{mpii} samples are not temporally
 related and thus cannot support lagged prediction; yet its useful-compute ratio
 remains well above tile skipping's 48.9\%.
@@ -250,33 +255,25 @@ that of the strongest competing path.
 Table~\ref{tab:worklist-efficiency} localizes the remaining wasted work:
 despite cross-operator reuse, $\eta_{\mathrm{construct}}$ remains at
 98.5--100.0\%. The selected decompositions give $\eta_{\mathrm{compute}}$
-values of 99.1\%, 97.7\%, and 96.5\% for FireFlowNet, YOLOv8n, and YOLOv8m,
-respectively; because DynConv has $\eta_{\mathrm{construct}}=100.0\%$, its
+values of 99.1\%, 97.7\%, and 96.5\% for FireFlowNet, YOLOv8n, and YOLOv8m;
+because DynConv has $\eta_{\mathrm{construct}}=100.0\%$, its
 lower $\eta$ comes entirely from compute-stage padding of its short worklists.
 
 \input{figures/cost_decomposition_table}
 
 \paragraph{Latency cost decomposition.}
-We decompose full-model YOLOv8n latency on RTX~3080 into worklist
-construction, convolution, elementwise operators, and other work
-(Table~\ref{tab:cost-decomposition}). A median split of the
-MOT16~\cite{mot16} frames by per-frame active ratio produces low- and
-high-activity bins averaging 40.7\% and 56.7\%, respectively.
-\sysname's construction time is nearly insensitive to activity, measuring
-0.105 and 0.106\,ms in the two bins, respectively. Convolution time instead
-grows from 1.09 to 1.29\,ms with the additional active work. Construction
-consequently occupies a larger fraction of latency in the lower-activity bin (7.1\% versus
-6.2\%), but \sysname still reduces total latency relative to the fastest
-competing path by 47.1\% and 39.4\% in the two bins, respectively.
-
-Gather-scatter shows why exact selection alone is insufficient. It spends only
-0.73--0.83\,ms in convolution, the lowest among all paths, but its extraction,
-setup, and writeback costs dominate the \emph{Other} category, which reaches
-10.9--11.0\,ms and 92.2--93.1\% of total latency. In contrast, \sysname's
-\emph{Other} category accounts for only 0.160--0.165\,ms, or 9.8--10.9\% of
-latency, while convolution remains the dominant component at 73.8--76.3\%. Direct
-worklist consumption therefore avoids the gather-scatter path's data-movement
-bottleneck.
+We decompose full-model YOLOv8n latency on RTX~3080 by execution stage
+(Table~\ref{tab:cost-decomposition}), where frames from MOT16~\cite{mot16}
+are classified into bins of low or high active ratios. \sysname's construction
+time remains at 0.105--0.106\,ms while convolution grows from 1.09 to
+1.29\,ms across the two bins; construction's latency share consequently falls
+from 7.1\% to 6.2\%. Gather-scatter
+shows why exact selection alone is insufficient: it has the lowest convolution
+time at 0.73--0.83\,ms, but extraction, setup, and writeback put
+10.9--11.0\,ms (92.2--93.1\% of total latency) in \emph{Other}. \sysname
+instead spends 0.160--0.165\,ms (9.8--10.9\% of latency) on \emph{Other}, with
+convolution dominant at 73.8--76.3\%; direct worklist consumption avoids the
+gather-scatter path's data-movement bottleneck.
 
 % Optional CUDA-level diagnostics are not a third required microbenchmark.
 % If the two figures leave a concrete locality question, the useful diagnostic
