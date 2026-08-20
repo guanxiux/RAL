@@ -323,19 +323,40 @@ gather-scatter path's data-movement bottleneck.
 % workload is sufficient because the end-to-end section already covers
 % cross-workload and cross-platform robustness.
 
-% Sensitivity plan: cross-sequence batching.
-% Use YOLOv8n on RTX~3080, adding YOLOv8m only if its larger shape changes the
-% batching trend.  Form batches from independent subsequences of the same held-out sequence,
-% preserving one recurrent/state buffer per subsequence and using the same
-% total frame population across batch sizes.  Splitting a long sequence into
-% disjoint subsequences is acceptable, but each subsequence must be warmed and
-% reset independently so that batching does not change the mask policy or the
-% temporal state semantics.  Evaluate batch sizes that fit all selected paths
-% (for example B=1,2,4,8) and report per-frame latency and aggregate frame
-% throughput for Dense, the available sparse baselines, and WISEConv.  The
-% purpose is to show how batching amortizes gather/scatter and fixed work, and
-% whether WISEConv's advantage persists beyond the batch-one deployment point;
-% do not treat it as a new accuracy experiment.
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=\columnwidth]{figures/batch_sensitivity.pdf}
+  \caption{Stream-level batch sensitivity for YOLOv8n on RTX~3080. Eight
+  disjoint segments of MOT16-03 provide a fixed population of temporal
+  transitions across batch sizes, and each lane maintains independent temporal
+  state. Dense, tile skipping, and \sysname use CUDA Graphs; gather-scatter
+  remains eager because its active count changes the GEMM shape. Higher is
+  better.}
+  \Description{Four groups of bars report aggregate YOLOv8n throughput at
+  batch sizes one, two, four, and eight. Each group compares Dense, Tile
+  skipping, Gather-scatter, and WISEConv. All paths improve as batch size
+  increases, while WISEConv has the highest throughput at every batch size.}
+  \label{fig:batch-sensitivity}
+\end{figure}
+
+\paragraph{Stream-level batching.}
+Batching amortizes all four paths, but it does not eliminate \sysname's
+advantage (Figure~\ref{fig:batch-sensitivity}). We split held-out
+MOT16-03~\cite{mot16} into eight disjoint contiguous streams and replay the
+same 1,488 timed transitions at $B=1,2,4,8$; changing $B$ only regroups streams,
+while each lane retains its own frame reference and incremental state.
+Gather-scatter benefits most within-path: its amortized latency falls from
+12.49 to 3.80\,ms/frame, a 3.29$\times$ improvement, although its actual
+batch latency reaches 30.38\,ms at $B=8$. It consequently remains
+2.70$\times$ slower than tile skipping at that batch size. \sysname's actual
+batch latency grows from 1.54 to 7.53\,ms while serving eight times as many
+frames, lowering amortized latency to 0.94\,ms/frame and raising aggregate
+throughput from 648 to 1,062 frames/s. Relative to the fastest competing path
+at each batch size---dense at $B=1$ and tile skipping thereafter---\sysname's
+speedup narrows from 1.81$\times$ to 1.49$\times$ but persists across the
+entire range. Thus, batching reduces fixed-cost pressure without closing the
+end-to-end throughput gap between direct worklist consumption and the existing
+execution paths.
 
 % Tensor-Core sensitivity:
 % Use the same YOLOv8n frames on RTX~3080 and add a compact two-bar result with
