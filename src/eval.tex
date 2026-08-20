@@ -293,28 +293,57 @@ gather-scatter path's data-movement bottleneck.
 % Source: logs/yolov8n_ablation/ablation_table.json
 \begin{table}[H]
   \centering
-  \caption{YOLOv8n ablations on RTX~3080. $\eta$ and Total average all
-  held-out MOT16 frames; Cons. and Conv. attribute 300 MOT16-03 frames balanced
-  across active-ratio terciles.}
+  \caption{Component ablation for full-model YOLOv8n on RTX~3080, using the
+  same dataset and stage-attribution setting as
+  Table~\ref{tab:cost-decomposition}. Each variant disables one mechanism
+  while keeping the rest identical to Ours.}
   \label{tab:ablation}
   \footnotesize
   \setlength{\tabcolsep}{4.2pt}
   \renewcommand{\arraystretch}{1.06}
-  \begin{tabular}{@{}lrrrr@{}}
+  \begin{tabular}{@{}lcccc@{}}
     \hline
-    & $\eta$ & \multicolumn{3}{c}{Latency (ms)} \\
-    \cline{3-5}
-    Variant & (\%) & Cons. & Conv. & Total \\
+    \textbf{Variant} & $\boldsymbol{\eta}$ & \textbf{Cons.} & \textbf{Conv.} & \textbf{Total} \\
     \hline
-    Atomic append & 95.64 & -- & -- & -- \\
-    Global order  & 95.60 & 0.246 & 1.163 & 1.719 \\
-    No reuse      & 96.98 & -- & -- & -- \\
-    Static level  & 95.61 & 0.105 & 1.231 & 1.642 \\
-    Ideal level   & 95.79 & 0.105 & 1.141 & 1.543 \\
-    Ours          & 95.57 & 0.105 & 1.174 & 1.583 \\
+    Atomic append & 95.65\% & 0.182 & 1.184 & 1.684 \\
+    Global order  & 95.60\% & 0.246 & 1.163 & 1.719 \\
+    No reuse      & 97.02\% & 0.205 & 1.168 & 1.680 \\
+    Static level  & 95.61\% & 0.105 & 1.231 & 1.642 \\
+    Ideal level   & 95.79\% & 0.105 & 1.141 & 1.543 \\
+    Ours          & 95.57\% & 0.105 & 1.174 & 1.583 \\
     \hline
   \end{tabular}
+  \par\vspace{6pt}
+  \noindent\parbox{\columnwidth}{\footnotesize\textit{Notes.}
+  \textit{Atomic append}: per-coordinate atomic reservation, losing warp
+  compaction and tile-local segments.
+  \textit{Global order}: stable prefix-scan compaction over the full
+  output grid, replacing tile-local construction.
+  \textit{No reuse}: every Conv2d and activation reconstructs its worklist, disabling cross-operator reuse.
+  \textit{Static level}: per-layer fixed decomposition calibrated offline,
+  disabling adaptive level selection.
+  \textit{Ideal level}: oracle that observes the current worklist length
+  and selects the optimal level per layer per frame (GPU lower bound, not
+  deployable).}
 \end{table}
+
+Each row in Table~\ref{tab:ablation} disables one mechanism.
+Per-coordinate atomics (Atomic append) raise construction to 0.182\,ms through
+finer serialization; convolution also rises to 1.184\,ms because the resulting
+worklist loses tile-local contiguity.
+A full-grid prefix-scan (Global order) raises construction to 0.246\,ms;
+convolution drops marginally to 1.163\,ms, but the 0.141\,ms construction
+overhead far exceeds the 0.011\,ms compute benefit, validating tile-local
+segments as a sufficient approximation.
+Disabling cross-operator reuse (No reuse) nearly doubles construction to
+0.205\,ms while convolution is unchanged, confirming that reuse eliminates
+redundant construction cost.
+Fixing per-layer decomposition offline (Static level) raises convolution by
+4.9\%: frames whose worklist length deviates from the calibration point
+receive a mismatched configuration.
+The Ideal level oracle reduces total latency by only 2.5\% below Ours,
+bounding the cost of lagged observation and confirming previous-frame activity
+as a sufficient proxy for level selection.
 
 % Sensitivity plan: cross-sequence batching.
 % Use YOLOv8n on RTX~3080, adding YOLOv8m only if its larger shape changes the
