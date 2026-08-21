@@ -1,7 +1,9 @@
 \begin{table}[!ht]
   \centering
   \caption{YOLOv8n latency decomposition under stream-level
-  batching on RTX~3080. Stage definitions, units, and cell format follow
+  batching on RTX~3080. Each sequence is split into disjoint temporal
+  streams; each batch combines one current frame per stream and advances
+  their states independently. Stage definitions, units, and cell format follow
   Table~\ref{tab:cost-decomposition}.}
   \Description{A table compares Dense, Tile skipping, Gather-scatter,
   and WISEConv at batch sizes one, four, and eight. Each row gives
