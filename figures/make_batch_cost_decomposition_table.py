@@ -45,7 +45,7 @@ def make_table(rows: list[dict]) -> str:
     lines = [
         r"\begin{table}[!ht]",
         r"  \centering",
-        r"  \caption{Full-model YOLOv8n latency decomposition under stream-level",
+        r"  \caption{YOLOv8n latency decomposition under stream-level",
         r"  batching on RTX~3080. Stage definitions, units, and cell format follow",
         r"  Table~\ref{tab:cost-decomposition}.}",
         r"  \Description{A table compares Dense, Tile skipping, Gather-scatter,",
@@ -58,7 +58,7 @@ def make_table(rows: list[dict]) -> str:
         r"  \renewcommand{\arraystretch}{1.15}",
         r"  \begin{tabular}{@{}c c c c c c c@{}}",
         r"    \hline",
-        r"    \textbf{B} & \textbf{System} & \textbf{Tot.} & \textbf{Cons.} &",
+        r"      & \textbf{System} & \textbf{Tot.} & \textbf{Cons.} &",
         r"    \textbf{Conv.} & \textbf{Elem.} & \textbf{Other} \\",
         r"    \hline",
     ]
@@ -67,7 +67,7 @@ def make_table(rows: list[dict]) -> str:
         for system_index, system in enumerate(SYSTEMS):
             row = by_key[(batch_size, system)]
             prefix = (
-                rf"    \multirow{{4}}{{*}}{{{batch_size}}}"
+                rf"    \multirow{{4}}{{*}}{{\rotatebox[origin=c]{{90}}{{Batch size = {batch_size}}}}}"
                 if system_index == 0
                 else "   "
             )

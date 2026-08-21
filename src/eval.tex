@@ -264,7 +264,7 @@ lower $\eta$ comes entirely from compute-stage padding of its short worklists.
 \input{figures/cost_decomposition_table}
 
 \paragraph{Latency cost decomposition.}
-We decompose full-model YOLOv8n latency on RTX~3080 by execution stage
+We decompose YOLOv8n latency on RTX~3080 by execution stage
 (Table~\ref{tab:cost-decomposition}), where frames from MOT16~\cite{mot16}
 are classified into bins of low or high active ratios. \sysname's construction
 time remains at 0.105--0.106\,ms while convolution grows from 1.09 to
@@ -293,7 +293,7 @@ gather-scatter path's data-movement bottleneck.
 % Source: logs/yolov8n_ablation/ablation_table.json
 \begin{table}[H]
   \centering
-  \caption{Component ablation for full-model YOLOv8n on RTX~3080, using the
+  \caption{Component ablation for YOLOv8n on RTX~3080, using the
   same dataset and stage-attribution setting as
   Table~\ref{tab:cost-decomposition}. Each variant disables one mechanism
   while keeping the rest identical to Ours.}
