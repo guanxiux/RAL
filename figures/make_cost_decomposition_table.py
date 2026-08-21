@@ -51,7 +51,7 @@ def make_table(rows: list[dict]) -> str:
         r"  to WISEConv.}",
         r"  \label{tab:cost-decomposition}",
         r"  \footnotesize",
-        r"  \setlength{\tabcolsep}{1.2pt}",
+        r"  \setlength{\tabcolsep}{2.4pt}",
         r"  \renewcommand{\arraystretch}{1.15}",
         r"  \begin{tabular}{@{}c c c c c c c@{}}",
         r"    \hline",
