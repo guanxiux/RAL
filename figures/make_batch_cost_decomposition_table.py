@@ -12,7 +12,7 @@ SOURCE = HERE / "batch_cost_decomposition.csv"
 OUTPUT = HERE / "batch_cost_decomposition_table.tex"
 
 SYSTEMS = ("dense", "tile_skip", "gather_scatter", "wiseconv")
-BATCH_SIZES = (4, 8)
+BATCH_SIZES = (1, 4, 8)
 CATEGORIES = ("construction", "convolution", "elementwise", "other")
 TABLE_SYSTEM_LABELS = {
     "dense": "Dense",
@@ -49,7 +49,7 @@ def make_table(rows: list[dict]) -> str:
         r"  batching on RTX~3080. Stage definitions, units, and cell format follow",
         r"  Table~\ref{tab:cost-decomposition}.}",
         r"  \Description{A table compares Dense, Tile skipping, Gather-scatter,",
-        r"  and WISEConv at batch sizes four and eight. Each row gives",
+        r"  and WISEConv at batch sizes one, four, and eight. Each row gives",
         r"  amortized total latency per frame and its division among worklist",
         r"  construction, convolution, elementwise, and other work.}",
         r"  \label{tab:batch-cost-decomposition}",
@@ -67,7 +67,7 @@ def make_table(rows: list[dict]) -> str:
         for system_index, system in enumerate(SYSTEMS):
             row = by_key[(batch_size, system)]
             prefix = (
-                rf"    \multirow{{4}}{{*}}{{\rotatebox[origin=c]{{90}}{{Batch size = {batch_size}}}}}"
+                rf"    \multirow{{4}}{{*}}{{\rotatebox[origin=c]{{90}}{{Batch size={batch_size}}}}}"
                 if system_index == 0
                 else "   "
             )

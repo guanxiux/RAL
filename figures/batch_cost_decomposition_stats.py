@@ -39,7 +39,7 @@ OUT_CSV = HERE / "batch_cost_decomposition.csv"
 
 SYSTEMS = ("dense", "tile_skip", "gather_scatter", "wiseconv")
 BATCH_SIZES = (1, 4, 8)
-PAPER_BATCH_SIZES = (4, 8)
+PAPER_BATCH_SIZES = (1, 4, 8)
 CATEGORIES = ("construction", "convolution", "elementwise", "other")
 SYSTEM_LABELS = {
     "dense": "Dense",

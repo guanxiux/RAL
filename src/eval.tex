@@ -350,21 +350,24 @@ as a sufficient proxy for level selection.
 \paragraph{Stream-level batching.}
 Table~\ref{tab:batch-cost-decomposition} separates the costs that batching
 amortizes from those that continue to scale with each frame. We evaluate
-YOLOv8n at $B=4$ and~8, maintaining independent temporal state for each stream.
+YOLOv8n at batch sizes 1, 4, and~8, maintaining independent temporal state for
+each stream.
 
-Doubling the batch size benefits gather-scatter most: \emph{Other} falls
-1.81$\times$, from 5.71 to 3.15\,ms/frame, while convolution falls only
-1.08$\times$, from 0.60 to 0.56\,ms/frame. \emph{Other} therefore remains the
-bottleneck, accounting for 83.0\% of gather-scatter's $B=8$ latency. Tile
-skipping instead obtains most of its gain in convolution,
-which falls from 1.41 to 1.17\,ms/frame and remains the fastest competing path.
+Increasing the batch size from 1 to~8 benefits gather-scatter most:
+\emph{Other} falls 3.68$\times$, from 11.60 to 3.15\,ms/frame, while convolution
+falls only 1.44$\times$, from 0.80 to 0.56\,ms/frame. \emph{Other} therefore
+remains the bottleneck, accounting for 83.0\% of gather-scatter's latency at
+batch size~8. Tile skipping instead obtains most of its gain in convolution,
+which falls from 3.06 to 1.17\,ms/frame and makes it the fastest competing path
+at batch sizes 4 and~8.
 
-For \sysname, construction falls 1.59$\times$, from 0.033 to
-0.021\,ms/frame, reducing its share from 3.1\% to 2.2\%; convolution falls a
-more modest 1.11$\times$, from 0.80 to 0.72\,ms/frame. Its total latency falls
-from 1.05 to 0.94\,ms/frame, and its advantage over the fastest competing path
-narrows from 1.59$\times$ to 1.49$\times$. At $B=8$, the corresponding batch
-latencies are 7.53\,ms for \sysname and 30.38\,ms for gather-scatter.
+For \sysname, construction falls 4.58$\times$, from 0.094 to
+0.021\,ms/frame, reducing its share from 6.1\% to 2.2\%; convolution falls a
+more modest 1.44$\times$, from 1.04 to 0.72\,ms/frame. Its total latency falls
+from 1.54 to 0.94\,ms/frame, while its advantage over the fastest competing
+path narrows from 1.81$\times$ to 1.49$\times$. At batch size~8, the
+corresponding batch latencies are 7.53\,ms for \sysname and 30.38\,ms for
+gather-scatter.
 
 % Tensor-Core sensitivity:
 % Use the same YOLOv8n frames on RTX~3080 and add a compact two-bar result with
