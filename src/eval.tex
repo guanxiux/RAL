@@ -125,11 +125,11 @@ teacher~\cite{yolo26}.
   \centering
   \includegraphics[width=\textwidth]{figures/e2e_latency.pdf}
   \caption{Full-model mean per-frame latency across GPU platforms. Each
-  workload uses an independent y-axis. Labels report $\hat{\alpha}$, the
-  model-level ratio of required to dense convolution FLOPs, accumulated over
-  frames and layers and averaged across evaluation sequences. Red dashed lines
-  mark ideal proportional scaling, computed by applying each sequence's ratio
-  to its dense latency before aggregation.}
+  workload uses an independent y-axis. Labels report the model-level active
+  ratio $\hat{\alpha}$, aggregated as described in
+  \S\ref{sec:eval:setup} and averaged across evaluation sequences. Red dashed
+  lines mark ideal proportional scaling, computed by applying each sequence's
+  model-level active ratio to its dense latency before aggregation.}
   \Description{Grouped bar charts of full-model latency. Six platform panels
   each contain four workload groups comparing Dense, Tile skipping,
   Gather-scatter, and WISEConv. Two discrete-GPU panels are marked as awaiting
