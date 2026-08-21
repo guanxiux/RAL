@@ -327,32 +327,22 @@ gather-scatter path's data-movement bottleneck.
 
 \paragraph{Stream-level batching.}
 Table~\ref{tab:batch-cost-decomposition} separates the costs that batching
-amortizes from those that continue to scale with each frame. We split held-out
-MOT16-03~\cite{mot16} into eight disjoint contiguous streams and replay the
-same 1,488 timed transitions at $B=1,4,8$, with $B=1$ as the unbatched
-control. Changing $B$ only regroups streams, while each lane retains its own
-frame reference and incremental state. Dense, tile skipping, and \sysname use
-CUDA Graphs, whereas gather-scatter remains eager because its active count
-changes the GEMM shape.
+amortizes from those that continue to scale with each frame. We evaluate
+YOLOv8n at $B=4$ and~8, maintaining independent temporal state for each stream.
 
-Gather-scatter obtains most of its batching gain from \emph{Other}: this stage
-falls 3.68$\times$, from 11.60 to 3.15\,ms/frame, while its convolution time
-falls only 1.44$\times$, from 0.80 to 0.56\,ms/frame. Batching therefore
-amortizes much of its coordinate-processing and setup cost, but extraction,
-materialization, writeback, and synchronization still leave \emph{Other} at
-83.0\% of its $B=8$ latency. Tile skipping instead obtains most of its gain in
-convolution, which falls from 3.06 to 1.17\,ms/frame and makes it the fastest
-competing path at $B=4$ and~8.
+Doubling the batch size benefits gather-scatter most: \emph{Other} falls
+1.81$\times$, from 5.71 to 3.15\,ms/frame, while convolution falls only
+1.08$\times$, from 0.60 to 0.56\,ms/frame. \emph{Other} therefore remains the
+bottleneck, accounting for 83.0\% of gather-scatter's $B=8$ latency. Tile
+skipping instead obtains most of its gain in convolution,
+which falls from 1.41 to 1.17\,ms/frame and remains the fastest competing path.
 
-For \sysname, construction falls 4.58$\times$, from 0.094 to
-0.021\,ms/frame, reducing its share from 6.1\% to 2.2\%; convolution falls a
-more modest 1.44$\times$, from 1.04 to 0.72\,ms/frame. Thus, batching
-amortizes the metadata stage as intended, while direct worklist consumption
-keeps auxiliary work small enough that convolution remains dominant. At
-$B=8$, \sysname reaches 0.94\,ms/frame, 1.49$\times$ faster than tile
-skipping. This throughput comes with the expected batching trade-off: its
-actual batch latency grows from 1.54\,ms at $B=1$ to 7.53\,ms at $B=8$, while
-gather-scatter requires 30.38\,ms for the same eight-frame batch.
+For \sysname, construction falls 1.59$\times$, from 0.033 to
+0.021\,ms/frame, reducing its share from 3.1\% to 2.2\%; convolution falls a
+more modest 1.11$\times$, from 0.80 to 0.72\,ms/frame. Its total latency falls
+from 1.05 to 0.94\,ms/frame, and its advantage over the fastest competing path
+narrows from 1.59$\times$ to 1.49$\times$. At $B=8$, the corresponding batch
+latencies are 7.53\,ms for \sysname and 30.38\,ms for gather-scatter.
 
 % Tensor-Core sensitivity:
 % Use the same YOLOv8n frames on RTX~3080 and add a compact two-bar result with

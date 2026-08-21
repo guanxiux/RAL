@@ -39,6 +39,7 @@ OUT_CSV = HERE / "batch_cost_decomposition.csv"
 
 SYSTEMS = ("dense", "tile_skip", "gather_scatter", "wiseconv")
 BATCH_SIZES = (1, 4, 8)
+PAPER_BATCH_SIZES = (4, 8)
 CATEGORIES = ("construction", "convolution", "elementwise", "other")
 SYSTEM_LABELS = {
     "dense": "Dense",
@@ -505,7 +506,7 @@ def validate_per_batch_rows(
 
 def paper_rows(source_by_key: dict[tuple[str, int], dict]) -> list[dict]:
     output = []
-    for batch_size in BATCH_SIZES:
+    for batch_size in PAPER_BATCH_SIZES:
         competitors = {
             system: float(source_by_key[(system, batch_size)]["total_latency_ms_per_frame"])
             for system in SYSTEMS
@@ -515,7 +516,6 @@ def paper_rows(source_by_key: dict[tuple[str, int], dict]) -> list[dict]:
         for system in SYSTEMS:
             source = source_by_key[(system, batch_size)]
             total = float(source["total_latency_ms_per_frame"])
-            base = float(source_by_key[(system, 1)]["total_latency_ms_per_frame"])
             row = {
                 "batch_size": batch_size,
                 "system": system,
@@ -524,7 +524,6 @@ def paper_rows(source_by_key: dict[tuple[str, int], dict]) -> list[dict]:
                 "timed_frames": int(source["timed_frames"]),
                 "total_latency_ms_per_frame": f"{total:.12g}",
                 "actual_batch_latency_ms": f"{total * batch_size:.12g}",
-                "per_frame_speedup_vs_batch1": f"{base / total:.12g}",
                 "construction_applicable": "true" if system == "wiseconv" else "false",
             }
             for category in CATEGORIES:
