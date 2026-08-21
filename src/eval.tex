@@ -348,26 +348,19 @@ as a sufficient proxy for level selection.
 \input{figures/batch_cost_decomposition_table}
 
 \paragraph{Stream-level batching.}
-Table~\ref{tab:batch-cost-decomposition} separates the costs that batching
-amortizes from those that continue to scale with each frame. We evaluate
-YOLOv8n at batch sizes 1, 4, and~8, maintaining independent temporal state for
-each stream.
-
-Increasing the batch size from 1 to~8 benefits gather-scatter most:
-\emph{Other} falls 3.33$\times$, from 10.50 to 3.15\,ms/frame, while convolution
-falls only 1.34$\times$, from 0.75 to 0.56\,ms/frame. \emph{Other} therefore
-remains the bottleneck, accounting for 83.0\% of gather-scatter's latency at
-batch size~8. Tile skipping instead obtains most of its gain in convolution,
-which falls 2.68$\times$, from 3.13 to 1.17\,ms/frame, and makes it the fastest
-competing path at batch sizes 4 and~8.
-
-For \sysname, construction falls 5.10$\times$, from 0.105 to
-0.021\,ms/frame, reducing its share from 6.7\% to 2.2\%; convolution falls a
-more modest 1.63$\times$, from 1.17 to 0.72\,ms/frame. Its total latency falls
-from 1.56 to 0.94\,ms/frame, while its advantage over the fastest competing
-path narrows from 1.79$\times$ to 1.49$\times$. At batch size~8, the
-corresponding batch latencies are 7.53\,ms for \sysname and 30.38\,ms for
-gather-scatter.
+Table~\ref{tab:batch-cost-decomposition} shows how stream-level batching
+changes per-frame costs. At batch size~8, gather-scatter still spends 83.0\%
+of its latency in \emph{Other}, whereas tile skipping becomes the fastest
+competing path at batch sizes 4 and~8. Its launch grid is determined statically
+from the input shape, so increasing the batch dimension adds independent tiles
+from multiple temporal streams, consistent with DeltaCNN's observation for
+high-end GPUs~\cite{deltacnn}. The effect is
+concentrated in convolution: from batch size~1 to~8, tile skipping's per-frame
+convolution cost falls 2.68$\times$, compared with 1.63$\times$ for \sysname.
+\sysname remains fastest, but its lead narrows from 1.79$\times$ to
+1.49$\times$. These results, in turn, show why adaptive decomposition matters
+at batch size~1: \sysname adapts its work decomposition to each short worklist
+instead of relying on a larger batch to expand the launch grid.
 
 % Tensor-Core sensitivity:
 % Use the same YOLOv8n frames on RTX~3080 and add a compact two-bar result with
