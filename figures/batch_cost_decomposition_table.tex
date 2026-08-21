@@ -1,0 +1,46 @@
+\begin{table}[!ht]
+  \centering
+  \caption{Stream-level batch sensitivity for full-model YOLOv8n on
+  RTX~3080, decomposed by execution stage. All times are amortized
+  ms/frame; parentheses report each stage's share of total latency.}
+  \Description{A table compares Dense, Tile skipping, Gather-scatter,
+  and WISEConv at batch sizes one, four, and eight. Each row gives
+  amortized total latency per frame and its division among worklist
+  construction, convolution, elementwise, and other work.}
+  \label{tab:batch-cost-decomposition}
+  \footnotesize
+  \setlength{\tabcolsep}{1.0pt}
+  \renewcommand{\arraystretch}{1.10}
+  \begin{tabular}{@{}c@{\hspace{2pt}}l r c c c c@{}}
+    \hline
+    \textbf{B} & \textbf{System} & \textbf{Tot.} & \textbf{Cons.} &
+    \textbf{Conv.} & \textbf{Elem.} & \textbf{Other} \\
+    \hline
+    \multirow{4}{*}{1} & Dense & 2.79 & \textemdash{} & 2.37(84.8\%) & 0.13(4.7\%) & 0.29(10.5\%) \\
+    & Tile skip & 3.45 & \textemdash{} & 3.06(88.9\%) & 0.16(4.5\%) & 0.23(6.6\%) \\
+    & Gather & 12.49 & \textemdash{} & 0.80(6.4\%) & 0.09(0.7\%) & 11.60(92.8\%) \\
+    & \textbf{WISEConv} & 1.54 & 0.09(6.1\%) & 1.04(67.1\%) & 0.11(7.2\%) & 0.30(19.6\%) \\
+    \hline
+    \multirow{4}{*}{4} & Dense & 1.83 & \textemdash{} & 1.61(88.0\%) & 0.15(8.0\%) & 0.07(4.0\%) \\
+    & Tile skip & 1.66 & \textemdash{} & 1.41(84.7\%) & 0.12(7.4\%) & 0.13(7.8\%) \\
+    & Gather & 6.41 & \textemdash{} & 0.60(9.4\%) & 0.09(1.4\%) & 5.71(89.2\%) \\
+    & \textbf{WISEConv} & 1.05 & 0.03(3.1\%) & 0.80(76.5\%) & 0.09(8.8\%) & 0.12(11.6\%) \\
+    \hline
+    \multirow{4}{*}{8} & Dense & 1.68 & \textemdash{} & 1.47(87.3\%) & 0.15(8.9\%) & 0.06(3.9\%) \\
+    & Tile skip & 1.41 & \textemdash{} & 1.17(83.0\%) & 0.12(8.4\%) & 0.12(8.6\%) \\
+    & Gather & 3.80 & \textemdash{} & 0.56(14.7\%) & 0.09(2.3\%) & 3.15(83.0\%) \\
+    & \textbf{WISEConv} & 0.94 & 0.02(2.2\%) & 0.72(76.3\%) & 0.09(9.3\%) & 0.11(12.2\%) \\
+    \hline
+  \end{tabular}
+  \par\vspace{5pt}
+  \noindent\parbox{\columnwidth}{\scriptsize\textit{Notes.} Each $B$
+  regroups the same 1,488 temporal transitions from eight disjoint
+  MOT16-03 streams; every lane retains independent temporal state.
+  Cons. is WISEConv worklist construction. Conv. is the backend's
+  convolution path, and Elem. covers activation, residual, and
+  concatenation work. Other contains remaining work and GPU timeline
+  gaps; for Gather, this includes coordinate compaction, input-patch
+  materialization, scatter, setup, and synchronization. Each stage
+  scales its tensor-batch NSYS fraction by the corresponding formal
+  CUDA-event batch latency before aggregation.}
+\end{table}
