@@ -1,12 +1,18 @@
 #!/usr/bin/env python3
-"""Audit batched YOLOv8n decomposition logs and emit paper-facing data.
+"""Audit YOLOv8n batching decompositions and emit paper-facing data.
 
-The formal CUDA-event run remains the source of truth for total latency.  The
-NSYS captures supply only a per-tensor-batch split among construction,
-convolution, elementwise, and other work.  This script independently checks the
-formal arrays, capture provenance, graph mapping, per-batch closure, and the
-12-row aggregate before writing the CSV consumed by
-``make_batch_cost_decomposition_table.py``.
+The batch run remains the source of truth for batch sizes 4 and 8.  Its formal
+CUDA-event arrays provide total latency, while its NSYS captures provide the
+per-tensor-batch stage split.  For batch size 1, the paper reaggregates the
+original per-frame cost-decomposition log over exactly the 1,488-frame
+population selected by the batch run.  This aligns the unbatched baseline with
+the standalone cost-decomposition table instead of treating stage attribution
+from an independently implemented batch-1 profiler as interchangeable.
+
+Before writing the CSV consumed by ``make_batch_cost_decomposition_table.py``,
+this script still audits all 12 configurations in the batch run, then validates
+every row of the original per-frame source and performs the batch-1 migration
+for all four systems.
 """
 
 from __future__ import annotations
@@ -35,6 +41,16 @@ SOURCE_BATCHES = RUN / "batch_cost_decomposition.batches.jsonl"
 SOURCE_SUMMARY = RUN / "batch_cost_decomposition.summary.json"
 SOURCE_AUDIT = RUN / "batch_cost_decomposition.kernel_audit.json"
 SOURCE_MANIFEST = RUN / "manifest.json"
+UNBATCHED_RUN = (
+    REPO
+    / "logs"
+    / "microbenchmarks"
+    / "cost_decomposition"
+    / "3080-yolov8n-two-bin-v3-semantic"
+)
+UNBATCHED_FRAMES = UNBATCHED_RUN / "cost_decomposition.frames.jsonl"
+UNBATCHED_SUMMARY = UNBATCHED_RUN / "cost_decomposition.summary.json"
+UNBATCHED_MANIFEST = UNBATCHED_RUN / "manifest.json"
 OUT_CSV = HERE / "batch_cost_decomposition.csv"
 
 SYSTEMS = ("dense", "tile_skip", "gather_scatter", "wiseconv")
@@ -55,6 +71,14 @@ EXPECTED_GRAPHS = {
 }
 EXPECTED_DEVICE = "NVIDIA GeForce RTX 3080"
 EXPECTED_TIMED_FRAMES = 1488
+EXPECTED_UNBATCHED_TRACE_FRAMES = 2572
+EXPECTED_UNBATCHED_SEQUENCE = "MOT16-03"
+EXPECTED_UNBATCHED_COMMIT = "5c90ff239ab4253c871ba072c4098f6ddb7e644b"
+EXPECTED_UNBATCHED_DIGESTS = {
+    UNBATCHED_MANIFEST: "fdd5cb54c87db5d153d62093b5c6907e08ab03d553c26fae1886a1d1d517f164",
+    UNBATCHED_SUMMARY: "5c3997757e3fd6b74901861ff205f67c0efaa38b8b886124c76015323cf5ed84",
+    UNBATCHED_FRAMES: "1a6c53b9ec65efac87275068f86706a66c6455768c9708e20411a1e51a6b353d",
+}
 EXPECTED_AGGREGATION = {
     "timed_frame_population": EXPECTED_TIMED_FRAMES,
     "frame_weighting": "equal weight over the fixed stream population",
@@ -291,6 +315,79 @@ def validate_protocol(manifest: dict, summary: dict, audit: dict) -> str:
     return manifest_digest
 
 
+def validate_unbatched_protocol(manifest: dict, summary: dict) -> None:
+    for path, expected_digest in EXPECTED_UNBATCHED_DIGESTS.items():
+        if sha256_file(path) != expected_digest:
+            raise ValueError(f"original cost-decomposition artifact changed: {path}")
+
+    if manifest.get("kind") != "yolov8n_two_bin_cost_manifest":
+        raise ValueError("unexpected original cost-decomposition manifest kind")
+    if summary.get("kind") != "yolov8n_two_bin_full_trace_cost_decomposition":
+        raise ValueError("unexpected original cost-decomposition summary kind")
+    if manifest.get("git_commit") != EXPECTED_UNBATCHED_COMMIT:
+        raise ValueError("original cost-decomposition commit changed")
+    if (manifest.get("device") or {}).get("name") != EXPECTED_DEVICE:
+        raise ValueError("original cost decomposition uses the wrong device")
+    if (summary.get("device") or {}).get("name") != EXPECTED_DEVICE:
+        raise ValueError("original cost summary uses the wrong device")
+    if int((manifest.get("device") or {}).get("expected_sm_clock_mhz", 0)) != 1800:
+        raise ValueError("unexpected original cost-decomposition RTX 3080 clock")
+
+    manifest_digest = sha256_file(UNBATCHED_MANIFEST)
+    if summary.get("manifest_sha256") != manifest_digest:
+        raise ValueError("original cost summary refers to a different manifest")
+    if summary.get("capture_manifest_sha256") != [manifest_digest]:
+        raise ValueError("original cost captures do not share exactly one manifest")
+    if resolve_recorded(summary["manifest"]).resolve() != UNBATCHED_MANIFEST.resolve():
+        raise ValueError("original cost summary records the wrong manifest path")
+    artifacts = summary.get("artifacts") or {}
+    if resolve_recorded(artifacts["per_frame"]).resolve() != UNBATCHED_FRAMES.resolve():
+        raise ValueError("original cost summary records the wrong per-frame source")
+
+    manifest_categories = tuple(
+        item.get("key") for item in manifest.get("categories") or ()
+    )
+    summary_categories = tuple(
+        item.get("key") for item in summary.get("categories") or ()
+    )
+    if manifest_categories != CATEGORIES or summary_categories != CATEGORIES:
+        raise ValueError("original cost-decomposition stage categories changed")
+    if manifest.get("aggregation") != summary.get("aggregation"):
+        raise ValueError("original cost-decomposition aggregation metadata diverged")
+
+    workload = manifest.get("workload") or {}
+    if (
+        workload.get("name") != "yolov8n"
+        or int(workload.get("complete_trace_frames", 0))
+        != EXPECTED_UNBATCHED_TRACE_FRAMES
+        or tuple(workload.get("sequences") or ())
+        != ("MOT16-01", "MOT16-03", "MOT16-08")
+        or tuple(manifest.get("bin_names") or ()) != ("low", "high")
+        or workload.get("profile_backends")
+        != {system: system for system in SYSTEMS}
+    ):
+        raise ValueError("original cost-decomposition workload changed")
+    expected_graphs = {
+        system: EXPECTED_GRAPHS[system] > 0 for system in SYSTEMS
+    }
+    if workload.get("cuda_graph") != expected_graphs:
+        raise ValueError("original cost-decomposition execution protocol changed")
+    sequence_window = (workload.get("sequence_windows") or {}).get(
+        EXPECTED_UNBATCHED_SEQUENCE
+    ) or {}
+    if sequence_window != {"start": 2, "end": 1500, "frame_count": 1499}:
+        raise ValueError("original MOT16-03 frame window changed")
+
+    formal_sources = (workload.get("sources") or {}).get("formal_latency") or {}
+    formal_digests = (workload.get("source_sha256") or {}).get(
+        "formal_latency"
+    ) or {}
+    for system in SYSTEMS:
+        path = resolve_recorded(formal_sources[EXPECTED_UNBATCHED_SEQUENCE][system])
+        if sha256_file(path) != formal_digests[EXPECTED_UNBATCHED_SEQUENCE][system]:
+            raise ValueError(f"original formal latency changed for {system}")
+
+
 def validate_capture(
     system: str,
     batch_size: int,
@@ -504,6 +601,187 @@ def validate_per_batch_rows(
             )
 
 
+def batch_one_frame_population(
+    formal_by_key: dict[tuple[str, int], dict],
+) -> set[tuple[str, int]]:
+    canonical = None
+    for system in SYSTEMS:
+        population = []
+        formal = formal_by_key[(system, 1)]
+        for batch_id, key in enumerate(formal["batch_keys"]):
+            if (
+                key["sequence"] != EXPECTED_UNBATCHED_SEQUENCE
+                or len(key["stream_ids"]) != 1
+                or len(key["frame_indices"]) != 1
+                or not key["stream_ids"][0].startswith(
+                    f"{EXPECTED_UNBATCHED_SEQUENCE}:s"
+                )
+            ):
+                raise ValueError(f"invalid batch-1 frame key for {system}/batch{batch_id}")
+            population.append(
+                (key["sequence"], int(key["frame_indices"][0]))
+            )
+        population_set = set(population)
+        if (
+            len(population) != EXPECTED_TIMED_FRAMES
+            or len(population_set) != EXPECTED_TIMED_FRAMES
+        ):
+            raise ValueError(f"batch-1 frame population does not close for {system}")
+        if canonical is None:
+            canonical = population_set
+        elif population_set != canonical:
+            raise ValueError("batch-1 systems do not share an identical frame population")
+    return canonical or set()
+
+
+def aggregate_unbatched_batch_one(
+    rows: list[dict],
+    manifest: dict,
+    target_frames: set[tuple[str, int]],
+) -> dict[tuple[str, int], dict]:
+    manifest_frames = {}
+    for frame in (manifest.get("workload") or {}).get("frames") or ():
+        key = (str(frame["sequence"]), int(frame["frame_index"]))
+        if key in manifest_frames:
+            raise ValueError(f"duplicate frame in original manifest: {key}")
+        manifest_frames[key] = frame
+    if len(manifest_frames) != EXPECTED_UNBATCHED_TRACE_FRAMES:
+        raise ValueError("original manifest frame population does not close")
+    if len(target_frames) != EXPECTED_TIMED_FRAMES:
+        raise ValueError("migrated batch-1 population has the wrong size")
+    if not target_frames <= set(manifest_frames):
+        raise ValueError("migrated batch-1 population is absent from original trace")
+    if {sequence for sequence, _ in target_frames} != {
+        EXPECTED_UNBATCHED_SEQUENCE
+    }:
+        raise ValueError("migrated batch-1 population spans an unexpected sequence")
+
+    by_key = {}
+    for row in rows:
+        system = str(row.get("system"))
+        sequence = str(row.get("sequence"))
+        frame_index = int(row.get("frame_index", -1))
+        context = f"original/{system}/{sequence}/frame{frame_index}"
+        key = (system, sequence, frame_index)
+        if key in by_key:
+            raise ValueError(f"duplicate per-frame cost row for {context}")
+        if row.get("workload") != "yolov8n" or system not in SYSTEMS:
+            raise ValueError(f"unexpected original per-frame row for {context}")
+        frame_key = (sequence, frame_index)
+        if frame_key not in manifest_frames:
+            raise ValueError(f"per-frame row is absent from manifest for {context}")
+        frame = manifest_frames[frame_key]
+        if (
+            str(row.get("activity_bin")) != str(frame["activity_bin"])
+            or int(row.get("activity_bin_index", -1))
+            != int(frame["activity_bin_index"])
+        ):
+            raise ValueError(f"activity bin mismatch for {context}")
+        close(
+            finite_float(row, "required_work_ratio", context),
+            float(frame["required_work_ratio"]),
+            tolerance=1e-15,
+            context=f"required-work metadata for {context}",
+        )
+
+        formal_latency = finite_float(row, "formal_latency_ms", context)
+        if formal_latency <= 0.0:
+            raise ValueError(f"non-positive formal latency for {context}")
+        close(
+            formal_latency,
+            float(frame["formal_latency_ms"][system]),
+            tolerance=1e-12,
+            context=f"formal latency for {context}",
+        )
+        stage_ms = row.get("stage_ms") or {}
+        stage_fraction = row.get("stage_fraction") or {}
+        if set(stage_ms) != set(CATEGORIES) or set(stage_fraction) != set(CATEGORIES):
+            raise ValueError(f"stage fields changed for {context}")
+        stage_total = 0.0
+        fraction_total = 0.0
+        for category in CATEGORIES:
+            value = float(stage_ms[category])
+            fraction = float(stage_fraction[category])
+            if (
+                value < 0.0
+                or fraction < 0.0
+                or not math.isfinite(value)
+                or not math.isfinite(fraction)
+            ):
+                raise ValueError(f"invalid {category} attribution for {context}")
+            close(
+                fraction,
+                value / formal_latency,
+                tolerance=1e-12,
+                context=f"{category} fraction for {context}",
+            )
+            stage_total += value
+            fraction_total += fraction
+        close(stage_total, formal_latency, context=f"stage closure for {context}")
+        close(fraction_total, 1.0, context=f"fraction closure for {context}")
+        construction = float(stage_ms["construction"])
+        if (construction > 0.0) != (system == "wiseconv"):
+            raise ValueError(f"construction attribution mismatch for {context}")
+        by_key[key] = row
+
+    expected_rows = {
+        (system, sequence, frame_index)
+        for system in SYSTEMS
+        for sequence, frame_index in manifest_frames
+    }
+    if len(rows) != len(expected_rows) or set(by_key) != expected_rows:
+        raise ValueError("original per-frame cost log is incomplete")
+
+    output = {}
+    ordered_target = sorted(target_frames)
+    for system in SYSTEMS:
+        selected = [
+            by_key[(system, sequence, frame_index)]
+            for sequence, frame_index in ordered_target
+        ]
+        if len(selected) != EXPECTED_TIMED_FRAMES:
+            raise ValueError(f"migrated population is incomplete for {system}")
+        total = math.fsum(float(row["formal_latency_ms"]) for row in selected)
+        total /= EXPECTED_TIMED_FRAMES
+        stages = {
+            category: math.fsum(
+                float(row["stage_ms"][category]) for row in selected
+            )
+            / EXPECTED_TIMED_FRAMES
+            for category in CATEGORIES
+        }
+        close(
+            math.fsum(stages.values()),
+            total,
+            context=f"migrated stage closure for {system}/B1",
+        )
+        percents = {
+            category: 100.0 * stages[category] / total
+            for category in CATEGORIES
+        }
+        close(
+            math.fsum(percents.values()),
+            100.0,
+            context=f"migrated percentage closure for {system}/B1",
+        )
+        output[(system, 1)] = {
+            "batch_size": 1,
+            "system": system,
+            "timed_batches": EXPECTED_TIMED_FRAMES,
+            "timed_frames": EXPECTED_TIMED_FRAMES,
+            "total_latency_ms_per_frame": total,
+            **{
+                f"{category}_ms_per_frame": stages[category]
+                for category in CATEGORIES
+            },
+            **{
+                f"{category}_percent": percents[category]
+                for category in CATEGORIES
+            },
+        }
+    return output
+
+
 def paper_rows(source_by_key: dict[tuple[str, int], dict]) -> list[dict]:
     output = []
     for batch_size in PAPER_BATCH_SIZES:
@@ -537,7 +815,8 @@ def paper_rows(source_by_key: dict[tuple[str, int], dict]) -> list[dict]:
             row["speedup_vs_fastest_competing"] = (
                 f"{competitors[fastest] / total:.12g}" if system == "wiseconv" else ""
             )
-            row["source"] = str(SOURCE_CSV.relative_to(REPO))
+            paper_source = UNBATCHED_FRAMES if batch_size == 1 else SOURCE_CSV
+            row["source"] = str(paper_source.relative_to(REPO))
             output.append(row)
     return output
 
@@ -627,10 +906,25 @@ def main() -> None:
         )
     validate_per_batch_rows(batch_rows, formal_by_key, source_by_key)
 
-    output = paper_rows(source_by_key)
+    target_frames = batch_one_frame_population(formal_by_key)
+    unbatched_manifest = read_json(UNBATCHED_MANIFEST)
+    unbatched_summary = read_json(UNBATCHED_SUMMARY)
+    validate_unbatched_protocol(unbatched_manifest, unbatched_summary)
+    unbatched_rows = read_jsonl(UNBATCHED_FRAMES)
+    migrated_batch_one = aggregate_unbatched_batch_one(
+        unbatched_rows,
+        unbatched_manifest,
+        target_frames,
+    )
+    paper_source_by_key = dict(source_by_key)
+    paper_source_by_key.update(migrated_batch_one)
+
+    output = paper_rows(paper_source_by_key)
     write_csv(output)
-    print(f"# source: {RUN.relative_to(REPO)}")
-    print(f"# provenance commit: {manifest['git_commit']}")
+    print(f"# batched source: {RUN.relative_to(REPO)}")
+    print(f"# batched provenance commit: {manifest['git_commit']}")
+    print(f"# batch-1 source: {UNBATCHED_FRAMES.relative_to(REPO)}")
+    print(f"# batch-1 provenance commit: {unbatched_manifest['git_commit']}")
     print(f"# identical timed-frame population: {len(canonical_population or ())}")
     print("B  system             total   cons.   conv.   elem.  other")
     for row in output:
