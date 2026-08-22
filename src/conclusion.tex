@@ -1,0 +1,16 @@
+\section{Conclusion}
+\label{sec:conclusion}
+
+We presented \sysname, a masked-convolution runtime that replaces the dense
+tiled pipeline's contiguous coordinate stream with an active-output worklist,
+computing only positions an upstream mask marks active while retaining the dense
+tensor layout and the regular per-position reduction. Construction completes in
+a single mask-space pass and is reused across compatible operators; consumption
+preserves tile-local ordering, bounds work with a device-resident worklist
+length, and adapts its decomposition to input activity without host
+synchronization. The four mechanisms are not independent additions: disabling
+any one returns latency to either excessive construction cost or underloaded
+consumption. Together they secure both useful-compute ratio and throughput,
+converting upstream mask sparsity into end-to-end latency and energy reduction.
+With \sysname, spatial masks become a reliable per-frame latency control for
+real-time deployed perception systems.
