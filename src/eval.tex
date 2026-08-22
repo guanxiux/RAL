@@ -362,10 +362,21 @@ convolution cost falls 2.68$\times$, compared with 1.63$\times$ for \sysname.
 at batch size~1: \sysname adapts its work decomposition to each short worklist
 instead of relying on a larger batch to expand the launch grid.
 
-% Tensor-Core sensitivity:
-% Use the same YOLOv8n frames on RTX~3080 and add a compact two-bar result with
-% only Dense~FP16 and WISEConv~FP16.  Report compute-stage latency or effective
-% throughput under the same real shapes and masks.  The other sparse backends
-% are intentionally absent because they do not expose an equivalent Tensor-
-% Core path.  Restrict the measurement to supported aligned layers and omit
-% YOLOv8m unless it adds a distinct shape regime.
+\subsection{Discussion}
+\label{sec:eval:discussion}
+
+\sysname consumes rather than generates masks, so its gains are conditional on
+the upstream policy and its activity distribution; it guarantees coverage of
+requested outputs but does not improve mask quality. Across our workloads, the
+evaluation shows that \sysname most effectively converts the supplied mask
+sparsity into end-to-end latency reduction among the evaluated sparse paths.
+The adaptive decomposition is deployment-specific and must be
+recalibrated for a new model, device, or mask workload, although prediction
+error affects performance rather than correctness.
+
+We evaluate all systems in FP32 because the competing masked-convolution
+baselines lack comparable tensor core paths; efficient tensor core execution
+of short worklists also requires additional reduction design, since the FP32
+partial-sum accumulation required by conventional split-K can outweigh the
+remaining FP16 computation. 
+Extending \sysname to support tensor cores remains future work.
