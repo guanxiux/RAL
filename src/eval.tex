@@ -185,12 +185,13 @@ platforms. It is the lowest-energy path for every workload
 \input{figures/e2e_energy_table}
 
 \paragraph{Accuracy.}
-\sysname's latency and energy gains preserve the accuracy of the selected
-sparsity policies. For FireFlowNet and DynConv, its AEE and PCKh match the
+\sysname's latency and energy gains do not alter the numerical output of the
+selected sparsity policies. For FireFlowNet and DynConv, its AEE and PCKh match the
 other sparse paths at the reported precision. In the
 YOLOv8 models, small floating-point differences accumulate across frames under
-temporal execution; even so, \sysname's AP differs from the other sparse paths
-by at most 0.5\% in relative terms (Figure~\ref{fig:e2e-accuracy}). Compared
+temporal execution; even so, \sysname's pseudo-label AP differs from the other sparse paths
+by at most 0.5\% in relative terms (Figure~\ref{fig:e2e-accuracy}), confirming
+output agreement across execution backends. Compared
 with dense execution, the upstream sparsity policies lower AP and PCKh by only
 1.6--3.5\%, while lowering FireFlowNet's AEE by 0.8\%.
 

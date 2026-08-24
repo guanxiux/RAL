@@ -91,7 +91,10 @@ correctness; traversal order within each interval is retained for locality.
 
 \sysname thus confines its ordering guarantee to each contiguous segment:
 coordinates retain the tile's dense traversal, while independently reserved
-segments provide no cross-boundary locality guarantee. As shown in
+segments provide no cross-boundary locality guarantee. A $B_M$-wide compute
+tile may therefore span coordinates from multiple construction segments when
+segments are shorter than $B_M$; the preserved locality is intra-segment
+contiguity, not compute-tile-to-construction-tile alignment. As shown in
 \S\ref{sec:eval:ablation-sensitivity}, this tile-local order achieves compute-stage
 throughput comparable to global ordering, making the additional ordering pass
 an unfavorable end-to-end trade-off.
@@ -132,7 +135,10 @@ mask-narrowing operators in the upstream policy, such as the activation-fused
 update truncation that DeltaCNN uses to increase downstream
 sparsity~\cite{deltacnn}. The inherited worklist remains a valid superset,
 trading a lower $\eta_{\mathrm{construct}}$ for one fewer construction pass
-without violating coverage.
+without violating coverage. Because compute gates all output writes by the
+exact mask, positions scheduled but no longer active under the current mask
+participate in reduction yet produce no store; the superset schedule therefore
+cannot alter any inactive position's observable state.
 
 A change in the output grid violates the geometry constraint, while
 receptive-field expansion may violate Eq.~\ref{eq:reuse-condition} by

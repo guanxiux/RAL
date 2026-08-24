@@ -182,14 +182,14 @@ throughput.
 \label{sec:bg:related}
 
 Related sparse-execution work differs from \sysname's masked convolution in
-representation, operator, sparsity type, or platform. 3D sparse convolution
-(SpConv~v2~\cite{spconv2}, Torch\-Sparse++~\cite{torchsparsepp,torchsparse}, Minuet~\cite{minuet},
-Minkowski\-Engine~\cite{minkowski}, sub\-manifold sparse
-convolution~\cite{submanifold}) is built to organize com\-putation over
-an unordered list of active voxels, constructing coordinate maps that route
-irregular input coordinates to outputs; its input
-is sparse by construction rather than a dense grid under a runtime mask, so it is
-related infrastructure rather than a baseline. Sparse matrix multiplication
+representation, operator, sparsity type, or platform. 3D
+sparse-convolution systems such as SpConv~v2~\cite{spconv2},
+Torch\-Sparse++~\cite{torchsparsepp,torchsparse},
+Minuet~\cite{minuet}, and Minkowski\-Engine~\cite{minkowski,submanifold}
+operate on sparse point-cloud coordinates and construct coordinate maps for
+irregular input-to-output relations. \sysname instead consumes a runtime mask
+over a dense 2D grid and co-designs mask-space construction, cross-operator
+reuse, and direct worklist consumption while retaining dense tensor layouts. Sparse matrix multiplication
 (DTC-SpMM~\cite{dtcspmm}, MaxK-GNN~\cite{maxkgnn}, Sputnik~\cite{sputnik})
 reorganizes a sparse matrix operand so the dense
 datapath can consume it; its sparsity lives in the
