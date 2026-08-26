@@ -88,14 +88,14 @@ work:
   \item \textbf{Dense} executes the complete model with the native
         PyTorch/cuDNN backend~\cite{cudnn}.
 
-  \item \textbf{Tile skipping} adapts DeltaCNN's CUDA
-        implementation~\cite{deltacnn}, retaining the dense tiled pipeline with a fused selective
-        path and
-        skipping a tile only when all its outputs are inactive.
+  \item \textbf{Tile skipping} uses DeltaCNN's default execution path for
+        FireFlowNet (with Ev-Conv) and YOLO~\cite{deltacnn}. DynConv directly
+        provides the output mask. We therefore bypass only mask propagation;
+        its tile-skipping path is unchanged.
 
   \item \textbf{Gather-scatter} uses DynConv's original CUDA backend for
-        pose~\cite{dynconv}. FireFlowNet and YOLO use an adaptation of MMCV's
-        masked-convolution operator~\cite{mmcv}.
+        pose~\cite{dynconv}; FireFlowNet and YOLO use MMCV's masked-convolution
+        path~\cite{mmcv}.
 \end{itemize}
 
 \paragraph{Measurements.}
@@ -140,39 +140,55 @@ teacher~\cite{yolo26}.
 \end{figure*}
 
 \paragraph{Latency.}
-\sysname is the fastest path in all 24 measured workload-platform pairs
-(Figure~\ref{fig:e2e-latency}). Relative to the fastest competing path for each
-pair, it reduces full-model latency by 23.8--46.5\% on the discrete GPUs and
-22.1--38.6\% on the Jetson SoCs. These gains persist across all four workloads
-and both device classes despite a more than two-order-of-magnitude span in
-absolute latency, from 0.309\,ms for FireFlowNet on RTX~4090 to 94.3\,ms for
-YOLOv8m on Xavier NX.
+\sysname consistently converts upstream sparsity into lower full-model latency
+across all evaluated workloads and platforms. It is the fastest path in all 24
+measured workload-platform pairs (Figure~\ref{fig:e2e-latency}). Relative to
+the fastest evaluated competing path in each pair, it achieves a 1.57$\times$
+geometric-mean speedup; individual-pair speedups range from 1.28$\times$ to
+1.87$\times$, corresponding to 22.1--46.5\% lower latency. These gains persist
+despite a more than two-order-of-magnitude span in absolute latency, from
+0.309\,ms for FireFlowNet on RTX~4090 to 94.3\,ms for YOLOv8m on Xavier NX.
 
-Existing sparse paths realize the available headroom only in narrow regimes:
-tile skipping needs low activity to offset tile-level waste, while
-gather-scatter needs sufficiently heavy convolution to amortize its overhead.
-FireFlowNet and DynConv leave enough removable work for tile skipping to
-cut dense latency by up to 42.0\% and 40.9\%. The higher-activity
-DeltaCNN masks for YOLOv8n and YOLOv8m leave less headroom, and tile skipping
-fails to turn it into a material speedup: it is near parity with dense on AGX
-Orin and slower in the other ten pairs.
-Gather-scatter becomes
-the fastest existing path only for YOLOv8m on AGX Orin, where the heavier
-convolution makes the arithmetic saved by exact position selection outweigh
-gather-scatter's extraction and writeback overhead. Despite these
-regime-dependent baseline gains, \sysname remains fastest in every pair.
+Unlike existing sparse paths, \sysname delivers uniform gains across workload
+regimes. Dense is the fastest evaluated competing path in 15 of the 24
+pairs, compared with eight for tile skipping and only one for gather-scatter.
+FireFlowNet's low required-work ratio gives tile skipping enough headroom to
+beat Dense on five of six platforms and reduce its latency by up to 42.0\%.
+The higher required-work ratios of YOLOv8n and YOLOv8m leave less removable
+work: tile skipping reaches only near parity with Dense on AGX Orin and is
+slower in the other ten YOLO pairs. Gather-scatter becomes the fastest
+competing path only for YOLOv8m on AGX Orin, where the heavier convolution
+amortizes extraction and writeback. DynConv exposes the other limit: despite
+having the lowest required-work ratio, tile skipping beats Dense only on the
+two Jetson platforms. Sparsity magnitude alone therefore does not determine
+where an existing sparse path crosses the dense baseline.
 
-Across all workloads, \sysname is substantially closer to the ideal reference
-than the fastest existing path. For FireFlowNet and the two YOLO models,
-\sysname runs at
-1.09--3.06$\times$ the reference, while the fastest existing path remains at
-1.88--4.01$\times$. As the active ratio falls, active convolution work shrinks
-while mask processing, worklist construction, and other fixed model work do
-not, magnifying these costs relative to the ideal reference. DynConv
-makes this effect most visible: it has the lowest active ratio and additionally
-runs learned mask-prediction kernels in every gated block. Even so, \sysname runs at
-2.34--4.18$\times$ the reference, while the fastest existing path remains at
-3.80--6.43$\times$.
+Existing sparse paths are substantially more competitive with Dense on the
+Jetson devices than on the discrete GPUs. The fastest existing sparse path has
+lower measured latency than Dense in six of the eight Jetson pairs, but in
+only three of the 16 discrete-GPU pairs; its geometric-mean speedup over Dense
+is 1.26$\times$ on Jetson and 0.80$\times$ on the discrete GPUs. This trend is
+consistent with differential scaling between dense and selective execution.
+On the lower-throughput, narrower Jetson GPUs, avoiding dense-tile work can
+save more wall-clock time relative to selective-path overhead, while shorter
+sparse schedules incur less underfill than on wider discrete GPUs. The effect
+does not make sparse execution uniformly effective: gather-scatter exceeds
+Dense in only one pair, and both existing sparse paths remain slower than Dense
+for the two YOLO models on Xavier NX. These stronger embedded baselines narrow
+\sysname's geometric-mean lead over the per-pair fastest evaluated competing path from
+1.62$\times$ on the discrete GPUs to 1.48$\times$ on Jetson, yet \sysname
+remains fastest in all eight Jetson pairs.
+
+\sysname also realizes more of the available sparsity headroom than every
+competing path. It is the closest path to the ideal proportional-scaling
+reference in every pair, running at 1.09--4.18$\times$ the reference while the
+fastest evaluated competing path remains at 1.88--6.43$\times$. The remaining gap
+reflects work that does not shrink with convolution activity, including mask
+processing, worklist construction, and other non-convolution operators.
+DynConv lies at the upper end despite its low required-work ratio because every
+gated block still runs learned mask-prediction kernels and exposes exceptionally
+short worklists, as further discussed in
+\S\ref{sec:eval:microbenchmarks}.
 
 \paragraph{Energy.}
 \sysname's latency gains also reduce per-frame board energy on both Jetson
@@ -252,7 +268,7 @@ related and thus cannot support lagged prediction; yet its useful-compute ratio
 remains well above tile skipping's 48.9\%.
 Combining throughput and useful-compute ratio, \sysname achieves the
 highest effective throughput in every workload, reaching 1.51--1.86$\times$
-that of the strongest competing path.
+that of the strongest evaluated competing path.
 
 Table~\ref{tab:worklist-efficiency} localizes the remaining wasted work:
 despite cross-operator reuse, $\eta_{\mathrm{construct}}$ remains at
@@ -274,8 +290,15 @@ shows why exact selection alone is insufficient: it has the lowest convolution
 time at 0.73--0.83\,ms, but extraction, setup, and writeback put
 10.9--11.0\,ms (92.2--93.1\% of total latency) in \emph{Other}. \sysname
 instead spends 0.160--0.165\,ms (9.8--10.9\% of latency) on \emph{Other}, with
-convolution dominant at 73.8--76.3\%; direct worklist consumption avoids the
-gather-scatter path's data-movement bottleneck.
+convolution dominant at 73.8--76.3\%. \emph{Other} aggregates residual
+non-convolution work not assigned to construction, convolution, or elementwise
+operators. For gather-scatter, this category can include active-coordinate
+extraction, receptive-field materialization, GEMM setup, scatter/writeback, and
+associated bookkeeping. Relative to Dense's 0.10\,ms in the same category,
+\sysname adds only 0.06--0.07\,ms outside construction, whereas gather-scatter
+adds 10.8--10.9\,ms. This contrast shows that the large residual cost comes
+from the gather-scatter execution path rather than convolution arithmetic,
+while direct worklist consumption avoids that data-movement bottleneck.
 
 % Optional CUDA-level diagnostics are not a third required microbenchmark.
 % If the two figures leave a concrete locality question, the useful diagnostic
@@ -289,6 +312,45 @@ gather-scatter path's data-movement bottleneck.
 
 \subsection{Ablation Study and Sensitivity Analysis}
 \label{sec:eval:ablation-sensitivity}
+
+% TODO (Phase 2, requires new measurements; do not present as a current result):
+% Add a separate ablation for the device-bounded launch policy.  Keep the
+% existing component table for construction, reuse, and decomposition, and
+% compare the following two launch variants under the same masks, layer
+% configurations, activity-level selector, and timing protocol:
+%   (1) Ours: launch
+%       g_launch = min(g_res, n_work^max) blocks, read n_W on the device, and
+%       consume the valid work with a grid-stride loop;
+%   (2) Disable persistent grid (dense upper bound): launch n_work^max blocks,
+%       map each block to one potential position-channel tile, and let blocks
+%       whose tile is beyond the current n_W exit on the device;
+% For split-K, define n_work^max with the S_K replication factor before
+% constructing each variant.  Report results separately for
+% n_work^max > g_res and n_work^max <= g_res; in the latter group, Ours and
+% Dense-upper-bound have the same launch size by construction, so no
+% persistent-grid benefit is expected.  Use YOLOv8n on RTX 3080 to align with
+% this table, add a short-worklist workload such as DynConv pose, and if
+% feasible report the two-row comparison on a Jetson device.
+%
+% Add a complementary observation ablation.  Treat the host-sized exact-grid
+% path as this experiment rather than as a third launch-policy row.  The one
+% scalar transferred for each layer is n_W: for a tight worklist,
+% alpha_l = n_W / |G_l|, so the same readback both sizes the exact grid and
+% indexes the level-to-configuration table.  Under superset reuse, n_W remains
+% the exact scheduled-work count but can exceed the current exact-mask count;
+% describe that case as an exact scheduled-work-level observation unless a
+% separate device-side popcount of M_out is added.  Charge the transfer,
+% synchronization, and dependent-launch costs once per layer.  This measures
+% the end-to-end cost of replacing the current one-network-input,
+% asynchronous, lagged observation with per-layer exact work-count
+% observation.  Retain the existing Static-level row and Ideal-level oracle
+% as, respectively, the no-adaptation case and a synchronization-free lower
+% bound.  Evaluate the exact-observation comparison on event or temporal
+% workloads with a shared input activity signal, rather than on DynConv's
+% fixed-level mode.  Report convolution, selection/synchronization, and
+% full-model latency so that the combined coordination cost is not attributed
+% to the launch policy alone.  Do not list Host-sized as a third row in the
+% launch-policy comparison, since it is this exact-observation experiment.
 
 % Source: logs/yolov8n_ablation/ablation_table.json
 \begin{table}[H]
@@ -374,9 +436,7 @@ The adaptive decomposition is deployment-specific and must be
 recalibrated for a new model, device, or mask workload, although prediction
 error affects performance rather than correctness.
 
-We evaluate all systems in FP32 because the competing masked-convolution
-baselines lack comparable tensor core paths; efficient tensor core execution
-of short worklists also requires additional reduction design, since the FP32
-partial-sum accumulation required by conventional split-K can outweigh the
-remaining FP16 computation. 
-Extending \sysname to support tensor cores remains future work.
+We evaluate all systems in FP32, the common precision of the evaluated
+masked-convolution paths, to isolate execution-model differences from
+arithmetic-precision differences. Extending the worklist compute stage to
+tensor cores requires a different reduction design and remains future work.

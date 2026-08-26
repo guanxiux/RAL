@@ -39,10 +39,10 @@
 %    获取这一 execution bound 会阻塞 per-frame path，但 workload decomposition 又必须
 %    适应它，因为 padded work 和 exposed parallelism 分别影响 useful-compute ratio 与
 %    GPU throughput。
-% 2. 为在 host 不知道 execution bound 时完成当前工作，WISEConv 只启动足以填满 GPU
-%    concurrent residency 的一组 persistent thread blocks，并让这些 blocks 根据
-%    device-resident n_W 以 grid-stride 方式消费 worklist，从而将 launch footprint 限制
-%    在 resident capacity，而不随完整 dense output grid 扩张。
+% 2. 为在 host 不知道 execution bound 时完成当前工作，WISEConv 启动由 GPU
+%    concurrent residency 和 dense output grid 的最大必要 work count 共同限定的
+%    persistent thread blocks，并让这些 blocks 根据 device-resident n_W 以 grid-stride
+%    方式消费 worklist，从而不需要 host synchronization。
 % 3. 为在不查询精确 n_W 的情况下选择合适的 workload decomposition，WISEConv 在
 %    representative temporal traces 上建立 input-activity level 到兼顾 throughput 与
 %    padding 的 configuration table，并在 runtime 用滞后一帧或更多帧、已经完成传回的
@@ -85,21 +85,24 @@ requirements, as Figure~\ref{fig:overview} summarizes.
     \textbf{[TODO]} \sysname overview. Left: the mask-space construction stage
     propagates the output mask, emits tile-local worklist segments into a
     preallocated buffer, and records the worklist length on the device;
-    compatible operators reuse this metadata. Right: an occupancy-sized
-    persistent grid consumes the device-bounded worklist, while the most recent
+    compatible operators reuse this metadata. Right: the device-bounded worklist
+    is consumed by a persistent grid capped by concurrent block residency and
+    the layer configuration's dense work bound, while the most recent
     completed input-activity observation from an earlier frame selects a
     high-throughput, low-padding workload decomposition.
     \vspace{2.5cm}}}
   \caption{The \sysname two-stage pipeline. Construction emits tile-locally
   ordered worklist segments using only mask and coordinate metadata, then reuses
-  the metadata across compatible operators. Compute bounds
-  persistent work on the device and adapts its decomposition from a completed,
-  temporally lagged input-activity observation without host synchronization.}
+  the metadata across compatible operators. Compute launches a grid capped by
+  the layer configuration's dense work bound and concurrent block residency,
+  then adapts its decomposition from a completed, temporally lagged
+  input-activity observation without host synchronization.}
   \Description{Placeholder for the \sysname overview figure. The construction
   stage emits and reuses mask and worklist metadata. The compute stage consumes
-  a device-bounded worklist with persistent blocks and selects its workload
-  decomposition from a completed input-activity observation from an earlier
-  frame.}
+  a device-bounded worklist with persistent blocks whose grid is capped by
+  concurrent block residency and the layer configuration's dense work bound,
+  and selects its workload decomposition from a completed input-activity
+  observation from an earlier frame.}
   \label{fig:overview}
 \end{figure*}
 
@@ -129,11 +132,10 @@ The worklist length varies across layers and inputs and remains device-resident;
 synchronizing its current value to the host would stall the per-frame path, yet
 the workload decomposition must adapt because its padded work and exposed
 parallelism govern useful-compute ratio and GPU throughput. To execute without a
-host-visible bound, \sysname launches only enough persistent thread blocks to
-fill the GPU's concurrent block residency and lets them consume $\mathcal{W}$
-through a grid-stride loop bounded by device-resident $n_{\mathcal{W}}$, so the
-launch footprint tracks resident capacity rather than the full dense output
-grid.
+host-visible bound, \sysname launches a persistent grid whose size is capped by
+the smaller of the GPU's concurrent block residency and the layer
+configuration's dense work bound, then lets the blocks consume $\mathcal{W}$
+through a grid-stride loop bounded by device-resident $n_{\mathcal{W}}$.
 
 To choose a decomposition without querying the exact $n_{\mathcal{W}}$,
 \sysname builds from representative temporal traces a table

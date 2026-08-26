@@ -4,7 +4,7 @@
 We implement \sysname as a PyTorch extension with a Python frontend and a CUDA
 backend written in C++. A model-conversion pass replaces supported modules, preserves their
 parameters and weights, and statically marks worklist-reuse edges and rebuild
-points. The backend operates on FP32 tensors in NHWC layout and implements the
+points. The backend uses FP32 arithmetic with tensors in NHWC layout and implements the
 standard, grouped, and transposed convolutions and mask-aware auxiliary
 operators required by our workloads. Each converted output carries a
 lightweight record that references its device-resident $M_{out}$,
@@ -22,8 +22,9 @@ compact the supplied $M_{out}$ directly, and compatible downstream operators
 implement reuse by aliasing the existing metadata buffers.
 
 The compute backend instantiates a C++ template family over
-$(B_M,B_N,B_K,S_K)$ and derives each variant's $g_{\mathrm{cap}}$ from CUDA
-occupancy information and the GPU's SM count. The online selector in
+$(B_M,B_N,B_K,S_K)$ and sets each variant's static launch bound using CUDA
+occupancy, the GPU's SM count, and the layer configuration's dense work bound.
+The online selector in
 Algorithm~\ref{alg:adapt} uses a bounded queue of pinned host scalars, CUDA
 events, and a dedicated copy stream. It transfers one network-input count per
 frame, updates the selected variant only from the newest completed observation,

@@ -198,23 +198,42 @@ unchanged, and no receptive-field patches are materialized. Contiguous ranges
 of $\mathcal{W}$ carry construction's tile-local grouping into the gathers.
 
 Because the host chooses a conventional launch's thread-block count, using
-device-resident $n_{\mathcal{W}}$ would require a synchronizing transfer;
-launching for the output-grid upper bound instead submits blocks in proportion
-to dense work. \sysname derives each configuration's persistent-grid capacity
-$g_{\mathrm{cap}}$ from the GPU's concurrent block residency and launches
-exactly that many blocks, independently of $n_{\mathcal{W}}$.
+device-resident $n_{\mathcal{W}}$ to size the grid would require a synchronizing
+transfer. For the $S_K=1$ path in Algorithm~\ref{alg:compute}, the dense output
+grid defines the static upper bound
+\begin{equation}
+  n_{\mathrm{work}}^{\max}
+  =
+  \left\lceil \frac{|\mathcal{G}|}{B_M} \right\rceil
+  \left\lceil \frac{C_{out}}{B_N} \right\rceil .
+  \label{eq:n-work-max}
+\end{equation}
+Let $g_{\mathrm{res}}$ denote the concurrent block capacity determined by the
+GPU's occupancy and SM count. \sysname launches
+\begin{equation}
+  g_{\mathrm{launch}}
+  = \min\left(g_{\mathrm{res}},n_{\mathrm{work}}^{\max}\right)
+  \label{eq:g-launch}
+\end{equation}
+blocks. This launch bound depends on the layer shape and configuration but not
+on the current $n_{\mathcal{W}}$. Each block reads this device-resident length
+and consumes valid work through a grid-stride loop. If the dense upper bound is
+smaller than the residency capacity, the grid uses that bound directly. The
+current worklist length remains device-resident, so no host synchronization is
+needed.
 
 \begin{algorithm}[htb]
 \caption{Persistent Worklist-Driven Implicit GEMM}
 \label{alg:compute}
 \begin{algorithmic}[1]
-\REQUIRE Device-resident $(\mathcal{W},n_{\mathcal{W}})$, persistent-grid
-         capacity $g_{\mathrm{cap}}$, tensors $(\mathbf{x},\mathbf{w})$, and
+\REQUIRE Device-resident $(M_{out},\mathcal{W},n_{\mathcal{W}})$,
+         persistent-grid launch bound $g_{\mathrm{launch}}$,
+         tensors $(\mathbf{x},\mathbf{w})$, and
          tile shape $(B_M,B_N,B_K)$
 \ENSURE Output $\mathbf{y}$ (updated at worklist coordinates)
 \STATE $n_{\mathrm{work}} \leftarrow
        \lceil n_{\mathcal{W}}/B_M\rceil\lceil C_{out}/B_N\rceil$
-\FOR{$t_i=0,\ldots,g_{\mathrm{cap}}-1$ \textbf{in parallel}}
+\FOR{$t_i=0,\ldots,g_{\mathrm{launch}}-1$ \textbf{in parallel}}
   \WHILE{$t_i<n_{\mathrm{work}}$}
     \STATE $(b_m,b_n) \leftarrow \mathrm{Unflatten}(t_i)$
     \STATE $\mathcal{P} \leftarrow
@@ -234,9 +253,9 @@ exactly that many blocks, independently of $n_{\mathcal{W}}$.
         \STATE $\mathbf{Y} \leftarrow \mathbf{Y}+\mathbf{X}\cdot\mathbf{W}$
       \ENDFOR
     \ENDFOR
-    \STATE $\mathbf{y}[\mathcal{P},c_1:c_2] \leftarrow \mathbf{Y}$,
-           skipping $\bot$
-    \STATE $t_i \leftarrow t_i+g_{\mathrm{cap}}$
+    \STATE $\mathbf{y}[\mathcal{P},c_1:c_2] \leftarrow \mathbf{Y}$ for
+           $p\in\mathcal{P}$ with $M_{out}[p]=1$, skipping $\bot$
+    \STATE $t_i \leftarrow t_i+g_{\mathrm{launch}}$
   \ENDWHILE
 \ENDFOR
 \end{algorithmic}
@@ -244,19 +263,21 @@ exactly that many blocks, independently of $n_{\mathcal{W}}$.
 
 Algorithm~\ref{alg:compute} assigns work entirely on the device. Line~1 derives
 the number of position-channel work items from $n_{\mathcal{W}}$; Lines~2--3
-distribute them across $g_{\mathrm{cap}}$ persistent blocks in a grid-stride
+distribute them across $g_{\mathrm{launch}}$ persistent blocks in a grid-stride
 loop. For each item, Lines~4--8 recover its $(b_m,b_n)$ indices, load and pad
 the corresponding $B_M$-coordinate slice, select its $B_N$ output channels,
 and initialize a fixed $B_M\times B_N$ accumulator. Lines~9--16 perform the
 regular implicit-GEMM reduction: each kernel offset and $B_K$-wide channel slice
 forms $\mathbf{X}$ and $\mathbf{W}$ directly from the dense tensors
 (Lines~12--13) and accumulates $\mathbf{X}\mathbf{W}$ (Line~14). Line~17 writes
-the nonpadding rows to their worklist coordinates, after which Line~18 advances
-the block by $g_{\mathrm{cap}}$. For clarity, the pseudocode omits the boundary
-checks required when $C_{in}$ or $C_{out}$ is not tile-aligned. Thus,
-$n_{\mathcal{W}}$ controls only the device-side work bound and final position
-padding; the multiply shape and tensor layouts remain fixed, leaving only the
-choice of an efficient decomposition for this bound.
+only rows whose coordinates are active in the current $M_{out}$, after which
+Line~18 advances the block by $g_{\mathrm{launch}}$. For clarity, the pseudocode
+omits the boundary checks required when $C_{in}$ or $C_{out}$ is not
+tile-aligned. Thus,
+$n_{\mathcal{W}}$ controls the device-side work bound and final position
+padding, while $M_{out}$ gates observable stores; the multiply shape and tensor
+layouts remain fixed, leaving only the choice of an efficient decomposition for
+this bound.
 
 \subsubsection{Trace-Calibrated Adaptive Decomposition}
 \label{sec:design:adaptive}
@@ -266,12 +287,12 @@ choice: for a fixed layer, the fastest configuration changes with
 $n_{\mathcal{W}}$. A configuration $q=(B_M,B_N,B_K,S_K)$ includes a split-$K$
 factor $S_K$, the number of disjoint partitions of the $K=k^2C_{in}$ reduction
 for each position-channel tile. Algorithm~\ref{alg:compute} presents the
-$S_K=1$ path, which writes each completed reduction directly. For $S_K>1$,
-standard split-$K$ first zeros $\mathbf{y}$ at the scheduled coordinates, then
-computes the partitions independently and atomically accumulates their partial
-sums into $\mathbf{y}$; both the zeroing and accumulation are gated by the exact
-mask, preventing a reused superset worklist from modifying positions deactivated
-by the current mask. For layer $l$, the values supported on the target GPU
+$S_K=1$ path, which writes each completed reduction directly. When $S_K>1$,
+each position-channel tile is replicated across $S_K$ disjoint reduction
+partitions, multiplying the dense work bound in Eq.~\ref{eq:n-work-max} by
+$S_K$; the launch then follows Eq.~\ref{eq:g-launch}, while zeroing and atomic
+accumulation use the current exact output mask.
+For layer $l$, the values supported on the target GPU
 define the configuration domain
 \begin{equation*}
   \mathcal{Q}_l = \mathcal{B}^l_M \times \mathcal{B}^l_N
@@ -280,13 +301,10 @@ define the configuration domain
 where each factor contains the supported values of its corresponding
 parameter.
 
-The length-sensitive effects are clearest in $B_M$ and $S_K$. $B_M$ trades
-final-tile padding and exposed position parallelism against within-tile reuse.
-Increasing $S_K$ exposes $S_K$ times as many work items when a short worklist
-would otherwise underfill the GPU, at the cost of coordinate rereads, output
-zeroing, and atomic accumulation. Because all split-$K$ partitions cover the
-same coordinates, split-$K$ affects throughput~$T$ but leaves $\mathcal{C}$ and
-$\eta_{\mathrm{compute}}$ unchanged.
+The length-sensitive effect is clearest in $B_M$, which trades final-tile
+padding and exposed position parallelism against within-tile reuse. The same
+choice also controls the work exposed to each persistent block, so maximizing
+$\eta_{\mathrm{compute}}$ need not maximize throughput~$T$.
 
 \sysname builds a level-to-configuration table $\mathcal{L}$, with one row
 $\mathcal{L}_l$ per layer, after quantizing $\alpha$ into $D$ levels as
