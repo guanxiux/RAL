@@ -1,9 +1,8 @@
 #!/usr/bin/env python3
 """Derive end-to-end latency, energy, accuracy, and reference data from logs.
 
-The output contains one row per platform, workload, and execution path.  The
-two unmeasured discrete-GPU slots are emitted with empty measurements so the
-plot keeps its final 3x2 layout while those platforms are being selected.
+The output contains one row per platform, workload, and execution path across
+four discrete GPUs and two embedded platforms.
 
 Latency follows the aggregation used by benchmarks/.agg_intro.py: optical-flow
 and detection latencies are averaged across evaluation sequences, and pose
@@ -38,8 +37,8 @@ OUT_CSV = HERE / "e2e_stats.csv"
 OUT_ACCURACY_CSV = HERE / "e2e_accuracy.csv"
 
 PLATFORMS = [
-    ("tbd-a", "TBD Discrete GPU A", "placeholder"),
-    ("tbd-b", "TBD Discrete GPU B", "placeholder"),
+    ("a100", "NVIDIA A100", "measured"),
+    ("4090", "RTX 4090", "measured"),
     ("3080", "RTX 3080", "measured"),
     ("4070-laptop", "RTX 4070 Laptop", "measured"),
     ("agx-orin", "Jetson AGX Orin", "measured"),
@@ -61,6 +60,8 @@ BACKENDS = [
 ]
 
 OPTICAL_RUN = {
+    "a100": "a100-full-r3",
+    "4090": "4090-full-r3",
     "3080": "3080-v23-full-r3-1800mhz",
     "4070-laptop": "4070-laptop-full-r3",
     "agx-orin": "agx-orin-30w-locked-energy-v4-full-r3",
@@ -68,6 +69,14 @@ OPTICAL_RUN = {
 }
 
 YOLO_RUN = {
+    "a100": {
+        "yolov8n": "a100-yolov8n-full-r3",
+        "yolov8m": "a100-yolov8m-full-r3",
+    },
+    "4090": {
+        "yolov8n": "4090-yolov8n-full-r3",
+        "yolov8m": "4090-yolov8m-full-r3",
+    },
     "3080": {
         "yolov8n": "3080-v23-yolov8n-full-r3-1800mhz",
         "yolov8m": "3080-v23-yolov8m-full-r3-1800mhz",
@@ -87,6 +96,8 @@ YOLO_RUN = {
 }
 
 POSE_RUN = {
+    "a100": "a100-full-s0125-r3",
+    "4090": "4090-full-s0125-r3",
     "3080": "3080-v23-full-s0125-r3-1800mhz",
     "4070-laptop": "4070-laptop-full-s0125-r3",
     "agx-orin": "agx-orin-30w-locked-energy-v4-full-s0125-r3",

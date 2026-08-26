@@ -66,8 +66,8 @@ LABELS = {
 }
 
 PLATFORMS = [
-    "tbd-a",
-    "tbd-b",
+    "a100",
+    "4090",
     "3080",
     "4070-laptop",
     "agx-orin",
@@ -719,7 +719,7 @@ def print_ranges(rows) -> None:
         f"{100 * max(cut for _, _, cut in latency_cuts):.1f}%"
     )
     for label, platforms in (
-        ("discrete GPUs", {"3080", "4070-laptop"}),
+        ("discrete GPUs", {"a100", "4090", "3080", "4070-laptop"}),
         ("Jetson platforms", {"agx-orin", "xavier-nx"}),
     ):
         cuts = [cut for platform, _, cut in latency_cuts if platform in platforms]

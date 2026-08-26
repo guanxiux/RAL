@@ -269,7 +269,9 @@ for each position-channel tile. Algorithm~\ref{alg:compute} presents the
 $S_K=1$ path, which writes each completed reduction directly. For $S_K>1$,
 standard split-$K$ first zeros $\mathbf{y}$ at the scheduled coordinates, then
 computes the partitions independently and atomically accumulates their partial
-sums into $\mathbf{y}$. For layer $l$, the values supported on the target GPU
+sums into $\mathbf{y}$; both the zeroing and accumulation are gated by the exact
+mask, preventing a reused superset worklist from modifying positions deactivated
+by the current mask. For layer $l$, the values supported on the target GPU
 define the configuration domain
 \begin{equation*}
   \mathcal{Q}_l = \mathcal{B}^l_M \times \mathcal{B}^l_N

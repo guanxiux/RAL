@@ -7,12 +7,11 @@
 \paragraph{Platforms.}
 
 We evaluate six GPU platforms spanning four discrete GPUs and two embedded
-SoCs. The discrete platforms are RTX~4070 Laptop, RTX~3080,
-\textit{TBD Discrete GPU A}, and \textit{TBD Discrete GPU B}.
+SoCs. The discrete platforms are NVIDIA A100, RTX~4090, RTX~3080, and
+RTX~4070 Laptop.
 The four discrete GPUs cover a range of compute capabilities. Jetson Xavier NX
 and Jetson AGX Orin extend the evaluation to embedded SoCs with limited compute
 and power budgets, where we also measure board energy.
-% TODO(platforms): Replace the two discrete-GPU placeholders once selected.
 % TODO: memory capacity, CUDA version, power mode, and fixed-clock settings.
 
 \paragraph{Models, tasks, and mask sources.}
@@ -102,10 +101,11 @@ work:
 \paragraph{Measurements.}
 
 We measure per-frame full-model GPU latency over the complete evaluation data
-above with CUDA events; every sequence or split is repeated three times. Timing
-covers mask propagation, worklist construction, all network operators, and
-output update; it excludes input transfer, offline calibration and autotuning,
-and one-time state initialization. Since we focus on end-to-end performance,
+above with CUDA events that bracket the full inference call; every sequence or
+split is repeated three times. The bracketed call includes nonblocking activity
+polling and bucket lookup, mask propagation, worklist construction, all network
+operators, and output update; it excludes input transfer, offline calibration
+and autotuning, and one-time state initialization. Since we focus on end-to-end performance,
 we report $\eta$, $T$, and $T_{\mathrm{eff}}$ at the model level by
 accumulating required and issued convolution work across all layers within each
 frame before applying Eq.~\ref{eq:efficiency-framework}, then averaging the
@@ -132,21 +132,20 @@ teacher~\cite{yolo26}.
   model-level active ratio to its dense latency before aggregation.}
   \Description{Grouped bar charts of full-model latency. Six platform panels
   each contain four workload groups comparing Dense, Tile skipping,
-  Gather-scatter, and WISEConv. Two discrete-GPU panels are marked as awaiting
-  results. Selected workload groups use broken y-axes for a much slower
-  gather-scatter path. Red dashed lines show the ideal proportional-scaling
-  reference for each workload and platform, and workload labels report their
-  aggregated active ratios.}
+  Gather-scatter, and WISEConv. Selected workload groups use broken y-axes for
+  a much slower gather-scatter path. Red dashed lines show the ideal
+  proportional-scaling reference for each workload and platform, and workload
+  labels report their aggregated active ratios.}
   \label{fig:e2e-latency}
 \end{figure*}
 
 \paragraph{Latency.}
-\sysname is the fastest path in all 16 measured workload-platform pairs
+\sysname is the fastest path in all 24 measured workload-platform pairs
 (Figure~\ref{fig:e2e-latency}). Relative to the fastest competing path for each
-pair, it reduces full-model latency by 34.2--46.5\% on the discrete GPUs and
+pair, it reduces full-model latency by 23.8--46.5\% on the discrete GPUs and
 22.1--38.6\% on the Jetson SoCs. These gains persist across all four workloads
 and both device classes despite a more than two-order-of-magnitude span in
-absolute latency, from 0.399\,ms for FireFlowNet on RTX~3080 to 94.3\,ms for
+absolute latency, from 0.309\,ms for FireFlowNet on RTX~4090 to 94.3\,ms for
 YOLOv8m on Xavier NX.
 
 Existing sparse paths realize the available headroom only in narrow regimes:
@@ -156,7 +155,7 @@ FireFlowNet and DynConv leave enough removable work for tile skipping to
 cut dense latency by up to 42.0\% and 40.9\%. The higher-activity
 DeltaCNN masks for YOLOv8n and YOLOv8m leave less headroom, and tile skipping
 fails to turn it into a material speedup: it is near parity with dense on AGX
-Orin and slower in the other six pairs.
+Orin and slower in the other ten pairs.
 Gather-scatter becomes
 the fastest existing path only for YOLOv8m on AGX Orin, where the heavier
 convolution makes the arithmetic saved by exact position selection outweigh
@@ -166,13 +165,13 @@ regime-dependent baseline gains, \sysname remains fastest in every pair.
 Across all workloads, \sysname is substantially closer to the ideal reference
 than the fastest existing path. For FireFlowNet and the two YOLO models,
 \sysname runs at
-1.19--2.10$\times$ the reference, while the fastest existing path remains at
-1.88--3.21$\times$. As the active ratio falls, active convolution work shrinks
+1.09--3.06$\times$ the reference, while the fastest existing path remains at
+1.88--4.01$\times$. As the active ratio falls, active convolution work shrinks
 while mask processing, worklist construction, and other fixed model work do
 not, magnifying these costs relative to the ideal reference. DynConv
 makes this effect most visible: it has the lowest active ratio and additionally
 runs learned mask-prediction kernels in every gated block. Even so, \sysname runs at
-2.34--3.66$\times$ the reference, while the fastest existing path remains at
+2.34--4.18$\times$ the reference, while the fastest existing path remains at
 3.80--6.43$\times$.
 
 \paragraph{Energy.}
