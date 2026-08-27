@@ -290,8 +290,10 @@ for each position-channel tile. Algorithm~\ref{alg:compute} presents the
 $S_K=1$ path, which writes each completed reduction directly. When $S_K>1$,
 each position-channel tile is replicated across $S_K$ disjoint reduction
 partitions, multiplying the dense work bound in Eq.~\ref{eq:n-work-max} by
-$S_K$; the launch then follows Eq.~\ref{eq:g-launch}, while zeroing and atomic
-accumulation use the current exact output mask.
+$S_K$; Eq.~\ref{eq:g-launch} then applies to this expanded bound. Before the
+split-$K$ kernels run, a mask-gated zeroing kernel executes on the same CUDA
+stream, after which the partitions atomically accumulate their partial sums.
+Both zeroing and accumulation use the current exact output mask.
 For layer $l$, the values supported on the target GPU
 define the configuration domain
 \begin{equation*}
@@ -455,8 +457,9 @@ transfer completes. The bounded queue returns the newest visible value and
 discards older ones; when no slot is free, enqueue drops the new observation.
 Neither operation waits, so selection never stalls construction or compute.
 
-Learned-gating models lack the shared input mask required by this predictor:
-each gated block derives its own mask from intermediate features. Observing
+Learned-gating models do not derive layer masks from the network-input mask:
+each gated block produces its own mask from intermediate features, so a single
+input observation cannot predict per-layer activity. Observing
 their activity levels asynchronously would require one transfer per gated layer
 per frame, so \sysname instead assigns each layer a fixed level calibrated from
 its gate statistics. The trace-driven mode thus uses one nonblocking input

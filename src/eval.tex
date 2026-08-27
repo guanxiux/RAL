@@ -39,7 +39,11 @@ Our workloads span three vision tasks.
         model~\cite{dynconv} on MPII~\cite{mpii}, which depicts people
         performing diverse activities and annotates their 2D body joints.
         DynConv's learned spatial gates produce an input-dependent mask for
-        each gated block.
+        each gated block from intermediate features, and MPII samples are
+        temporally unrelated. We deliberately include this workload, where
+        trace-driven adaptation is entirely disabled, to isolate and justify
+        the worklist-driven execution model's latency gains independent of
+        runtime adaptation.
 \end{itemize}
 
 
@@ -259,13 +263,14 @@ costs.
 
 \sysname's useful-compute ratio is 98.9\%,
 96.2\%, and 95.2\% for FireFlowNet, YOLOv8n, and YOLOv8m.
-DynConv is lower at 81.7\%; its low active ratio and small spatial grids yield
-exceptionally short worklists, with P10, P50, and P90 lengths of 3, 43, and 389.
-Padding in the issued position sequence $\mathcal{C}$ is therefore difficult
-to avoid. DynConv's layer-specific gates also provide no shared activity signal
-across layers, and the evaluated MPII~\cite{mpii} samples are not temporally
-related and thus cannot support lagged prediction; yet its useful-compute ratio
-remains well above tile skipping's 48.9\%.
+DynConv is lower at 81.7\%: its low active ratio and small spatial grids yield
+exceptionally short worklists (P10, P50, and P90 lengths of 3, 43, and 389),
+making final-tile padding proportionally large, and trace-driven adaptation is
+disabled on this workload (\S\ref{sec:eval:setup}), so the decomposition
+cannot adjust per frame to mitigate it. Even under these conditions,
+\sysname's useful-compute ratio nearly doubles tile skipping's 48.9\%,
+confirming that the worklist-driven execution model under static decomposition
+already substantially raises useful-compute ratio.
 Combining throughput and useful-compute ratio, \sysname achieves the
 highest effective throughput in every workload, reaching 1.51--1.86$\times$
 that of the strongest evaluated competing path.
