@@ -33,12 +33,12 @@ over channels and kernel offsets follows a regular datapath. Neighboring
 coordinates share overlapping receptive fields, yielding
 predictable memory access and data reuse.
 However, unlike static sparsity in matrix multiplication, masked convolution
-selects positions at runtime per frame, requiring the operator to access
-scattered, irregularly-overlapping neighborhoods and handle a varying workload,
-conflicting with tiled execution.
+introduces runtime position selection per frame, requiring the operator to
+access scattered, irregularly-overlapping neighborhoods and handle a varying
+workload, conflicting with tiled execution.
 
-Existing masked-convolution systems preserve this regularity or eliminate wasted
-work, but not both. \emph{Tile skipping}~\cite{sbnet,skipconv,evconv,deltacnn} retains the
+Existing masked-convolution systems retain tiled execution or achieve precise
+position selection, but not both. \emph{Tile skipping}~\cite{sbnet,skipconv,evconv,deltacnn} retains the
 dense pipeline and suppresses a tile only when all its outputs are inactive, so
 a single active position triggers computation for the entire tile.
 \emph{Gather-scatter}~\cite{sai,dgnet,dynconv} (as an execution path) instead extracts active
@@ -57,16 +57,14 @@ still wastes 26.4\% of its issued operations and only cuts latency by at most 42
 Gather-scatter drives the useful-compute ratio near one but sustains only 21.7\% of
 tile skipping's throughput, running 1.97$\times$ slower than the dense path.
 
-Our key insight is that position-level selectivity does not require abandoning
-the dense convolution pipeline. A dense tile already derives its reads and
-writes from output coordinates, so replacing its contiguous coordinate block
-with an active-output worklist changes which outputs are computed without
-changing the per-position reduction, the dense tensor layout, or the weight
-layout. With this substitution, the operator runs as a dense tiled pipeline,
-raising the useful-compute ratio toward one without materializing input patches.
+Our key insight is that output coordinates are the sole interface between
+position selection and the reduction datapath in the dense tiled pipeline;
+replacing the contiguous coordinate source with an active-output worklist
+therefore preserves dense tensor layouts and the regular per-position reduction
+while computing only active outputs, opening a path to high useful-compute
+ratio at dense-pipeline throughput.
 
-Translating this into latency reduction requires handling two
-challenges.
+Realizing this potential requires solving two challenges.
 % : the worklist must be cheap to build and fast to consume.
 First,
 \emph{worklist construction cost}: construction scans the mask, so its cost scales with the layer's spatial grid, not
@@ -94,10 +92,11 @@ output-mask propagation with per-tile compaction, operating on only mask and
 coordinate metadata; compatible operators reuse valid
 metadata instead of reconstructing it. Consumption is dense-like: construction emits contiguous per-tile segments ordered by the dense
 tile traversal, giving the compute stage tile-local structure without global sorting.
-Compute then decomposes parallel work adaptively according to device, layer
-shape, and activity, choosing each operator's configuration from offline
-calibration. For temporally correlated inputs, it tracks activity across frames
-and sustains GPU utilization without host synchronization.
+Compute adapts its parallel decomposition to runtime activity, selecting a
+per-operator configuration from an offline-calibrated mapping indexed by
+device, layer shape, and activity level; temporal correlation across frames
+makes the previous frame's observed activity a sufficient proxy for the
+current selection, sustaining GPU utilization without host synchronization.
 
 This paper makes the following contributions:
 \begin{itemize}
