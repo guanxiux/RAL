@@ -6,13 +6,13 @@
 
 \paragraph{Platforms.}
 
-We evaluate six GPU platforms spanning four discrete GPUs and two embedded
-SoCs. The discrete platforms are NVIDIA A100, RTX~4090, RTX~3080, and
-RTX~4070 Laptop.
-The four discrete GPUs cover a range of compute capabilities. Jetson Xavier NX
-and Jetson AGX Orin extend the evaluation to embedded SoCs with limited compute
-and power budgets, where we also measure board energy.
-% TODO: memory capacity, CUDA version, power mode, and fixed-clock settings.
+We evaluate six GPU platforms. The four discrete GPUs are NVIDIA A100,
+RTX~4090, RTX~3080, and RTX~4070 Laptop. The embedded platforms are Jetson
+Xavier NX and AGX Orin; we also measure board energy on both. The discrete
+platforms use PyTorch 2.1.2, CUDA 12.1, and cuDNN 8.9.2; both Jetson platforms
+use PyTorch 2.1.0, CUDA 11.4, and cuDNN 8.6. All paths use FP32 with TF32
+disabled. On each platform, all backends run under the same fixed clock and
+power configuration.
 
 \paragraph{Models, tasks, and mask sources.}
 Our workloads span three vision tasks.
@@ -86,23 +86,28 @@ work:
 
 \begin{itemize}
   \item \textbf{Dense} executes the complete model with the native
-        PyTorch/cuDNN backend~\cite{cudnn}.
+        PyTorch/cuDNN backend~\cite{cudnn} with cuDNN autotuning enabled.
 
   \item \textbf{Tile skipping} uses DeltaCNN's default execution path for
-        FireFlowNet (with Ev-Conv) and YOLO~\cite{deltacnn}. DynConv directly
-        provides the output mask. We therefore bypass only mask propagation;
-        its tile-skipping path is unchanged.
+        FireFlowNet with Ev-Conv and YOLO~\cite{deltacnn}. DynConv supplies
+        output masks directly, so tile skipping bypasses only DeltaCNN's
+        mask-propagation step.
 
   \item \textbf{Gather-scatter} uses DynConv's original CUDA backend for
-        pose~\cite{dynconv}; FireFlowNet and YOLO use MMCV's masked-convolution
-        path~\cite{mmcv}.
+        pose~\cite{dynconv}. FireFlowNet and YOLO use MMCV's native
+        MaskedConv2d CUDA path~\cite{mmcv}; a thin wrapper only
+        supplies the output mask and applies the workload-specific state update.
 \end{itemize}
 
 \paragraph{Measurements.}
 
-We measure per-frame full-model GPU latency over the complete evaluation data
-above with CUDA events that bracket the full inference call; every sequence or
-split is repeated three times. The bracketed call includes nonblocking activity
+We measure per-frame full-model GPU latency over the complete evaluation
+datasets with CUDA events that bracket the full inference call. After
+workload-specific warm-up, we time each sequence or split for three complete
+rounds. For each sequence or split, we report the median of the three round
+means, then average these values across sequences to obtain model-level
+latency. The
+bracketed call includes nonblocking activity
 polling and bucket lookup, mask propagation, worklist construction, all network
 operators, and output update; it excludes input transfer, offline calibration
 and autotuning, and one-time state initialization. Since we focus on end-to-end performance,
@@ -110,7 +115,8 @@ we report $\eta$, $T$, and $T_{\mathrm{eff}}$ at the model level by
 accumulating required and issued convolution work across all layers within each
 frame before applying Eq.~\ref{eq:efficiency-framework}, then averaging the
 frame-level values across frames. On the Jetson platforms, we integrate
-board-level \texttt{VDD\_IN} over each timed round to obtain per-frame board energy. We follow the original workload
+board-level \texttt{VDD\_IN} power over each timed round's wall-clock interval
+and divide the resulting energy by the number of timed frames. For accuracy, we follow the original workload
 protocols: AEE for optical flow~\cite{evconv}, COCO-style average precision
 (AP) for detection, averaged over IoU thresholds from 0.50 to
 0.95~\cite{deltacnn}, and PCKh for human pose~\cite{dynconv}. Because
@@ -152,32 +158,26 @@ despite a more than two-order-of-magnitude span in absolute latency, from
 Unlike existing sparse paths, \sysname delivers uniform gains across workload
 regimes. Dense is the fastest evaluated competing path in 15 of the 24
 pairs, compared with eight for tile skipping and only one for gather-scatter.
-FireFlowNet's low required-work ratio gives tile skipping enough headroom to
+FireFlowNet's low active ratio gives tile skipping enough headroom to
 beat Dense on five of six platforms and reduce its latency by up to 42.0\%.
-The higher required-work ratios of YOLOv8n and YOLOv8m leave less removable
+The higher active ratios of YOLOv8n and YOLOv8m leave less removable
 work: tile skipping reaches only near parity with Dense on AGX Orin and is
 slower in the other ten YOLO pairs. Gather-scatter becomes the fastest
 competing path only for YOLOv8m on AGX Orin, where the heavier convolution
 amortizes extraction and writeback. DynConv exposes the other limit: despite
-having the lowest required-work ratio, tile skipping beats Dense only on the
+having the lowest active ratio, tile skipping beats Dense only on the
 two Jetson platforms. Sparsity magnitude alone therefore does not determine
 where an existing sparse path crosses the dense baseline.
 
-Existing sparse paths are substantially more competitive with Dense on the
-Jetson devices than on the discrete GPUs. The fastest existing sparse path has
-lower measured latency than Dense in six of the eight Jetson pairs, but in
-only three of the 16 discrete-GPU pairs; its geometric-mean speedup over Dense
-is 1.26$\times$ on Jetson and 0.80$\times$ on the discrete GPUs. This trend is
-consistent with differential scaling between dense and selective execution.
-On the lower-throughput, narrower Jetson GPUs, avoiding dense-tile work can
-save more wall-clock time relative to selective-path overhead, while shorter
-sparse schedules incur less underfill than on wider discrete GPUs. The effect
-does not make sparse execution uniformly effective: gather-scatter exceeds
-Dense in only one pair, and both existing sparse paths remain slower than Dense
-for the two YOLO models on Xavier NX. These stronger embedded baselines narrow
-\sysname's geometric-mean lead over the per-pair fastest evaluated competing path from
-1.62$\times$ on the discrete GPUs to 1.48$\times$ on Jetson, yet \sysname
-remains fastest in all eight Jetson pairs.
+\sysname's lead over the per-pair fastest competing path is narrower on the
+embedded platforms (geometric mean 1.48$\times$ on Jetson vs.\ 1.62$\times$ on
+discrete GPUs), though it remains fastest in all eight Jetson pairs. The gap
+narrows because sparse paths themselves are more effective on Jetson: the
+fastest sparse path beats Dense in six of eight Jetson pairs but only three of
+16 discrete-GPU pairs (geometric-mean speedup over Dense: 1.26$\times$ vs.\
+0.80$\times$). Dense convolution is more latency-bound on the narrower Jetson
+GPUs, so the same active ratio yields a larger absolute latency reduction,
+making sparse paths more likely to outperform dense.
 
 \sysname also realizes more of the available sparsity headroom than every
 competing path. It is the closest path to the ideal proportional-scaling
@@ -185,7 +185,7 @@ reference in every pair, running at 1.09--4.18$\times$ the reference while the
 fastest evaluated competing path remains at 1.88--6.43$\times$. The remaining gap
 reflects work that does not shrink with convolution activity, including mask
 processing, worklist construction, and other non-convolution operators.
-DynConv lies at the upper end despite its low required-work ratio because every
+DynConv lies at the upper end despite its low active ratio because every
 gated block still runs learned mask-prediction kernels and exposes exceptionally
 short worklists, as further discussed in
 \S\ref{sec:eval:microbenchmarks}.
@@ -287,18 +287,14 @@ time remains at 0.105--0.106\,ms while convolution grows from 1.09 to
 1.29\,ms across the two bins; construction's latency share consequently falls
 from 7.1\% to 6.2\%. Gather-scatter
 shows why exact selection alone is insufficient: it has the lowest convolution
-time at 0.73--0.83\,ms, but extraction, setup, and writeback put
-10.9--11.0\,ms (92.2--93.1\% of total latency) in \emph{Other}. \sysname
-instead spends 0.160--0.165\,ms (9.8--10.9\% of latency) on \emph{Other}, with
-convolution dominant at 73.8--76.3\%. \emph{Other} aggregates residual
-non-convolution work not assigned to construction, convolution, or elementwise
-operators. For gather-scatter, this category can include active-coordinate
-extraction, receptive-field materialization, GEMM setup, scatter/writeback, and
-associated bookkeeping. Relative to Dense's 0.10\,ms in the same category,
-\sysname adds only 0.06--0.07\,ms outside construction, whereas gather-scatter
-adds 10.8--10.9\,ms. This contrast shows that the large residual cost comes
-from the gather-scatter execution path rather than convolution arithmetic,
-while direct worklist consumption avoids that data-movement bottleneck.
+time at 0.73--0.83\,ms, but 10.9--11.0\,ms of auxiliary work outside
+convolution arithmetic (92.2--93.1\% of total latency) is reported as
+\emph{Other}, compared with 0.10\,ms for Dense. For gather-scatter, this
+category captures the surrounding auxiliary path, including active-coordinate
+extraction, receptive-field materialization, GEMM setup, and scatter/writeback.
+In contrast, \sysname adds only 0.06--0.07\,ms of
+non-construction work over Dense. Direct worklist consumption thus avoids this
+auxiliary path while keeping convolution dominant.
 
 % Optional CUDA-level diagnostics are not a third required microbenchmark.
 % If the two figures leave a concrete locality question, the useful diagnostic
