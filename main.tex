@@ -28,25 +28,25 @@
 % differences, and learned gates expose where computation is unnecessary, yet
 % existing masked-convolution paths do not convert this sparsity into proportional
 % latency reduction.
-Masked convolution promises to cut the per-frame inference latency of vision models by
+Masked convolution promises to reduce vision-model inference latency by
 computing only positions an upstream policy marks active, yet existing paths
-sacrifice either throughput or useful-compute ratio and fail to convert sparsity
-into proportional latency reduction. We present \sysname, a masked-convolution
-runtime that replaces the dense tiled pipeline's contiguous coordinate stream
-with an active-output worklist derived from the upstream mask; it restricts
-computation to active positions while retaining dense tensor layouts
-and the regular per-position reduction. Securing both a high useful-compute
-ratio and high throughput requires amortizing
-construction overhead and sustaining compute throughput as per-frame worklist
-lengths vary. \sysname therefore co-designs construction and consumption:
-compatible operators reuse the
-constructed worklist without reconstruction, the worklist emission order
-preserves tile-local spatial reuse, and a data-driven adaptive decomposition
-adjusts parallel work to the activity level without host synchronization. Across
-four perception models on six GPU platforms (four discrete, two embedded), \sysname
-reduces full-model latency by 22.1--46.5\% against the fastest evaluated competing path
-and per-frame energy by 28.5--72.6\% relative to dense execution on the
-embedded GPUs.
+sacrifice either throughput or useful-compute ratio and fail to translate
+sparsity into proportional latency reduction. We present \sysname, a
+masked-convolution runtime built on the observation that output coordinates
+form the interface between position selection and the reduction datapath in the
+dense tiled pipeline. \sysname replaces the dense tiled pipeline's contiguous coordinate
+source with an active-output worklist, restricting computation to active
+positions while retaining dense tensor layouts and the regular per-position
+reduction. To keep construction cheap and sustain throughput as the number of
+active outputs changes from frame to frame, \sysname fuses mask propagation
+with tile-local compaction, reuses coordinate metadata across compatible
+operators, and adapts its compute decomposition without host synchronization.
+We evaluate \sysname on
+four perception models across six GPU platforms: four discrete GPUs and two
+Jetson platforms. \sysname achieves a 1.57$\times$ geometric-mean speedup over
+the fastest evaluated competing path selected for each workload-platform pair,
+reducing full-model latency by 22.1--46.5\%. On the Jetson platforms, it also
+reduces per-frame board energy by 28.5--72.6\% relative to dense execution.
 \end{abstract}
 
 \keywords{Sparse convolution, dynamic spatial sparsity, GPU runtime, deep learning
