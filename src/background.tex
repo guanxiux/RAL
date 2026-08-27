@@ -108,8 +108,7 @@ $\mathcal{C}$.
   \caption{FireFlowNet~\cite{fireflownet} using the
   Ev-Conv~\cite{evconv} event-driven mask policy on MVSEC~\cite{mvsec} and
   RTX~3080, comparing cuDNN (Dense), DeltaCNN tile
-  skipping~\cite{deltacnn}, and an MMCV-derived gather-scatter
-  path~\cite{mmcv}.
+  skipping~\cite{deltacnn}, and MMCV's native gather-scatter path~\cite{mmcv}.
   (a)~Mean full-model per-frame latency and average endpoint error (AEE; lower
   is better). The dashed
   line marks dense latency scaled by the active ratio aggregated across layers;
