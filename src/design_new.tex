@@ -338,10 +338,10 @@ still enqueue and track one scalar transfer per layer per frame, so observation
 overhead scales with the layer count. \sysname deliberately rejects both
 alternatives: it enqueues only one asynchronous transfer of network-input
 activity per frame, then uses the latest completed, necessarily lagged
-observation to predict every layer's level. For event and temporal workloads,
-this single observation remains predictive: layer masks derive from a shared
-network-input mask through receptive-field propagation, and successive input
-masks correlate in time.
+observation to predict every layer's level. This design leverages temporal
+correlation across successive inputs in streaming workloads whose layer masks
+derive from a shared network-input mask: the latest completed, necessarily
+lagged observation then predicts every layer's level.
 
 To fit this predictor, \sysname profiles a set $\mathcal{F}$ of representative
 trace frames for the set $\mathcal{I}$ of layers that use it, recording

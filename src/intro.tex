@@ -57,12 +57,12 @@ still wastes 26.4\% of its issued operations and only cuts latency by at most 42
 Gather-scatter drives the useful-compute ratio near one but sustains only 21.7\% of
 tile skipping's throughput, running 1.97$\times$ slower than the dense path.
 
-Our key insight is that output coordinates are the sole interface between
+Our key insight is that output coordinates form the interface between
 position selection and the reduction datapath in the dense tiled pipeline;
 replacing the contiguous coordinate source with an active-output worklist
 therefore preserves dense tensor layouts and the regular per-position reduction
-while computing only active outputs, opening a path to high useful-compute
-ratio at dense-pipeline throughput.
+while computing only active outputs, opening a path to combine a high
+useful-compute ratio with the dense pipeline's throughput potential.
 
 Realizing this potential requires solving two challenges.
 % : the worklist must be cheap to build and fast to consume.
@@ -94,9 +94,11 @@ metadata instead of reconstructing it. Consumption is dense-like: construction e
 tile traversal, giving the compute stage tile-local structure without global sorting.
 Compute adapts its parallel decomposition to runtime activity, selecting a
 per-operator configuration from an offline-calibrated mapping indexed by
-device, layer shape, and activity level; temporal correlation across frames
-makes the previous frame's observed activity a sufficient proxy for the
-current selection, sustaining GPU utilization without host synchronization.
+device, layer shape, and activity level; \sysname leverages temporal
+correlation across successive inputs in streaming workloads, such as video
+and event streams, by using the latest completed, lagged input-activity
+observation to select each layer's configuration, sustaining GPU utilization
+without host synchronization.
 
 This paper makes the following contributions:
 \begin{itemize}
