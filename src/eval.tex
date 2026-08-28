@@ -11,9 +11,9 @@ RTX~4090, RTX~3080, and RTX~4070 Laptop. The embedded platforms are Jetson
 Xavier NX and AGX Orin; we also measure board energy on both. The discrete
 platforms use PyTorch 2.1.2, CUDA 12.1, and cuDNN 8.9.2; both Jetson platforms
 use PyTorch 2.1.0, CUDA 11.4, and cuDNN 8.6. All paths in the full workload
-comparison use FP32 with TF32 disabled; the targeted DynConv sensitivity study
-also evaluates FP16 on RTX~3080. On each platform, all backends run under the
-same fixed clock and power configuration.
+comparison use FP32 (SIMT) with TF32 disabled; the targeted DynConv sensitivity
+study also evaluates FP16 (tensor core) on RTX~3080. On each platform, all
+backends run under the same fixed clock and power configuration.
 
 \paragraph{Models, tasks, and mask sources.}
 Our workloads span three vision tasks.
@@ -86,7 +86,7 @@ Eval. samples & 196.8K & 2,575 & 2,958 \\
 
 \paragraph{Baselines.}
 
-We compare \sysname against three FP32 execution paths established by prior
+We compare \sysname against three FP32 (SIMT) execution paths established by prior
 work:
 
 \begin{itemize}
@@ -296,8 +296,10 @@ shows why exact selection alone is insufficient: it has the lowest convolution
 time at 0.73--0.83\,ms, but 10.9--11.0\,ms of auxiliary work outside
 convolution arithmetic (92.2--93.1\% of total latency) is reported as
 \emph{Other}, compared with 0.10\,ms for Dense. For gather-scatter, this
-category captures the surrounding auxiliary path, including active-coordinate
-extraction, receptive-field materialization, GEMM setup, and scatter/writeback.
+category captures its auxiliary path (active-coordinate
+extraction, receptive-field materialization, GEMM setup, and scatter/writeback);
+for all paths it also includes inter-kernel idle gaps from launch and
+dependency serialization.
 In contrast, \sysname adds only 0.06--0.07\,ms of
 non-construction work over Dense. Direct worklist consumption thus avoids this
 auxiliary path while keeping convolution dominant.
@@ -428,29 +430,22 @@ instead of relying on a larger batch to expand the launch grid.
 
 \input{figures/dynconv_dtype_decomposition_table}
 
-\paragraph{Tensor-Core sensitivity.}
-We further evaluate DynConv pose~\cite{dynconv} in FP16 using a family of
-kernels that adapts a dense tiled Tensor-Core pipeline implemented with
-CUTLASS~\cite{cutlass} components to consume WISEConv worklists directly.
-Table~\ref{tab:dynconv-dtype-decomposition} shows that the selective path
-continues to reduce end-to-end latency in this regime:
-WISEConv lowers the decomposition-window mean from 3.37 to 2.57\,ms, while
-its convolution stage falls from 2.22 to 1.38\,ms relative to Dense. The
-construction stage is only 0.08\,ms (3.0\%) of FP16 WISEConv latency, so the
-new dtype does not turn worklist construction into the dominant cost. Instead,
-Tensor Cores expose the fixed work around convolution: \emph{Other} remains
-close in absolute time (1.10\,ms for Dense and 1.06\,ms for WISEConv) and
-therefore grows to 32.5--41.1\% of the FP16 latency. The result is a narrower
-but still material end-to-end gain than in FP32: accelerating the dense
-convolution does not remove the benefit of selecting only active outputs, but
-it shifts more of the remaining latency to non-convolution work.
-
-The FP16 run records PCKh of 88.07\% for Dense and 86.68\% for WISEConv.
-The corresponding FP32 values in Figure~\ref{fig:e2e-accuracy} are 88.06\%
-and 86.68\%, respectively, so changing the convolution datatype changes PCKh
-by less than 0.01 percentage point. The Dense--WISEConv difference is therefore
-the same learned-gating accuracy effect already shown for FP32, rather than a
-new FP16 execution effect.
+\paragraph{Tensor core sensitivity.}
+Table~\ref{tab:dynconv-dtype-decomposition} decomposes DynConv pose latency
+under FP16 (tensor core) execution alongside the FP32 (SIMT) baseline.
+\sysname still reduces Dense FP16 latency from 3.37 to 2.57\,ms
+(1.31$\times$), though the gain is narrower than the 1.87$\times$ in FP32.
+Two factors outside the worklist-driven convolution account for this. First,
+tensor cores compress the arithmetic phase of each kernel but not its fixed
+pipeline cost (startup, drain, scheduling); this fixed cost therefore becomes
+more dominant, and removing the same proportion of arithmetic yields less
+wall-clock saving (absolute convolution saving falls from 3.07 in FP32 to 0.84\,ms in FP16).
+Second, shorter kernels expose more inter-kernel idle time, causing
+\emph{Other} to grow from 0.65 to 1.10\,ms for Dense and from 0.86 to 1.06\,ms
+for \sysname (33--41\% of FP16 latency). Construction remains 0.08\,ms (3.0\%), unchanged from FP32, so
+the narrower gain is not caused by worklist overhead. FP16 PCKh (88.07\% Dense,
+86.68\% \sysname) matches FP32 within 0.01 percentage points; the datatype
+introduces no evident accuracy difference.
 
 \subsection{Discussion}
 \label{sec:eval:discussion}
@@ -464,8 +459,8 @@ The adaptive decomposition is deployment-specific and must be
 recalibrated for a new model, device, or mask workload, although prediction
 error affects performance rather than correctness.
 
-The full workload comparison uses FP32, the common precision of the evaluated
+The full workload comparison uses FP32 (SIMT), the common precision of the evaluated
 masked-convolution paths, to isolate execution-model differences from
 arithmetic-precision differences. The targeted DynConv study additionally
 shows that the worklist compute stage retains a material end-to-end benefit
-when the convolution uses FP16 Tensor Cores.
+when the convolution uses FP16 (tensor core) arithmetic.

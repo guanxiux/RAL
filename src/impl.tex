@@ -4,10 +4,14 @@
 We implement \sysname as a PyTorch extension with a Python frontend and a CUDA
 backend written in C++. A model-conversion pass replaces supported modules, preserves their
 parameters and weights, and statically marks worklist-reuse edges and rebuild
-points. The default backend for the full-workload evaluation uses FP32
-arithmetic with tensors in NHWC layout. It supports standard, grouped,
-depthwise, and transposed convolutions, as well as the mask-aware auxiliary
-operators required by our workloads. Each converted output
+points. The compute backend adapts CUTLASS~\cite{cutlass} dense tiled
+implicit-GEMM pipelines for direct worklist consumption, covering both FP32
+(SIMT) and FP16 (tensor core) arithmetic with NHWC tensors. The full-workload
+evaluation uses the FP32 datapath; the DynConv sensitivity study additionally
+exercises the FP16 datapath. The backend supports standard, grouped, depthwise,
+and transposed convolutions, as well as the mask-aware auxiliary operators
+required
+by evaluated workloads. Each output
 carries a lightweight record that references its device-resident $M_{out}$,
 $\mathcal{W}$, and $n_{\mathcal{W}}$ buffers. All buffers are allocated during
 module initialization; mask selection remains with the upstream application.
@@ -17,15 +21,17 @@ Algorithm~\ref{alg:construct}. Warp ballots compute lane-local ranks, a short
 shared-memory prefix combines the warp counts, and one \texttt{atomicAdd}
 reserves the tile's contiguous worklist segment. Worklists use 32-bit linear
 coordinates and are provisioned for $|\mathcal{G}|$ entries; the runtime resets
-their device counters on the operator's CUDA stream. Learned-gating layers
-compact the supplied $M_{out}$ directly. Compatible operators reuse the
+$n_{\mathcal{W}}$ on the operator's CUDA stream before each construction.
+When a learned gate
+supplies $M_{out}$ directly, construction skips mask propagation and compacts
+active coordinates from the supplied mask. Compatible operators reuse the
 worklist and its length by aliasing the $\mathcal{W}$ and $n_{\mathcal W}$
 buffers, while $M_{out}$ always denotes the current operator's exact output
 mask.
 
 The compute backend instantiates a C++ template family over
-$(B_M,B_N,B_K,S_K)$ and sets each variant's static launch bound using CUDA
-occupancy, the GPU's SM count, and the layer configuration's dense work bound.
+$(B_M,B_N,B_K,S_K)$ and sets each variant's persistent grid size from CUDA
+occupancy, the GPU's SM count, and the layer's dense work bound.
 The online selector (Algorithm~\ref{alg:adapt}) uses a bounded queue of pinned
 host scalars, CUDA events, and a dedicated copy stream. For event and temporal
 workloads, it transfers one network-input count per frame and selects each

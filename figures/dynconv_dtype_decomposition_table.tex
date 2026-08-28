@@ -1,12 +1,11 @@
 \begin{table}[!ht]
   \centering
-  \caption{DynConv pose latency decomposition on RTX~3080 under FP32 and
-  FP16 execution. Stage entries are in ms, with percentages of total latency
-  in parentheses. The stage definitions, formal CUDA-event timing, and NSYS
-  scaling follow Table~\ref{tab:cost-decomposition}; this table compares the
-  Dense and WISEConv paths across the two data types.}
+  \caption{DynConv pose latency decomposition on RTX~3080 under FP32 (SIMT)
+  and FP16 (tensor core) execution. Same stage definitions and timing as
+  Table~\ref{tab:cost-decomposition}; entries are ms with percentages of
+  total latency in parentheses.}
   \Description{A table compares Dense and WISEConv DynConv pose execution in
-  FP32 and FP16, decomposing end-to-end latency into worklist construction,
+  FP32 (SIMT) and FP16 (tensor core), decomposing end-to-end latency into worklist construction,
   convolution, elementwise, and other work.}
   \label{tab:dynconv-dtype-decomposition}
   \footnotesize
@@ -26,10 +25,4 @@
       & \textbf{WISEConv} & 2.57 & 0.08(3.0\%) & 1.38(53.4\%) & 0.06(2.5\%) & 1.06(41.1\%) \\
     \hline
   \end{tabular}
-  \par\vspace{6pt}
-  \noindent\parbox{\columnwidth}{\footnotesize\textit{Notes.} Rows average
-  the same 300 real MPII validation samples used for the DynConv stage
-  attribution. Each stage time multiplies its per-frame semantic NSYS
-  timeline fraction by that frame's median latency over three complete
-  CUDA-event rounds.}
 \end{table}
