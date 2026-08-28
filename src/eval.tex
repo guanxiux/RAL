@@ -10,9 +10,10 @@ We evaluate six GPU platforms. The four discrete GPUs are NVIDIA A100,
 RTX~4090, RTX~3080, and RTX~4070 Laptop. The embedded platforms are Jetson
 Xavier NX and AGX Orin; we also measure board energy on both. The discrete
 platforms use PyTorch 2.1.2, CUDA 12.1, and cuDNN 8.9.2; both Jetson platforms
-use PyTorch 2.1.0, CUDA 11.4, and cuDNN 8.6. All paths use FP32 with TF32
-disabled. On each platform, all backends run under the same fixed clock and
-power configuration.
+use PyTorch 2.1.0, CUDA 11.4, and cuDNN 8.6. All paths in the full workload
+comparison use FP32 with TF32 disabled; the targeted DynConv sensitivity study
+also evaluates FP16 on RTX~3080. On each platform, all backends run under the
+same fixed clock and power configuration.
 
 \paragraph{Models, tasks, and mask sources.}
 Our workloads span three vision tasks.
@@ -425,6 +426,32 @@ convolution cost falls 2.68$\times$, compared with 1.63$\times$ for \sysname.
 at batch size~1: \sysname adapts its work decomposition to each short worklist
 instead of relying on a larger batch to expand the launch grid.
 
+\input{figures/dynconv_dtype_decomposition_table}
+
+\paragraph{Tensor-Core sensitivity.}
+We further evaluate DynConv pose~\cite{dynconv} in FP16 using a family of
+kernels that adapts a dense tiled Tensor-Core pipeline implemented with
+CUTLASS~\cite{cutlass} components to consume WISEConv worklists directly.
+Table~\ref{tab:dynconv-dtype-decomposition} shows that the selective path
+continues to reduce end-to-end latency in this regime:
+WISEConv lowers the decomposition-window mean from 3.37 to 2.57\,ms, while
+its convolution stage falls from 2.22 to 1.38\,ms relative to Dense. The
+construction stage is only 0.08\,ms (3.0\%) of FP16 WISEConv latency, so the
+new dtype does not turn worklist construction into the dominant cost. Instead,
+Tensor Cores expose the fixed work around convolution: \emph{Other} remains
+close in absolute time (1.10\,ms for Dense and 1.06\,ms for WISEConv) and
+therefore grows to 32.5--41.1\% of the FP16 latency. The result is a narrower
+but still material end-to-end gain than in FP32: accelerating the dense
+convolution does not remove the benefit of selecting only active outputs, but
+it shifts more of the remaining latency to non-convolution work.
+
+The FP16 run records PCKh of 88.07\% for Dense and 86.68\% for WISEConv.
+The corresponding FP32 values in Figure~\ref{fig:e2e-accuracy} are 88.06\%
+and 86.68\%, respectively, so changing the convolution datatype changes PCKh
+by less than 0.01 percentage point. The Dense--WISEConv difference is therefore
+the same learned-gating accuracy effect already shown for FP32, rather than a
+new FP16 execution effect.
+
 \subsection{Discussion}
 \label{sec:eval:discussion}
 
@@ -437,7 +464,8 @@ The adaptive decomposition is deployment-specific and must be
 recalibrated for a new model, device, or mask workload, although prediction
 error affects performance rather than correctness.
 
-We evaluate all systems in FP32, the common precision of the evaluated
+The full workload comparison uses FP32, the common precision of the evaluated
 masked-convolution paths, to isolate execution-model differences from
-arithmetic-precision differences. Extending the worklist compute stage to
-tensor cores requires a different reduction design and remains future work.
+arithmetic-precision differences. The targeted DynConv study additionally
+shows that the worklist compute stage retains a material end-to-end benefit
+when the convolution uses FP16 Tensor Cores.
