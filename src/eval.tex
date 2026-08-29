@@ -107,21 +107,18 @@ work:
 \paragraph{Measurements.}
 
 We measure per-frame full-model GPU latency over the complete evaluation
-datasets with CUDA events that bracket the full inference call. After
-workload-specific warm-up, we time each sequence or split for three complete
-rounds. For each sequence or split, we report the median of the three round
-means, then average these values across sequences to obtain model-level
-latency. The
-bracketed call includes nonblocking activity
-polling and bucket lookup, mask propagation, worklist construction, all network
-operators, and output update; it excludes input transfer, offline calibration
-and autotuning, and one-time state initialization. Since we focus on end-to-end performance,
-we report $\eta$, $T$, and $T_{\mathrm{eff}}$ at the model level by
-accumulating required and issued convolution work across all layers within each
-frame before applying Eq.~\ref{eq:efficiency-framework}, then averaging the
-frame-level values across frames. On the Jetson platforms, we integrate
-board-level \texttt{VDD\_IN} power over each timed round's wall-clock interval
-and divide the resulting energy by the number of timed frames. For accuracy, we follow the original workload
+datasets. CUDA events bracket each frame's inference call; after
+workload-specific warm-up we run three complete rounds and average per-frame
+latency across all frames and rounds. The bracketed interval includes
+nonblocking activity polling and bucket lookup, mask propagation, worklist
+construction, all network operators, and output update; it excludes input
+transfer, offline calibration and autotuning, and one-time state
+initialization. We report $\eta$, $T$, and $T_{\mathrm{eff}}$ at the model
+level by accumulating required and issued convolution work across all layers
+within each frame before applying Eq.~\ref{eq:efficiency-framework}, then
+averaging across frames. On the Jetson platforms, we integrate board-level
+\texttt{VDD\_IN} power over each frame's CUDA-event interval to obtain
+per-frame board energy, then average across frames. For accuracy, we follow the original workload
 protocols: AEE for optical flow~\cite{evconv}, COCO-style average precision
 (AP) for detection, averaged over IoU thresholds from 0.50 to
 0.95~\cite{deltacnn}, and PCKh for human pose~\cite{dynconv}. Because
