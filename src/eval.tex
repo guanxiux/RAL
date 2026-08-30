@@ -456,8 +456,13 @@ The adaptive decomposition is deployment-specific and must be
 recalibrated for a new model, device, or mask workload, although prediction
 error affects performance rather than correctness.
 
-The full workload comparison uses FP32 (SIMT), the common precision of the evaluated
-masked-convolution paths, to isolate execution-model differences from
-arithmetic-precision differences. The targeted DynConv study additionally
-shows that the worklist compute stage retains a material end-to-end benefit
-when the convolution uses FP16 (tensor core) arithmetic.
+The full workload comparison uses FP32 (SIMT): the evaluated
+masked-convolution
+baselines~\cite{deltacnn,dynconv,mmcv} provide only FP32 execution paths, so
+FP32 isolates execution-model differences from arithmetic-precision effects.
+Extending the worklist compute stage to tensor cores also raises an open
+reduction problem: split-K partitions must atomically accumulate FP32 partial
+sums and convert them back to FP16, and for short worklists this overhead can
+outweigh the FP16 arithmetic savings. The targeted DynConv study confirms that \sysname retains an end-to-end gain
+under tensor cores; a dedicated tensor core reduction design for short worklists
+is a natural next step.
