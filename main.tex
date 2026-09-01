@@ -17,7 +17,7 @@
 
 \begin{document}
 
-\title{\sysname: A Worklist-Driven Masked-Convolution Runtime for GPUs}
+\title{\sysname: A Worklist-Driven GPU Runtime for Masked Convolution over Dense Feature Grids}
 
 \author{Anonymous Authors}
 
@@ -43,7 +43,7 @@ with tile-local compaction, reuses coordinate metadata across compatible
 operators, and adapts its compute decomposition without host synchronization.
 We evaluate \sysname on
 four perception models across six GPU platforms: four discrete GPUs and two
-Jetson platforms. \sysname achieves a 1.57$\times$ geometric-mean speedup over
+Jetson platforms. \sysname achieves a 1.57$\times$ geometric-mean end-to-end speedup over
 the fastest evaluated competing path selected for each workload-platform pair,
 reducing full-model latency by 22.1--46.5\%. On the Jetson platforms, it also
 reduces per-frame board energy by 28.5--72.6\% relative to dense execution.
