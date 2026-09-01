@@ -126,13 +126,14 @@ $\mathcal{C}$.
 \end{figure}
 Existing systems execute a mask along one of two paths. \emph{Tile
 skipping}~\cite{sbnet,skipconv,evconv,dynaspa,motiondelta,sparsetem} inherits the dense pipeline's tile-based
-computation, skipping a tile only when all its coordinates are inactive and
+computation without additional metadata passes, skipping a tile only when all its coordinates are inactive and
 otherwise computing the whole tile; DeltaCNN~\cite{deltacnn} fuses a selective
 path into the kernel, taken when a tile is estimated to be mostly empty, to cut
 wasted work. \emph{Gather-scatter}~\cite{sai,dgnet}
-instead extracts exactly the active coordinates, computes, and scatters them
-back, removing the inactive arithmetic but adding extraction, irregular access,
-and writeback overhead; DynConv~\cite{dynconv} adopts a model structure suited to
+instead abandons the dense pipeline: it extracts exactly the active
+coordinates into a packed representation, runs a separate GEMM, and scatters
+the results back, removing the inactive arithmetic but adding extraction,
+irregular access, and writeback overhead; DynConv~\cite{dynconv} adopts a model structure suited to
 gather-scatter, where one gather feeds several consecutive layers before a single
 scatter, amortizing that overhead.
 
@@ -180,24 +181,37 @@ throughput.
 \subsection{Distinction from Related Sparse Execution}
 \label{sec:bg:related}
 
-Related sparse-execution work differs from \sysname's masked convolution in
+Other related sparse-execution work differs from \sysname in
 representation, operator, sparsity type, or platform. 3D
-sparse-convolution systems such as SpConv~v2~\cite{spconv2},
-Torch\-Sparse++~\cite{torchsparsepp,torchsparse},
-Minuet~\cite{minuet}, and Minkowski\-Engine~\cite{minkowski,submanifold}
+sparse-convolution
+systems~\cite{spconv2,torchsparsepp,torchsparse,minuet,minkowski,submanifold}
 operate on sparse point-cloud coordinates and construct coordinate maps for
-irregular input-to-output relations. \sysname instead consumes a runtime mask
-over a dense 2D grid and co-designs mask-space construction, cross-operator
-reuse, and direct worklist consumption while retaining dense tensor layouts. Sparse matrix multiplication
-(DTC-SpMM~\cite{dtcspmm}, MaxK-GNN~\cite{maxkgnn}, Sputnik~\cite{sputnik})
-reorganizes a sparse matrix operand so the dense
-datapath can consume it; its sparsity lives in the
-matrix structure of a different operator, not in a spatial mask over a
-convolution grid. % ORIG: ... exploit sparsity fixed at compile time in the weights or a known format, a static, structural sparsity type rather than a mask discovered at runtime over the spatial grid.
-Structured weight sparsity, such as 2:4 tensor
-cores~\cite{sparse24}, exploits fixed patterns in the weights. Sparse-format
-compilers such as TACO~\cite{taco} and SparseTIR~\cite{sparsetir} instead target
-tensor algebra over explicitly sparse representations. Neither directly targets
-a dynamic output mask over a dense convolution grid. DPACS~\cite{dpacs} resolves similar dynamic spatial
-sparsity in CNN feature maps, but on a custom accelerator instead of a commodity
-GPU.
+irregular input-to-output relations; \sysname instead consumes a runtime mask
+over a dense 2D grid while retaining dense tensor layouts. Sparse matrix
+multiplication~\cite{dtcspmm,maxkgnn,sputnik} accelerates sparse-graph and
+pruned-weight matrix products, where sparsity is structural rather than a
+dynamic spatial mask over a convolution grid. Structured weight pruning (e.g., 2:4
+sparsity~\cite{sparse24}) exploits fixed patterns in model weights.
+Sparse-format compilers~\cite{taco,sparsetir} expose sparsity through
+explicit tensor formats, whereas \sysname retains dense layouts and uses a
+transient per-frame mask only to select output coordinates. DPACS~\cite{dpacs} resolves similar
+dynamic spatial sparsity in CNN feature maps, but on a custom accelerator
+instead of a commodity GPU.
+
+Some 3D systems~\cite{spconv2,torchsparsepp} compute through
+coordinate-indexed fused GEMM~\cite{cutlass}, where an index array derived
+from coordinate maps redirects the position dimension of a tiled GEMM. It seemingly coincides with \sysname's
+goal, but 3D sparse convolution requires explicit coordinate metadata because
+its tensors are represented as sparse coordinate sets. Constructing the index
+array incurs hashing, sorting, and global scans that frequently dominate
+per-layer latency over the GEMM itself~\cite{torchsparsepp,minuet}, making
+construction cost one of the central research problems in the 3D
+community; thus directly introducing coordinate indirection into 2D convolution
+which already tiles densely appears unattractive. 2D masked convolution, however, presents a structurally simpler
+mapping problem: the output grid is regular, the mask is a bitmap, and each
+coordinate's receptive-field addresses follow from fixed grid arithmetic, so
+the coordinate-map machinery of 3D systems is unnecessary. For 2D masked
+convolution, \sysname identifies the coordinate source as the replaceable
+interface between position selection and tiled reduction, while the co-design
+of worklist construction and consumption realizes this insight to secure both
+a high useful-compute ratio and high throughput.

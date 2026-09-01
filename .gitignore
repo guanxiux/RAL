@@ -12,6 +12,8 @@
 *.cb2
 .*.lb
 
+.paper-review/
+**/__pycache__/
 ## Intermediate documents:
 *.dvi
 *.xdv
