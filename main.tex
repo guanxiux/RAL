@@ -33,11 +33,11 @@ computing only positions an upstream policy marks active, yet existing paths
 sacrifice either throughput or useful-compute ratio and fail to translate
 sparsity into proportional latency reduction. We present \sysname, a
 masked-convolution runtime built on the observation that output coordinates
-form the interface between position selection and the reduction datapath in the
+form the interface between position selection and the regular reduction datapath in the
 dense tiled pipeline. \sysname replaces the dense tiled pipeline's contiguous coordinate
 source with an active-output worklist, restricting computation to active
 positions while retaining dense tensor layouts and the regular per-position
-reduction. To keep construction cheap and sustain throughput as the number of
+reduction. To keep worklist construction cheap and sustain throughput as the number of
 active outputs changes from frame to frame, \sysname fuses mask propagation
 with tile-local compaction, reuses coordinate metadata across compatible
 operators, and adapts its compute decomposition without host synchronization.
