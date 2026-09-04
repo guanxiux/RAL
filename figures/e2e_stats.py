@@ -26,6 +26,7 @@ from __future__ import annotations
 import csv
 import importlib.util
 import json
+import os
 import statistics
 from pathlib import Path
 
@@ -68,6 +69,20 @@ OPTICAL_RUN = {
     "xavier-nx": "xavier-nx-20w-locked-full-r3",
 }
 
+# The 3080 Stream-K refresh stores the current WISEConv latency and work-only
+# replay separately from the legacy multi-backend directory.  Keep the dense
+# and competing paths on their canonical formal run while selecting the latest
+# WISEConv artifacts explicitly; this also lets legacy directories be archived
+# without making the statistics script silently fall back to stale latency.
+OPTICAL_WISE_RUN = {
+    **OPTICAL_RUN,
+    "3080": "3080-native-fp32-streamk-fireflownet-full-r3-v1",
+}
+OPTICAL_WORK_RUN = {
+    **OPTICAL_RUN,
+    "3080": "3080-streamk-v10-work-full",
+}
+
 YOLO_RUN = {
     "a100": {
         "yolov8n": "a100-yolov8n-full-r3",
@@ -78,7 +93,9 @@ YOLO_RUN = {
         "yolov8m": "4090-yolov8m-full-r3",
     },
     "3080": {
-        "yolov8n": "3080-v23-yolov8n-full-r3-1800mhz",
+        # YOLOv8n shares the canonical 3080 multi-backend run with
+        # FireFlowNet-era naming; the more specific directory never existed.
+        "yolov8n": "3080-v23-full-r3-1800mhz",
         "yolov8m": "3080-v23-yolov8m-full-r3-1800mhz",
     },
     "4070-laptop": {
@@ -113,6 +130,23 @@ AGX_ENERGY = {
     "dynconv_pose": "dynconv-pose-full-s0125-r3-energy-v4.per_backend_energy.json",
 }
 
+_AGX_REFRESH_ENERGY_ROOT = (
+    Path(os.environ["AGX_ENERGY_ROOT"]).expanduser()
+    if os.environ.get("AGX_ENERGY_ROOT") else None
+)
+if _AGX_REFRESH_ENERGY_ROOT is not None:
+    AGX_ENERGY = {
+        workload: str(
+            _AGX_REFRESH_ENERGY_ROOT / filename
+        )
+        for workload, filename in {
+            "fireflownet": "fireflownet-full-r3-energy-v4.per_backend_energy.json",
+            "yolov8n": "yolov8n-full-r3-energy-v4.per_backend_energy.json",
+            "yolov8m": "yolov8m-full-r3-energy-v4.per_backend_energy.json",
+            "dynconv_pose": "dynconv-pose-full-s0125-r3-energy-v4.per_backend_energy.json",
+        }.items()
+    }
+
 XAVIER_ENERGY = {
     "fireflownet": "fireflownet-full-r3-energy-v3",
     "yolov8n": "yolov8n-full-r3-energy-v3",
@@ -138,7 +172,7 @@ def actual_backend(workload: str, backend: str) -> str:
 
 
 def optical_latency(platform: str, backend: str) -> tuple[float, str]:
-    run = OPTICAL_RUN[platform]
+    run = OPTICAL_WISE_RUN[platform] if backend == "wiseconv" else OPTICAL_RUN[platform]
     path = LOGS / "optical_flow" / backend / run / "summary.json"
     summary = load_json(path)
     values = [
@@ -194,7 +228,7 @@ def active_ratio_trace(workload: str) -> tuple[dict[str, float], str]:
             LOGS
             / "optical_flow"
             / "wiseconv"
-            / OPTICAL_RUN[ACTIVE_RATIO_PLATFORM]
+            / OPTICAL_WORK_RUN[ACTIVE_RATIO_PLATFORM]
             / "summary.json"
         )
         sequences = load_json(path)["sequences"]
@@ -210,11 +244,33 @@ def active_ratio_trace(workload: str) -> tuple[dict[str, float], str]:
             / "summary.json"
         )
         sequences = load_json(path)["backends"]["wiseconv"]
-        ratios = {
-            name: float(sequence["work"]["exact_flops_ratio"])
-            for name, sequence in sequences.items()
-            if name != "aggregate_accuracy"
-        }
+        ratios = {}
+        for name, sequence in sequences.items():
+            if name == "aggregate_accuracy":
+                continue
+            work = sequence.get("work") or {}
+            if "exact_flops_ratio" in work:
+                ratios[name] = float(work["exact_flops_ratio"])
+        if len(ratios) != len(
+            [name for name in sequences if name != "aggregate_accuracy"]
+        ):
+            # Some older multi-backend YOLOv8m runs intentionally omitted work
+            # counters.  The isolated Stream-K work-only replay carries the
+            # same masks and is the canonical replacement for this read-only
+            # ratio lookup; no latency or accuracy pass is rerun here.
+            work_only = (
+                LOGS
+                / "effective_throughput"
+                / "3080"
+                / f"3080-streamk-v10-{workload}-work-only"
+                / "summary.json"
+            )
+            replay = load_json(work_only)["sequences"]
+            ratios = {
+                name: float((entry.get("work") or entry)["exact_flops_ratio"])
+                for name, entry in replay.items()
+            }
+            path = work_only
     elif workload == "dynconv_pose":
         path = (
             LOGS

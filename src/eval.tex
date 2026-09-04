@@ -274,15 +274,17 @@ is substantially above tile skipping's 48.9\% on RTX~3080.
 
 \paragraph{Latency cost decomposition.}
 We decompose full-model YOLOv8n latency by execution stage on RTX~3080 and AGX
-Orin (Table~\ref{tab:cost-decomposition}). \sysname reduces convolution from
-2.55 to 1.17\,ms on RTX~3080 and from 22.61 to 13.41\,ms on AGX Orin; its
-construction stage accounts for only 0.11\,ms (6.7\%) and 0.37\,ms (2.1\%),
-respectively. These savings lower total latency from 2.79 to 1.58\,ms on
-RTX~3080 and from 25.09 to 17.07\,ms on AGX Orin.
+Orin (Table~\ref{tab:cost-decomposition}). On the randomly sampled RTX~3080
+frames, \sysname reduces the convolution share from 2.55 to 1.10\,ms while
+adding only 0.10\,ms of construction; the corresponding sampled-row totals
+are 2.79 and 1.49\,ms. The AGX Orin row shows the same balance at its slower
+operating point: construction accounts for 0.37\,ms, while convolution falls
+from 22.61 to 13.41\,ms and the sampled-row total falls from 25.09 to
+17.07\,ms.
 
 Gather-scatter shows why exact selection alone is insufficient. Although it
 has the lowest convolution time on both platforms, \emph{Other} accounts for
-10.64\,ms (92.6\% of total latency) on RTX~3080 and 29.79\,ms (74.7\%) on AGX
+10.46\,ms (92.2\% of total latency) on RTX~3080 and 29.79\,ms (74.7\%) on AGX
 Orin. For gather-scatter, this category includes active-coordinate extraction,
 receptive-field materialization, GEMM setup, and scatter/writeback; for every
 path it also includes launch and dependency gaps. Direct worklist consumption

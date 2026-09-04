@@ -323,15 +323,12 @@ boundary, and applies data-parallel, uniform split-$K$, or non-uniform hybrid
 Stream-$K$ decomposition accordingly, without host involvement.
 
 Because the host cannot observe $n^l_{\mathcal{W}}$ without synchronization,
-every host-visible launch parameter must be independent of the current worklist
-length. \sysname therefore fixes the tile configuration $(B_M, B_N, B_K)$ per
-layer at deployment; the GEMM pipeline is identical to dense implicit GEMM
-except that the coordinate source is replaced by the worklist, gathering input
-from the dense feature tensor by worklist coordinates rather than contiguous
-grid traversal. What changes per frame is how the $K$~reduction across output tiles is assigned
-to thread blocks. Within the compute kernel, \sysname reads the current
-$n^l_{\mathcal{W}}$ and selects among three decomposition modes derived from
-Stream-$K$:
+\sysname fixes the tile configuration~$\hat{q}^l=(B_M,B_N,B_K)$ per layer at
+deployment and adapts only the decomposition mode on-device. The GEMM pipeline
+is identical to dense implicit GEMM except that the coordinate source is
+replaced by the worklist; what changes per frame is how the $K$~reduction
+across output tiles is assigned to thread blocks, selected from three modes
+derived from Stream-$K$:
 \begin{itemize}
   \item \emph{Data-parallel}: each block owns a complete output tile and
     reduces the full $K$~range.
@@ -344,26 +341,37 @@ Stream-$K$:
     the streaming overhead to the entire grid.
 \end{itemize}
 
-Both the tile configuration and the optimal mode for each layer and worklist
-length are calibrated offline. For each layer~$l$, \sysname first selects the
-tile configuration~$\hat{q}^l=(B_M,B_N,B_K)$ from a small
-catalog~$\mathcal{Q}$ by profiling each at the full worklist
-$\mathcal{W}^l_{\mathrm{full}}$ (all $|\mathcal{G}^l|$ output positions) and
-keeping the fastest, ensuring competitiveness with dense execution as a
-baseline. Let $t(q,\mathcal{W})$ denote the minimum kernel latency of
-configuration~$q$ on worklist~$\mathcal{W}$ over all mode candidates:
+Both $\hat{q}^l$ and the per-length mode choice are calibrated offline.
+\sysname selects~$\hat{q}^l$ from a small catalog~$\mathcal{Q}$ by profiling
+each configuration at the full worklist $\mathcal{W}^l_{\mathrm{full}}$ (all
+$|\mathcal{G}^l|$ output positions) and keeping the fastest. Let
+$t(q,\mathcal{W})$ denote the minimum kernel latency of configuration~$q$ on
+worklist~$\mathcal{W}$ over all mode candidates:
 \begin{equation}
   \hat{q}^l
   = \arg\min_{q\in\mathcal{Q}}\;
     t(q,\;\mathcal{W}^l_{\mathrm{full}}).
   \label{eq:tileconfig}
 \end{equation}
-Second, within~$\hat{q}^l$, \sysname builds a \emph{policy table}~$P^l$
-indexed by tile count $s=\lceil n^l_{\mathcal{W}}/B_M\rceil$. For each~$s$ it
-profiles every candidate decomposition mode~$m$ (one of the three above) and
-split factor~$S_k$ using a synthetic
-worklist~$\mathcal{W}_s$ of length~$s\cdot B_M$ and records the fastest
-combination:
+At the full worklist $\eta_{\mathrm{compute}}\approx 1$, so this step
+essentially maximizes throughput~$T$, ensuring competitiveness with dense
+execution. The choice of $B_M$ also determines $\eta_{\mathrm{compute}}$ at
+every other worklist length: the issued slot count is
+$|\mathcal{C}|=B_M\lceil n^l_{\mathcal{W}}/B_M\rceil$, so
+$\eta_{\mathrm{compute}}=n^l_{\mathcal{W}}/|\mathcal{C}|$ falls as
+$n^l_{\mathcal{W}}$ shrinks relative to~$B_M$. Fixing $B_M$ per layer is a
+necessary constraint (adapting it per frame would require the host to know
+$n^l_{\mathcal{W}}$), but per-shape profiling partially mitigates the cost:
+a large~$B_M$ on a small output grid often produces too few tiles to fill the device
+even at full worklist, so such layers naturally select a smaller~$B_M$ that
+also limits $\eta_{\mathrm{compute}}$ loss at low activity. The mode table below
+compensates for the remaining throughput gap by adapting the $K$-splitting
+strategy on-device.
+
+Within~$\hat{q}^l$, \sysname builds a \emph{policy table}~$P^l$ indexed by
+tile count $s=\lceil n^l_{\mathcal{W}}/B_M\rceil$. For each~$s$ it profiles
+every candidate mode~$m$ and split factor~$S_k$ using a synthetic
+worklist~$\mathcal{W}_s$ of length~$s\cdot B_M$:
 \begin{equation}
   P^l[s]
   = \arg\min_{m,\,S_k}\;
@@ -371,18 +379,16 @@ combination:
   \label{eq:policy}
 \end{equation}
 where the minimization ranges over the three modes and their compatible split
-factors.
-Both calibrations search small candidate sets over measured
-latency and run once at deployment; the tile configuration fixes per-tile throughput,
-while the policy table adapts the $K$-splitting strategy to each possible tile
-count.
+factors. All three modes process the same output tiles and differ only in how
+$K$-iterations are assigned to blocks, so $\eta_{\mathrm{compute}}$ is
+invariant across modes and minimizing latency directly maximizes
+throughput~$T$, and hence $\eta_{\mathrm{compute}}\,T$.
 
 At runtime, the compute kernel reads $n^l_{\mathcal{W}}$ from the device scalar
-written by construction, computes $s=\lceil n^l_{\mathcal{W}}/B_M\rceil$, and
-indexes~$P^l[s]$ to obtain the current mode and split factor
+written by construction, computes $s$, and indexes~$P^l[s]$
 (Algorithm~\ref{alg:streamk}, Lines~1--3). All three modes share the same
 gather-at-load reduction datapath; only the block-to-work mapping differs
-(Algorithm~\ref{alg:streamk}, Lines~4--20).
+(Lines~4--20).
 
 When split-$K$ or hybrid Stream-$K$ assigns multiple blocks to disjoint
 $K$-ranges of the same output tile, each block writes its partial accumulator

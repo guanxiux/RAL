@@ -16,7 +16,8 @@ DEVICES = {
     "rtx3080": {
         "label": "RTX 3080",
         "source": REPO / "logs" / "microbenchmarks" / "cost_decomposition"
-        / "3080-streamk-v10" / "cost_decomposition.summary.json",
+        / "3080-random100-streamk-v1-semantic"
+        / "cost_decomposition.summary.json",
     },
     "agx_orin": {
         "label": "AGX Orin",
