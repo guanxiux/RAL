@@ -96,7 +96,7 @@ Because the worklist changes only the number of output tiles while each tile's
 reduction datapath stays intact, a persistent grid can serve any worklist
 length with the same launch, and idle blocks can absorb reduction work from
 undersubscribed tiles. The kernel reads the device-resident worklist length and
-indexes a precomputed table to select this decomposition, sustaining GPU
+indexes a precomputed table and decomposes the workload accordingly, sustaining GPU
 utilization across varying worklist lengths without host synchronization.
 
 This paper makes the following contributions:

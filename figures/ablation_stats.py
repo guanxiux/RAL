@@ -6,7 +6,9 @@ record full-trace latency and work efficiency, but do not include a separate
 semantic NSYS stage attribution for every variant.  Consequently, Cons./Conv.
 are emitted only for Ours, for which the current cost-decomposition capture is
 available; the other stage cells remain explicit dashes in the generated table.
-AGX Orin rows are kept as placeholders until the multi-platform refresh.
+The AGX Orin rows use the corresponding v7 refresh runs.  Stage attribution
+is reported only for Ours on each device; the other rows intentionally remain
+latency/work-efficiency measurements without a variant-specific stage split.
 """
 
 from __future__ import annotations
@@ -49,6 +51,18 @@ RUNS = {
     "sync_exact_selector": "3080-streamk-v7-sync-exact-selector-r3",
     "ours": "3080-streamk-v7-ours-final-policy-r3",
 }
+RUNS_BY_DEVICE = {
+    "rtx3080": RUNS,
+    "agx_orin": {
+        "atomic_append": "agx-streamk-v7-ablation-atomic-append",
+        "global_order": "agx-streamk-v7-ablation-global-order",
+        "no_reuse": "agx-streamk-v7-ablation-no-reuse",
+        "dp_only": "agx-streamk-v7-ablation-dp-only",
+        "no_hybrid": "agx-streamk-v7-ablation-no-hybrid",
+        "sync_exact_selector": "agx-streamk-v7-ablation-sync-exact-selector",
+        "ours": "agx-streamk-v7-ablation-ours",
+    },
+}
 RUN_ROOT = REPO / "logs" / "yolov8n_ablation"
 WORK_SUMMARY = (
     REPO / "logs" / "effective_throughput" / "3080"
@@ -66,9 +80,9 @@ def load_json(path: Path) -> dict:
     return value
 
 
-def load_totals() -> dict[str, float]:
+def load_totals(device: str) -> dict[str, float]:
     totals = {}
-    for variant, run_name in RUNS.items():
+    for variant, run_name in RUNS_BY_DEVICE[device].items():
         run_dir = RUN_ROOT / run_name
         run = load_json(run_dir / "run.json")
         summary = load_json(run_dir / "summary.json")
@@ -87,8 +101,20 @@ def load_totals() -> dict[str, float]:
     return totals
 
 
-def load_eta() -> dict[str, float]:
+def load_eta(device: str) -> dict[str, float]:
     """Load exact work η where available without mixing latency protocols."""
+
+    if device == "agx_orin":
+        values = {}
+        for variant, run_name in RUNS_BY_DEVICE[device].items():
+            run_dir = RUN_ROOT / run_name
+            summary = load_json(run_dir / "summary.json")
+            work = (summary.get("work") or {}).get("aggregate") or {}
+            ratio = work.get("useful_compute_ratio")
+            if ratio is None:
+                raise ValueError(f"AGX work ratio is missing at {run_dir}")
+            values[variant] = 100.0 * float(ratio)
+        return values
 
     old_rows = {
         row["variant"]: row
@@ -111,50 +137,57 @@ def load_eta() -> dict[str, float]:
     return values
 
 
-def load_ours_stages() -> tuple[float, float]:
+def load_ours_stages() -> dict[str, tuple[float, float]]:
     with COST_CSV.open(encoding="utf-8", newline="") as source:
         rows = list(csv.DictReader(source))
+    result = {}
     for row in rows:
-        if row.get("device") == "rtx3080" and row.get("system") == "wiseconv":
-            return float(row["construction_ms"]), float(row["convolution_ms"])
-    raise ValueError("updated RTX 3080 WISEConv cost row is missing")
+        if row.get("system") != "wiseconv":
+            continue
+        device = row.get("device")
+        if device in DEVICES:
+            result[device] = (
+                float(row["construction_ms"]),
+                float(row["convolution_ms"]),
+            )
+    missing = set(DEVICES) - set(result)
+    if missing:
+        raise ValueError(f"WISEConv cost rows are missing for {sorted(missing)}")
+    return result
 
 
 def build_rows() -> list[dict]:
-    totals = load_totals()
-    eta = load_eta()
-    ours_construction, ours_convolution = load_ours_stages()
+    totals = {device: load_totals(device) for device in DEVICES}
+    eta = {device: load_eta(device) for device in DEVICES}
+    ours_stages = load_ours_stages()
     rows = []
     for device in DEVICES:
         for variant in VARIANTS:
-            is_rtx = device == "rtx3080"
             is_ours = variant == "ours"
             rows.append({
                 "device": device,
                 "device_label": DEVICE_LABELS[device],
                 "variant": variant,
                 "variant_label": VARIANT_LABELS[variant],
-                "eta_percent": f"{eta[variant]:.12g}" if is_rtx else "",
+                "eta_percent": f"{eta[device][variant]:.12g}",
                 "eta_coverage_percent": (
-                    "100.0" if is_rtx and variant == "no_reuse"
-                    else ("98.54" if is_rtx else "")
+                    "100.0" if variant == "no_reuse"
+                    else "98.54"
                 ),
                 "construction_ms": (
-                    f"{ours_construction:.12g}" if is_rtx and is_ours else ""
+                    f"{ours_stages[device][0]:.12g}" if is_ours else ""
                 ),
                 "convolution_ms": (
-                    f"{ours_convolution:.12g}" if is_rtx and is_ours else ""
+                    f"{ours_stages[device][1]:.12g}" if is_ours else ""
                 ),
-                "total_ms": f"{totals[variant]:.12g}" if is_rtx else "",
+                "total_ms": f"{totals[device][variant]:.12g}",
                 "cuda_graph": (
-                    ("false" if variant == "sync_exact_selector" else "true")
-                    if is_rtx else ""
+                    "false" if variant == "sync_exact_selector" else "true"
                 ),
-                "source": (
-                    f"logs/yolov8n_ablation/{RUNS[variant]}/summary.json"
-                    if is_rtx else ""
+                "source": f"logs/yolov8n_ablation/{RUNS_BY_DEVICE[device][variant]}/summary.json",
+                "work_source": (
+                    str((RUN_ROOT / RUNS_BY_DEVICE[device][variant] / "summary.json").relative_to(REPO))
                 ),
-                "work_source": str(WORK_SUMMARY.relative_to(REPO)) if is_rtx else "",
             })
     return rows
 
@@ -169,12 +202,11 @@ def main() -> None:
     temporary.replace(OUT_CSV)
     print(f"wrote {OUT_CSV}")
     for row in rows:
-        if row["device"] == "rtx3080":
-            print(
-                f"{row['variant_label']:<24} "
-                f"eta={float(row['eta_percent']):.2f}% "
-                f"total={float(row['total_ms']):.3f} ms"
-            )
+        print(
+            f"{row['device_label']:<10} {row['variant_label']:<24} "
+            f"eta={float(row['eta_percent']):.2f}% "
+            f"total={float(row['total_ms']):.3f} ms"
+        )
 
 
 if __name__ == "__main__":
