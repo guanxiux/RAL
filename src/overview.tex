@@ -143,7 +143,7 @@ by the current worklist length. The same blocks serve any worklist: when tiles
 do not fill every block, idle blocks absorb reduction work from
 undersubscribed tiles instead of sitting empty. Which blocks share and how much
 each reduces is determined on-device: the kernel reads the exact worklist
-length, indexes an offline-calibrated table keyed by the current length, and
+length, looks up an offline-calibrated table keyed by that length, and
 decomposes the workload accordingly. This on-device adaptation sustains GPU
 throughput as the worklist length changes from frame to frame without any
 host-side decision on the per-frame path.
