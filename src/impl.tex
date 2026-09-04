@@ -7,8 +7,8 @@ parameters and weights, and statically marks worklist-reuse edges and rebuild
 points. The compute backend adapts CUTLASS~\cite{cutlass} dense tiled
 implicit-GEMM pipelines for direct worklist consumption, covering both FP32
 (SIMT) and FP16 (tensor core) arithmetic with NHWC tensors. The full-workload
-evaluation uses the FP32 datapath; the DynConv sensitivity study additionally
-exercises the FP16 datapath. The backend supports standard, grouped, depthwise,
+comparison uses the FP32 datapath; sensitivity studies additionally
+exercise the FP16 datapath. The backend supports standard, grouped, depthwise,
 and transposed convolutions, as well as the mask-aware auxiliary operators
 required
 by evaluated workloads. Each output
@@ -30,17 +30,15 @@ buffers, while $M_{out}$ always denotes the current operator's exact output
 mask.
 
 The compute backend instantiates a C++ template family over
-$(B_M,B_N,B_K,S_K)$ and sets each variant's persistent grid size from CUDA
-occupancy, the GPU's SM count, and the layer's dense work bound.
-The online selector (Algorithm~\ref{alg:adapt}) uses a bounded queue of pinned
-host scalars, CUDA events, and a dedicated copy stream. For event and temporal
-workloads, it transfers one network-input count per frame and selects each
-layer's configuration from the newest completed observation. Learned-gating
-models do not derive layer masks from the network-input mask, and the evaluated
-pose samples are not temporally correlated
-(\S\ref{sec:eval:microbenchmarks}); \sysname therefore assigns fixed per-layer
-levels calibrated from gate statistics.
-Each invocation launches the fixed persistent grid of its selected
-configuration; the kernel reads device-resident $n_{\mathcal{W}}$ to bound its
-grid-stride loop. Every backend variant agrees numerically with cuDNN at each
-active output position.
+$(B_M,B_N,B_K)$; each template variant determines its persistent grid size
+from CUDA occupancy and the GPU's SM count. The partial-reduction workspace is
+shared across all layers at the maximum required size
+($\max_l \max(S_k^l) \times |\mathbf{y}^l|$ accumulation-precision elements),
+allocated once during initialization. When a layer's policy table~$P^l$
+selects the same mode for every tile count~$s$, \sysname eliminates the
+unused mode branches and partial-reduction logic from that layer's kernel,
+producing a streamlined variant that avoids the per-tile policy decode and
+workspace access. Each invocation launches its fixed persistent grid; the
+kernel reads device-resident $n^l_{\mathcal{W}}$, looks up~$P^l$, and
+dispatches accordingly. Every backend variant agrees numerically with cuDNN at
+each active output position.

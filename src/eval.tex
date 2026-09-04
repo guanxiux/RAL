@@ -11,9 +11,10 @@ RTX~4090, RTX~3080, and RTX~4070 Laptop. The embedded platforms are Jetson
 Xavier NX and AGX Orin; we also measure board energy on both. The discrete
 platforms use PyTorch 2.1.2, CUDA 12.1, and cuDNN 8.9.2; both Jetson platforms
 use PyTorch 2.1.0, CUDA 11.4, and cuDNN 8.6. All paths in the full workload
-comparison use FP32 (SIMT) with TF32 disabled; the targeted DynConv sensitivity
-study also evaluates FP16 (tensor core) on RTX~3080. On each platform, all
-backends run under the same fixed clock and power configuration.
+comparison use FP32 (SIMT) with TF32 disabled. Targeted sensitivity studies
+also evaluate FP16 (tensor core) for DynConv on RTX~3080 and FireFlowNet on
+AGX Orin. On each platform, all backends run under the same fixed clock and
+power configuration.
 
 \paragraph{Models, tasks, and mask sources.}
 Our workloads span three vision tasks.
@@ -231,15 +232,14 @@ with dense execution, the upstream sparsity policies lower AP and PCKh by only
 
 \begin{figure}[t]
   \centering
-  \includegraphics[width=\columnwidth]{figures/effective_throughput.pdf}
+  \includegraphics[width=0.8\columnwidth]{figures/effective_throughput.pdf}
   \caption{Full-model effective throughput $\eta T$ and wasted throughput
-  $(1-\eta)T$ on RTX~3080, normalized to dense raw throughput.}
-  \Description{Four workload groups compare Dense, Tile skipping,
-  Gather-scatter, and WISEConv with stacked bars. The lower colored segment is
-  effective throughput and the upper uniformly patterned gray segment is
-  wasted throughput, both relative to dense raw throughput. WISEConv combines
-  high effective throughput with little wasted throughput across all four
-  workloads.}
+  $(1-\eta)T$ on RTX~3080 and AGX Orin, normalized within each platform to
+  Dense raw throughput.}
+  \Description{Two vertically stacked platform panels compare Dense, Tile
+  skipping, Gather-scatter, and WISEConv across four workloads. Each bar is
+  divided into effective and wasted throughput, normalized to Dense raw
+  throughput on the same platform.}
   \label{fig:effective-throughput}
 \end{figure}
 
@@ -247,59 +247,46 @@ with dense execution, the upstream sparsity policies lower AP and PCKh by only
 
 \paragraph{Effective throughput.}
 Under the same execution settings as the end-to-end evaluation, we estimate
-full-model throughput $T$ and effective throughput $\eta T$ on RTX~3080
-(Figure~\ref{fig:effective-throughput}). Table~\ref{tab:worklist-efficiency}
-reports \sysname's $\eta$ decomposition and worklist-length distribution.
-\sysname sustains 35.3--89.7\% of dense throughput, the highest among sparse
-paths in every workload at 1.10--1.99$\times$ that of the next-highest sparse
-path.
+full-model throughput $T$ and effective throughput $\eta T$ on RTX~3080 and
+AGX Orin (Figure~\ref{fig:effective-throughput}). \sysname sustains
+35.4--91.2\% of Dense raw throughput on RTX~3080 and 58.6--83.5\% on AGX
+Orin, the highest raw throughput among the sparse paths in every workload.
 DeltaCNN's lower raw throughput reflects the impact of routing very sparse
 tiles through its fused selective path~\cite{deltacnn}. The two YOLO workloads
-lie at the upper end
-because their higher active ratios expose more parallelism and amortize fixed
-costs.
+lie at the upper end because their higher active ratios expose more parallelism
+and amortize fixed costs. Combining throughput and useful-compute ratio,
+\sysname reaches 1.52--2.62$\times$ the strongest competing effective
+throughput on RTX~3080 and 1.45--1.65$\times$ on AGX Orin.
 
-\sysname's useful-compute ratio is 98.9\%,
-96.2\%, and 95.2\% for FireFlowNet, YOLOv8n, and YOLOv8m.
-DynConv is lower at 81.7\%: its low active ratio and small spatial grids yield
-exceptionally short worklists (P10, P50, and P90 lengths of 3, 43, and 389),
-making final-tile padding proportionally large, and trace-driven adaptation is
-disabled on this workload (\S\ref{sec:eval:setup}), so the decomposition
-cannot adjust per frame to mitigate it. Even under these conditions,
-\sysname's useful-compute ratio nearly doubles tile skipping's 48.9\%,
-confirming that the worklist-driven execution model under static decomposition
-already substantially raises useful-compute ratio.
-Combining throughput and useful-compute ratio, \sysname achieves the
-highest effective throughput in every workload, reaching 1.51--1.86$\times$
-that of the strongest evaluated competing path.
-
-Table~\ref{tab:worklist-efficiency} localizes the remaining wasted work:
-despite cross-operator reuse, $\eta_{\mathrm{construct}}$ remains at
-98.5--100.0\%. The selected decompositions give $\eta_{\mathrm{compute}}$
-values of 99.1\%, 97.7\%, and 96.5\% for FireFlowNet, YOLOv8n, and YOLOv8m;
-because DynConv has $\eta_{\mathrm{construct}}=100.0\%$, its
-lower $\eta$ comes entirely from compute-stage padding of its short worklists.
+Table~\ref{tab:worklist-efficiency} localizes the remaining wasted work on
+RTX~3080. Its $\eta_{\mathrm{construct}}$ stays at 98.5--100.0\%, while the
+selected decompositions give $\eta_{\mathrm{compute}}=96.5$--$99.1\%$ for
+FireFlowNet and the two YOLO workloads. DynConv instead has
+$\eta_{\mathrm{compute}}=81.7\%$: its low
+active ratio and small spatial grids yield exceptionally short worklists
+(P10, P50, and P90 lengths of 3, 43, and 389), making final-tile padding
+proportionally large. Because trace-driven adaptation is disabled for its
+temporally unrelated inputs (\S\ref{sec:eval:setup}), DynConv uses a fixed
+per-layer decomposition. Even in this setting, its 81.7\% useful-compute ratio
+is substantially above tile skipping's 48.9\% on RTX~3080.
 
 \input{figures/cost_decomposition_table}
 
 \paragraph{Latency cost decomposition.}
-We decompose YOLOv8n latency on RTX~3080 by execution stage
-(Table~\ref{tab:cost-decomposition}), where frames from MOT16~\cite{mot16}
-are classified into bins of low or high active ratios. \sysname's construction
-time remains at 0.105--0.106\,ms while convolution grows from 1.09 to
-1.29\,ms across the two bins; construction's latency share consequently falls
-from 7.1\% to 6.2\%. Gather-scatter
-shows why exact selection alone is insufficient: it has the lowest convolution
-time at 0.73--0.83\,ms, but 10.9--11.0\,ms of auxiliary work outside
-convolution arithmetic (92.2--93.1\% of total latency) is reported as
-\emph{Other}, compared with 0.10\,ms for Dense. For gather-scatter, this
-category captures its auxiliary path (active-coordinate
-extraction, receptive-field materialization, GEMM setup, and scatter/writeback);
-for all paths it also includes inter-kernel idle gaps from launch and
-dependency serialization.
-In contrast, \sysname adds only 0.06--0.07\,ms of
-non-construction work over Dense. Direct worklist consumption thus avoids this
-auxiliary path while keeping convolution dominant.
+We decompose full-model YOLOv8n latency by execution stage on RTX~3080 and AGX
+Orin (Table~\ref{tab:cost-decomposition}). \sysname reduces convolution from
+2.55 to 1.17\,ms on RTX~3080 and from 22.61 to 13.41\,ms on AGX Orin; its
+construction stage accounts for only 0.11\,ms (6.7\%) and 0.37\,ms (2.1\%),
+respectively. These savings lower total latency from 2.79 to 1.58\,ms on
+RTX~3080 and from 25.09 to 17.07\,ms on AGX Orin.
+
+Gather-scatter shows why exact selection alone is insufficient. Although it
+has the lowest convolution time on both platforms, \emph{Other} accounts for
+10.64\,ms (92.6\% of total latency) on RTX~3080 and 29.79\,ms (74.7\%) on AGX
+Orin. For gather-scatter, this category includes active-coordinate extraction,
+receptive-field materialization, GEMM setup, and scatter/writeback; for every
+path it also includes launch and dependency gaps. Direct worklist consumption
+avoids this auxiliary path while keeping convolution dominant.
 
 % Optional CUDA-level diagnostics are not a third required microbenchmark.
 % If the two figures leave a concrete locality question, the useful diagnostic
@@ -314,99 +301,54 @@ auxiliary path while keeping convolution dominant.
 \subsection{Ablation Study and Sensitivity Analysis}
 \label{sec:eval:ablation-sensitivity}
 
-% TODO (Phase 2, requires new measurements; do not present as a current result):
-% Add a separate ablation for the device-bounded launch policy.  Keep the
-% existing component table for construction, reuse, and decomposition, and
-% compare the following two launch variants under the same masks, layer
-% configurations, activity-level selector, and timing protocol:
-%   (1) Ours: launch
-%       g_launch = min(g_res, n_work^max) blocks, read n_W on the device, and
-%       consume the valid work with a grid-stride loop;
-%   (2) Disable persistent grid (dense upper bound): launch n_work^max blocks,
-%       map each block to one potential position-channel tile, and let blocks
-%       whose tile is beyond the current n_W exit on the device;
-% For split-K, define n_work^max with the S_K replication factor before
-% constructing each variant.  Report results separately for
-% n_work^max > g_res and n_work^max <= g_res; in the latter group, Ours and
-% Dense-upper-bound have the same launch size by construction, so no
-% persistent-grid benefit is expected.  Use YOLOv8n on RTX 3080 to align with
-% this table, add a short-worklist workload such as DynConv pose, and if
-% feasible report the two-row comparison on a Jetson device.
-%
-% Add a complementary observation ablation.  Treat the host-sized exact-grid
-% path as this experiment rather than as a third launch-policy row.  The one
-% scalar transferred for each layer is n_W: for a tight worklist,
-% alpha_l = n_W / |G_l|, so the same readback both sizes the exact grid and
-% indexes the level-to-configuration table.  Under superset reuse, n_W remains
-% the exact scheduled-work count but can exceed the current exact-mask count;
-% describe that case as an exact scheduled-work-level observation unless a
-% separate device-side popcount of M_out is added.  Charge the transfer,
-% synchronization, and dependent-launch costs once per layer.  This measures
-% the end-to-end cost of replacing the current one-network-input,
-% asynchronous, lagged observation with per-layer exact work-count
-% observation.  Retain the existing Static-level row and Ideal-level oracle
-% as, respectively, the no-adaptation case and a synchronization-free lower
-% bound.  Evaluate the exact-observation comparison on event or temporal
-% workloads with a shared input activity signal, rather than on DynConv's
-% fixed-level mode.  Report convolution, selection/synchronization, and
-% full-model latency so that the combined coordination cost is not attributed
-% to the launch policy alone.  Do not list Host-sized as a third row in the
-% launch-policy comparison, since it is this exact-observation experiment.
+\input{figures/ablation_table}
 
-% Source: logs/yolov8n_ablation/ablation_table.json
-\begin{table}[H]
-  \centering
-  \caption{Component ablation for YOLOv8n on RTX~3080, using the
-  same dataset and stage-attribution setting as
-  Table~\ref{tab:cost-decomposition}. Each variant disables one mechanism
-  while keeping the rest identical to Ours.}
-  \label{tab:ablation}
-  \footnotesize
-  \setlength{\tabcolsep}{4.2pt}
-  \renewcommand{\arraystretch}{1.06}
-  \begin{tabular}{@{}lcccc@{}}
-    \hline
-    \textbf{Variant} & $\boldsymbol{\eta}$ & \textbf{Cons.} & \textbf{Conv.} & \textbf{Total} \\
-    \hline
-    Atomic append & 95.65\% & 0.182 & 1.184 & 1.684 \\
-    Global order  & 95.60\% & 0.246 & 1.163 & 1.719 \\
-    No reuse      & 97.02\% & 0.205 & 1.168 & 1.680 \\
-    Static level  & 95.61\% & 0.105 & 1.231 & 1.642 \\
-    Ideal level   & 95.79\% & 0.105 & 1.141 & 1.543 \\
-    Ours          & 95.57\% & 0.105 & 1.174 & 1.583 \\
-    \hline
-  \end{tabular}
-  \par\vspace{6pt}
-  \noindent\parbox{\columnwidth}{\footnotesize\textit{Notes.}
-  \textit{Atomic append}: per-coordinate atomic reservation, losing warp
-  compaction and tile-local segments.
-  \textit{Global order}: stable prefix-scan compaction over the full
-  output grid, replacing tile-local construction.
-  \textit{No reuse}: every Conv2d and activation reconstructs its worklist, disabling cross-operator reuse.
-  \textit{Static level}: per-layer fixed decomposition calibrated offline,
-  disabling adaptive level selection.
-  \textit{Ideal level}: oracle that observes the current worklist length
-  and selects the optimal level per layer per frame (GPU lower bound, not
-  deployable).}
-\end{table}
+Table~\ref{tab:ablation} isolates the construction and consumption choices on
+YOLOv8n. Synchronizing each layer's exact worklist length raises total latency
+from 1.579 to 6.114\,ms on RTX~3080 and from 16.996 to 23.787\,ms on AGX Orin.
+For this row, Table~\ref{tab:ablation} uses the corresponding Ideal level
+construction and convolution times to avoid folding synchronization-induced
+GPU idle time into the stage attribution; its Total retains the measured
+readback and synchronization cost. The sync-free feedback path therefore
+avoids a coordination cost that dominates any benefit of exact launch sizing
+on both platforms.
 
-Each row in Table~\ref{tab:ablation} disables one mechanism.
-Per-coordinate atomics (Atomic append) raise construction to 0.182\,ms through
-finer serialization; convolution also rises to 1.184\,ms because the resulting
-worklist loses tile-local contiguity.
-A full-grid prefix-scan (Global order) raises construction to 0.246\,ms;
-convolution drops marginally to 1.163\,ms, but the 0.141\,ms construction
-overhead far exceeds the 0.011\,ms compute benefit, validating tile-local
-segments as a sufficient approximation.
-Disabling cross-operator reuse (No reuse) nearly doubles construction to
-0.205\,ms while convolution is unchanged, confirming that reuse eliminates
-redundant construction cost.
-Fixing per-layer decomposition offline (Static level) raises convolution by
-4.9\%: frames whose worklist length deviates from the calibration point
-receive a mismatched configuration.
-The Ideal level oracle reduces total latency by only 2.5\% below Ours,
-bounding the cost of lagged observation and showing that a completed, lagged
-activity observation is sufficient for level selection in this workload.
+The remaining effects are hardware-dependent. Global ordering raises total
+latency by 8.3\% on RTX~3080 and 2.5\% on AGX Orin because its extra
+construction outweighs its negligible convolution change. Atomic append and
+No reuse incur 6.3\% and 5.9\% overhead on RTX~3080, respectively, but remain
+within 0.7\% of Ours on AGX Orin. Launching the dense upper-bound grid likewise
+matches the persistent grid in these two YOLOv8n settings. Static level is
+3.4\% slower than Ours on RTX~3080 but 1.2\% faster on AGX Orin, while the
+Ideal level oracle improves on Ours by only 2.6\% and 2.7\%.
+The lower $\eta$ on AGX Orin is also a decomposition choice rather than a mask
+difference: Ours has the same 98.54\% coverage on both platforms, but
+device-specific autotuning uses larger $B_M$ tiles on AGX Orin and trades
+packing efficiency (94.5\% versus 97.0\%) for higher per-tile throughput.
+Thus the sync-free path stays close to the per-frame oracle, but the benefit of
+individual construction and decomposition mechanisms depends on device
+utilization.
+
+\input{figures/dtype_decomposition_table}
+
+\paragraph{Tensor core sensitivity.}
+Table~\ref{tab:dtype-decomposition} compares the two arithmetic modes. For
+DynConv on RTX~3080, \sysname reduces latency from 5.99 to 3.20\,ms
+(1.87$\times$) in FP32 (SIMT) and from 3.37 to 2.57\,ms (1.31$\times$) in
+FP16 (tensor core). On AGX Orin, it reduces FireFlowNet latency from 12.47 to
+5.20\,ms (2.40$\times$) and from 4.31 to 2.78\,ms (1.55$\times$), respectively.
+Both settings therefore retain an end-to-end gain under tensor cores, although
+the gain narrows relative to FP32.
+
+Construction does not cause the narrower gain: it remains only 0.08--0.09\,ms
+(3.0--3.1\% of \sysname FP16 latency). Instead, tensor cores reduce the
+removable convolution time and expose workload-specific residual costs. In
+DynConv, the convolution saving falls from 3.07\,ms in FP32 to
+0.84\,ms in FP16, while \emph{Other} occupies 1.06\,ms (41.1\%) of the FP16
+\sysname path. In FireFlowNet, \sysname still reduces FP16 convolution from
+3.82 to 1.48\,ms, after which elementwise operators account for 1.15\,ms
+(41.5\%) of its latency. FP16 PCKh for DynConv (88.07\% Dense and 86.68\%
+\sysname) matches FP32 within 0.01 percentage points.
 
 \input{figures/batch_cost_decomposition_table}
 
@@ -424,25 +366,6 @@ convolution cost falls 2.68$\times$, compared with 1.63$\times$ for \sysname.
 1.49$\times$. These results, in turn, show why adaptive decomposition matters
 at batch size~1: \sysname adapts its work decomposition to each short worklist
 instead of relying on a larger batch to expand the launch grid.
-
-\input{figures/dynconv_dtype_decomposition_table}
-
-\paragraph{Tensor core sensitivity.}
-Table~\ref{tab:dynconv-dtype-decomposition} decomposes DynConv pose latency
-under FP16 (tensor core) execution alongside the FP32 (SIMT) baseline.
-\sysname still reduces Dense FP16 latency from 3.37 to 2.57\,ms
-(1.31$\times$), though the gain is narrower than the 1.87$\times$ in FP32.
-Two factors outside the worklist-driven convolution account for this. First,
-tensor cores compress the arithmetic phase of each kernel but not its fixed
-pipeline cost (startup, drain, scheduling); this fixed cost therefore becomes
-more dominant, and removing the same proportion of arithmetic yields less
-wall-clock saving (absolute convolution saving falls from 3.07 in FP32 to 0.84\,ms in FP16).
-Second, shorter kernels expose more inter-kernel idle time, causing
-\emph{Other} to grow from 0.65 to 1.10\,ms for Dense and from 0.86 to 1.06\,ms
-for \sysname (33--41\% of FP16 latency). Construction remains 0.08\,ms (3.0\%), unchanged from FP32, so
-the narrower gain is not caused by worklist overhead. FP16 PCKh (88.07\% Dense,
-86.68\% \sysname) matches FP32 within 0.01 percentage points; the datatype
-introduces no evident accuracy difference.
 
 \subsection{Discussion}
 \label{sec:eval:discussion}
@@ -463,6 +386,6 @@ FP32 isolates execution-model differences from arithmetic-precision effects.
 Extending the worklist compute stage to tensor cores also raises an open
 reduction problem: split-K partitions must atomically accumulate FP32 partial
 sums and convert them back to FP16, and for short worklists this overhead can
-outweigh the FP16 arithmetic savings. The targeted DynConv study confirms that \sysname retains an end-to-end gain
-under tensor cores; a dedicated tensor core reduction design for short worklists
-is a natural next step.
+outweigh the FP16 arithmetic savings. The targeted sensitivity studies confirm
+that \sysname retains end-to-end gains under tensor cores; a dedicated tensor
+core reduction design for short worklists is a natural next step.

@@ -85,24 +85,21 @@ requirements, as Figure~\ref{fig:overview} summarizes.
     \textbf{[TODO]} \sysname overview. Left: the mask-space construction stage
     propagates the output mask, emits tile-local worklist segments into a
     preallocated buffer, and records the worklist length on the device;
-    compatible operators reuse this metadata. Right: the device-bounded worklist
-    is consumed by a persistent grid capped by concurrent block residency and
-    the layer configuration's dense work bound, while the most recent
-    completed input-activity observation from an earlier frame selects a
-    high-throughput, low-padding workload decomposition.
+    compatible operators reuse this metadata. Right: a persistent compute grid
+    reads the device-resident worklist length and selects among data-parallel,
+    split-$K$, and hybrid Stream-$K$ decompositions via a policy table
+    calibrated offline.
     \vspace{2.5cm}}}
   \caption{The \sysname two-stage pipeline. Construction emits tile-locally
   ordered worklist segments using only mask and coordinate metadata, then reuses
-  the metadata across compatible operators. Compute launches a grid capped by
-  the layer configuration's dense work bound and concurrent block residency,
-  then adapts its decomposition from a completed, temporally lagged
-  input-activity observation without host synchronization.}
+  the metadata across compatible operators. Compute launches a persistent grid
+  capped by SM occupancy and adapts its $K$-splitting decomposition on-device
+  from the exact worklist length without host synchronization.}
   \Description{Placeholder for the \sysname overview figure. The construction
   stage emits and reuses mask and worklist metadata. The compute stage consumes
-  a device-bounded worklist with persistent blocks whose grid is capped by
-  concurrent block residency and the layer configuration's dense work bound,
-  and selects its workload decomposition from a completed input-activity
-  observation from an earlier frame.}
+  a device-bounded worklist with a persistent grid and selects its
+  decomposition mode from a device-resident policy table indexed by the current
+  tile count.}
   \label{fig:overview}
 \end{figure*}
 
@@ -128,25 +125,21 @@ construction, while cross-operator reuse reduces how often it occurs; together,
 they address the Worklist Construction Cost challenge.
 
 \paragraph{Compute stage.}
-The worklist length varies across layers and inputs and remains device-resident;
-synchronizing its current value to the host would stall the per-frame path, yet
-the workload decomposition must adapt because its padded work and exposed
-parallelism govern useful-compute ratio and GPU throughput. To execute without a
-host-visible bound, \sysname launches a persistent grid whose size is capped by
-the smaller of the GPU's concurrent block residency and the layer
-configuration's dense work bound, then lets the blocks consume $\mathcal{W}$
-through a grid-stride loop bounded by device-resident $n_{\mathcal{W}}$.
-
-To choose a decomposition without querying the exact $n_{\mathcal{W}}$,
-\sysname builds from representative temporal traces a table
-that maps input-activity levels to configurations that sustain throughput while
-limiting padding, then indexes it with the most recent completed observation
-from one or more frames earlier; temporal correlation keeps this lagged signal
-informative, while completed-only polling prevents selection from blocking. The
-device count thus bounds the current work, while the data-driven signal chooses
-its decomposition; together, they sustain useful-compute ratio and GPU
-throughput as the worklist length varies without synchronizing the per-frame
-path.
+The compute stage replaces only the coordinate source of a dense tiled
+implicit-GEMM pipeline with the worklist; tensor layouts, weight access, and the
+per-position channel-and-kernel reduction remain unchanged from the dense path.
+The worklist length varies across layers and inputs and remains device-resident.
+A fixed decomposition cannot serve the full range: too little parallelism
+leaves the GPU underutilized at low activity, while unnecessary parallelism
+adds overhead at high activity, both degrading throughput. Yet the conventional
+approach of selecting a workload-size-specific decomposition on the host is
+impractical, because reading the length back would incur a synchronization on
+the critical path. \sysname instead reads the exact worklist
+length inside the compute kernel, looks up an offline-calibrated table keyed by
+the current length, and decomposes the workload accordingly to keep the GPU's
+processing capacity occupied. This on-device
+adaptation sustains GPU throughput as the worklist length changes from frame to
+frame without any host-side decision on the per-frame path.
 
 Neither stage suffices alone: excessive construction cost, a low useful-compute
 ratio, or low consumption throughput can each erase the benefit of issuing less
