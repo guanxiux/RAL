@@ -54,8 +54,8 @@ policy~\cite{deltacnn} renders
 52.2\% of the convolution work unnecessary, yet tile
 skipping~\cite{deltacnn} runs 26.1\% slower than dense with a useful-compute
 ratio of only ??\%. Gather-scatter~\cite{mmcv} lifts the useful-compute ratio
-to near one but sustains only ??\% of tile skipping's throughput, running
-4.3$\times$ slower than dense.
+to near one but sustains only ??\% of tile skipping's throughput, running at
+4.3$\times$ dense latency.
 
 Our key insight is that output coordinates form the interface between
 position selection and the reduction datapath in tiled execution;
@@ -94,9 +94,8 @@ metadata instead of reconstructing it.
 
 To sustain end-to-end worklist efficiency, construction emits contiguous per-tile segments ordered by the dense
 tile traversal, giving the compute stage tile-local structure without global sorting.
-Because the worklist changes only the number of output tiles while each tile's
-reduction datapath stays intact, \sysname launches a persistent grid that
-serves any worklist length, with idle blocks absorbing reduction work from
+Because the worklist changes the number of output-coordinate rows while each row's tensor layout and reduction datapath remain unchanged, \sysname launches a persistent grid that
+serves any worklist length, with idle thread blocks absorbing reduction work from
 undersubscribed tiles. The kernel reads the device-resident worklist length and
 indexes a precomputed table and decomposes the workload accordingly, sustaining GPU
 utilization across varying worklist lengths without host synchronization.
