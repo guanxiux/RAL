@@ -181,7 +181,7 @@ def load_wiseconv_efficiency() -> dict[str, dict]:
     with EFFECTIVE_THROUGHPUT.open(encoding="utf-8", newline="") as source:
         rows = [
             row for row in csv.DictReader(source)
-            if row["system"] == "wiseconv"
+            if row["device"] == "rtx3080" and row["system"] == "wiseconv"
         ]
     by_workload = {row["workload"]: row for row in rows}
     if set(by_workload) != set(WORKLOADS) or len(rows) != len(WORKLOADS):
@@ -197,9 +197,11 @@ def build_rows() -> list[dict]:
         eta = efficiency[workload]
         if int(eta["frames"]) != worklist["frames"]:
             raise ValueError(f"frame count mismatch for {workload}")
-        eta_construct = float(eta["eta_coverage_frame_mean"])
-        eta_compute = float(eta["eta_packing_frame_mean"])
-        eta_total = float(eta["useful_compute_ratio_frame_mean"])
+        summary = load_json(REPO / eta["source"])
+        decomposition = summary["workloads"][workload]["wiseconv_decomposition"]
+        eta_construct = float(decomposition["eta_coverage_E_over_W"])
+        eta_compute = float(decomposition["eta_packing_W_over_C"])
+        eta_total = float(eta["useful_compute_ratio"])
         if not all(0.0 <= value <= 1.0 for value in (
             eta_construct, eta_compute, eta_total
         )):

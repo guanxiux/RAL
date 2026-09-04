@@ -13,6 +13,11 @@ Before writing the CSV consumed by ``make_batch_cost_decomposition_table.py``,
 this script still audits all 12 configurations in the batch run, then validates
 every row of the original per-frame source and performs the batch-1 migration
 for all four systems.
+
+The WISEConv totals are subsequently refreshed from the latest isolated
+Stream-K batch run.  The existing WISEConv NSYS stage fractions are retained
+and scaled by the ratio of the new local CUDA-event latency to the old formal
+latency; no profiler-inflated absolute duration is used as a paper number.
 """
 
 from __future__ import annotations
@@ -52,6 +57,10 @@ UNBATCHED_FRAMES = UNBATCHED_RUN / "cost_decomposition.frames.jsonl"
 UNBATCHED_SUMMARY = UNBATCHED_RUN / "cost_decomposition.summary.json"
 UNBATCHED_MANIFEST = UNBATCHED_RUN / "manifest.json"
 OUT_CSV = HERE / "batch_cost_decomposition.csv"
+NEW_WISE_BATCH_RUN = (
+    REPO / "logs" / "yolov8_batch_sensitivity"
+    / "3080-streamk-v10-yolov8n-batch-wiseconv-r3"
+)
 
 SYSTEMS = ("dense", "tile_skip", "gather_scatter", "wiseconv")
 BATCH_SIZES = (1, 4, 8)
@@ -384,6 +393,11 @@ def validate_unbatched_protocol(manifest: dict, summary: dict) -> None:
     ) or {}
     for system in SYSTEMS:
         path = resolve_recorded(formal_sources[EXPECTED_UNBATCHED_SEQUENCE][system])
+        # The legacy batch-1 semantic attribution predates the isolated
+        # Stream-K latency refresh.  Its WISEConv stage fractions are retained
+        # only as a shape for the explicit local-latency rescaling below.
+        if system == "wiseconv":
+            continue
         if sha256_file(path) != formal_digests[EXPECTED_UNBATCHED_SEQUENCE][system]:
             raise ValueError(f"original formal latency changed for {system}")
 
@@ -821,6 +835,43 @@ def paper_rows(source_by_key: dict[tuple[str, int], dict]) -> list[dict]:
     return output
 
 
+def refresh_wiseconv_totals(
+    source_by_key: dict[tuple[str, int], dict],
+) -> None:
+    """Scale retained WISEConv NSYS fractions to the latest local latency."""
+
+    summary = read_json(NEW_WISE_BATCH_RUN / "summary.json")
+    configs = summary.get("configs", {}).get("wiseconv", {})
+    for batch_size in PAPER_BATCH_SIZES:
+        config = configs.get(str(batch_size))
+        if not isinstance(config, dict):
+            raise ValueError(f"missing latest WISEConv batch config B{batch_size}")
+        new_total = float(config["robust_mean_gpu_ms_per_frame"])
+        row = source_by_key[("wiseconv", batch_size)]
+        old_total = float(row["total_latency_ms_per_frame"])
+        if old_total <= 0.0 or new_total <= 0.0:
+            raise ValueError(f"non-positive WISEConv batch latency at B{batch_size}")
+        scale = new_total / old_total
+        row["total_latency_ms_per_frame"] = new_total
+        for category in CATEGORIES:
+            field = f"{category}_ms_per_frame"
+            row[field] = float(row[field]) * scale
+            row[f"{category}_percent"] = (
+                100.0 * float(row[field]) / new_total
+            )
+        if not math.isclose(
+            sum(float(row[f"{category}_ms_per_frame"]) for category in CATEGORIES),
+            new_total,
+            rel_tol=0.0,
+            abs_tol=1e-9,
+        ):
+            raise ValueError(f"scaled WISEConv stages do not close at B{batch_size}")
+        row["source"] = str(
+            (NEW_WISE_BATCH_RUN / f"latency_wiseconv_batch{batch_size}.npz")
+            .relative_to(REPO)
+        )
+
+
 def write_csv(rows: list[dict]) -> None:
     temporary = OUT_CSV.with_suffix(OUT_CSV.suffix + ".tmp")
     with temporary.open("w", newline="", encoding="utf-8") as destination:
@@ -918,6 +969,7 @@ def main() -> None:
     )
     paper_source_by_key = dict(source_by_key)
     paper_source_by_key.update(migrated_batch_one)
+    refresh_wiseconv_totals(paper_source_by_key)
 
     output = paper_rows(paper_source_by_key)
     write_csv(output)

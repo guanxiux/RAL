@@ -249,25 +249,25 @@ with dense execution, the upstream sparsity policies lower AP and PCKh by only
 Under the same execution settings as the end-to-end evaluation, we estimate
 full-model throughput $T$ and effective throughput $\eta T$ on RTX~3080 and
 AGX Orin (Figure~\ref{fig:effective-throughput}). \sysname sustains
-35.4--91.2\% of Dense raw throughput on RTX~3080 and 58.6--83.5\% on AGX
+30.7--87.2\% of Dense raw throughput on RTX~3080 and 58.6--83.5\% on AGX
 Orin, the highest raw throughput among the sparse paths in every workload.
 DeltaCNN's lower raw throughput reflects the impact of routing very sparse
 tiles through its fused selective path~\cite{deltacnn}. The two YOLO workloads
 lie at the upper end because their higher active ratios expose more parallelism
 and amortize fixed costs. Combining throughput and useful-compute ratio,
-\sysname reaches 1.52--2.62$\times$ the strongest competing effective
+\sysname reaches 1.52--1.78$\times$ the strongest competing effective
 throughput on RTX~3080 and 1.45--1.65$\times$ on AGX Orin.
 
 Table~\ref{tab:worklist-efficiency} localizes the remaining wasted work on
 RTX~3080. Its $\eta_{\mathrm{construct}}$ stays at 98.5--100.0\%, while the
-selected decompositions give $\eta_{\mathrm{compute}}=96.5$--$99.1\%$ for
+selected decompositions give $\eta_{\mathrm{compute}}=96.7$--$99.1\%$ for
 FireFlowNet and the two YOLO workloads. DynConv instead has
-$\eta_{\mathrm{compute}}=81.7\%$: its low
+$\eta_{\mathrm{compute}}=90.1\%$: its low
 active ratio and small spatial grids yield exceptionally short worklists
 (P10, P50, and P90 lengths of 3, 43, and 389), making final-tile padding
 proportionally large. Because trace-driven adaptation is disabled for its
 temporally unrelated inputs (\S\ref{sec:eval:setup}), DynConv uses a fixed
-per-layer decomposition. Even in this setting, its 81.7\% useful-compute ratio
+per-layer decomposition. Even in this setting, its 90.1\% useful-compute ratio
 is substantially above tile skipping's 48.9\% on RTX~3080.
 
 \input{figures/cost_decomposition_table}
@@ -304,30 +304,17 @@ avoids this auxiliary path while keeping convolution dominant.
 \input{figures/ablation_table}
 
 Table~\ref{tab:ablation} isolates the construction and consumption choices on
-YOLOv8n. Synchronizing each layer's exact worklist length raises total latency
-from 1.579 to 6.114\,ms on RTX~3080 and from 16.996 to 23.787\,ms on AGX Orin.
-For this row, Table~\ref{tab:ablation} uses the corresponding Ideal level
-construction and convolution times to avoid folding synchronization-induced
-GPU idle time into the stage attribution; its Total retains the measured
-readback and synchronization cost. The sync-free feedback path therefore
-avoids a coordination cost that dominates any benefit of exact launch sizing
-on both platforms.
-
-The remaining effects are hardware-dependent. Global ordering raises total
-latency by 8.3\% on RTX~3080 and 2.5\% on AGX Orin because its extra
-construction outweighs its negligible convolution change. Atomic append and
-No reuse incur 6.3\% and 5.9\% overhead on RTX~3080, respectively, but remain
-within 0.7\% of Ours on AGX Orin. Launching the dense upper-bound grid likewise
-matches the persistent grid in these two YOLOv8n settings. Static level is
-3.4\% slower than Ours on RTX~3080 but 1.2\% faster on AGX Orin, while the
-Ideal level oracle improves on Ours by only 2.6\% and 2.7\%.
-The lower $\eta$ on AGX Orin is also a decomposition choice rather than a mask
-difference: Ours has the same 98.54\% coverage on both platforms, but
-device-specific autotuning uses larger $B_M$ tiles on AGX Orin and trades
-packing efficiency (94.5\% versus 97.0\%) for higher per-tile throughput.
-Thus the sync-free path stays close to the per-frame oracle, but the benefit of
-individual construction and decomposition mechanisms depends on device
-utilization.
+YOLOv8n. On RTX~3080, Ours has 95.5\% useful-compute ratio and a measured
+1.626\,ms latency. Atomic append, Global order, and No reuse raise latency by
+6.1\%, 8.1\%, and 6.2\%, respectively, exposing the cost of global
+coordination and rebuilding worklists. For the consumption stage, DP only is
+34.0\% slower than Ours, whereas disabling Hybrid is within 0.5\% and is
+selected for several full-worklist shapes by the relaxed guard. Synchronizing
+the exact worklist length costs 6.207\,ms (3.82$\times$ Ours), so its host
+readback dominates any gain from exact launch sizing. Cons. and Conv. are
+shown for Ours using the current semantic attribution; the remaining variant
+rows report their measured full-model latency and useful-compute ratio. AGX
+Orin entries are reserved for the multi-platform refresh.
 
 \input{figures/dtype_decomposition_table}
 
@@ -361,9 +348,9 @@ from the input shape, so increasing the batch dimension adds independent tiles
 from multiple temporal streams, consistent with DeltaCNN's observation for
 high-end GPUs~\cite{deltacnn}. The effect is
 concentrated in convolution: from batch size~1 to~8, tile skipping's per-frame
-convolution cost falls 2.68$\times$, compared with 1.63$\times$ for \sysname.
-\sysname remains fastest, but its lead narrows from 1.79$\times$ to
-1.49$\times$. These results, in turn, show why adaptive decomposition matters
+convolution cost falls 2.68$\times$, compared with 1.72$\times$ for \sysname.
+\sysname remains fastest, but its lead narrows from 1.76$\times$ to
+1.55$\times$. These results, in turn, show why adaptive decomposition matters
 at batch size~1: \sysname adapts its work decomposition to each short worklist
 instead of relying on a larger batch to expand the launch grid.
 

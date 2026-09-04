@@ -1,0 +1,37 @@
+\begin{table}[!t]
+  \centering
+  \caption{YOLOv8n component ablation on RTX~3080; AGX Orin is
+  reserved for the multi-platform refresh. Times are milliseconds.}
+  \Description{A table compares seven WISEConv design variants on RTX
+  3080 and reserves the corresponding AGX Orin columns. Each platform
+  reports useful-compute ratio, construction time, convolution time,
+  and full-model latency when available.}
+  \label{tab:ablation}
+  \fontsize{7.0}{7.8}\selectfont
+  \setlength{\tabcolsep}{0.7pt}
+  \renewcommand{\arraystretch}{1.06}
+  \begin{tabular*}{\columnwidth}{@{\extracolsep{\fill}}l c r r r c r r r@{}}
+    \hline
+    \multirow{2}{*}{\textbf{Variant}} &
+    \multicolumn{4}{c}{\textbf{RTX 3080}} &
+    \multicolumn{4}{c}{\textbf{AGX Orin}} \\
+    \cline{2-5}\cline{6-9}
+    & $\boldsymbol{\eta}$ & \textbf{Cons.} & \textbf{Conv.} & \textbf{Total}
+    & $\boldsymbol{\eta}$ & \textbf{Cons.} & \textbf{Conv.} & \textbf{Total} \\
+    \hline
+    Atomic append & 95.6\% & \textemdash{} & \textemdash{} & 1.726 & \textemdash{} & \textemdash{} & \textemdash{} & \textemdash{} \\
+    Global order & 95.6\% & \textemdash{} & \textemdash{} & 1.759 & \textemdash{} & \textemdash{} & \textemdash{} & \textemdash{} \\
+    No reuse & 97.0\% & \textemdash{} & \textemdash{} & 1.726 & \textemdash{} & \textemdash{} & \textemdash{} & \textemdash{} \\
+    DP only & 95.5\% & \textemdash{} & \textemdash{} & 2.179 & \textemdash{} & \textemdash{} & \textemdash{} & \textemdash{} \\
+    No Hybrid & 95.5\% & \textemdash{} & \textemdash{} & 1.619 & \textemdash{} & \textemdash{} & \textemdash{} & \textemdash{} \\
+    Sync exact selector & 95.5\% & \textemdash{} & \textemdash{} & 6.207 & \textemdash{} & \textemdash{} & \textemdash{} & \textemdash{} \\
+    \textbf{Ours} & 95.5\% & 0.105 & 1.173 & 1.626 & \textemdash{} & \textemdash{} & \textemdash{} & \textemdash{} \\
+    \hline
+  \end{tabular*}
+  \par\vspace{5pt}
+  \noindent\parbox{\columnwidth}{\scriptsize\textit{Notes.}
+  $\eta$ is the full-model useful-compute ratio. Cons. and Conv. are
+  construction- and convolution-stage latency; dashes indicate that
+  variant-level stage attribution was not collected. AGX Orin entries
+  are intentionally blank pending the multi-platform refresh.}
+\end{table}

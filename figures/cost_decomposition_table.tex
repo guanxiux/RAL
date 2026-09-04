@@ -1,38 +1,34 @@
-\begin{table}[!ht]
+\begin{table}[!t]
   \centering
-  \caption{YOLOv8n latency decomposition on RTX~3080 into worklist
-  construction (Cons.), convolution (Conv.), elementwise operators
-  (Elem., e.g., activation and normalization),
-  and other work, with stage entries in ms and percentages of total latency
-  in parentheses.}
-  \Description{A table divides every YOLOv8n frame into bins with low and high
-  active ratios and compares latency attributed to
-  construction, convolution, elementwise, and other work for Dense, Tile
-  skipping, Gather-scatter, and WISEConv. Construction is applicable only
-  to WISEConv.}
+  \caption{Full-model YOLOv8n latency decomposition on RTX~3080 and
+  AGX Orin. Entries are milliseconds, with shares of total latency in
+  parentheses.}
+  \Description{A table compares Dense, Tile skipping, Gather-scatter,
+  and WISEConv on RTX 3080 and AGX Orin, decomposing full-model latency
+  into construction, convolution, elementwise, and other work.}
   \label{tab:cost-decomposition}
   \footnotesize
-  \setlength{\tabcolsep}{2.4pt}
-  \renewcommand{\arraystretch}{1.15}
+  \setlength{\tabcolsep}{2.35pt}
+  \renewcommand{\arraystretch}{1.13}
   \begin{tabular}{@{}c c c c c c c@{}}
     \hline
       & \textbf{System} & \textbf{Tot.} & \textbf{Cons.} &
       \textbf{Conv.} & \textbf{Elem.} & \textbf{Other} \\
     \hline
-    \multirow{4}{*}{\rotatebox[origin=c]{90}{Low (40.7\%)}} & Dense & 2.79 & \textemdash{} & 2.54(91.2\%) & 0.14(5.0\%) & 0.10(3.7\%) \\
-    & Tile skipping & 3.42 & \textemdash{} & 3.09(90.3\%) & 0.16(4.6\%) & 0.17(5.1\%) \\
-    & Gather & 11.81 & \textemdash{} & 0.73(6.2\%) & 0.09(0.7\%) & 11.00(93.1\%) \\
-    & \textbf{WISEConv} & 1.47 & 0.10(7.1\%) & 1.09(73.8\%) & 0.12(8.2\%) & 0.16(10.9\%) \\
+    \multirow{4}{*}{\rotatebox[origin=c]{90}{\strut RTX~3080}} & Dense & 2.79 & \textemdash{} & 2.55(91.3\%) & 0.14(5.0\%) & 0.10(3.7\%) \\
+    & Tile skipping & 3.46 & \textemdash{} & 3.13(90.3\%) & 0.16(4.6\%) & 0.17(5.0\%) \\
+    & Gather & 11.49 & \textemdash{} & 0.76(6.6\%) & 0.09(0.8\%) & 10.64(92.6\%) \\
+    & \textbf{WISEConv} & 1.57 & 0.11(6.7\%) & 1.17(74.9\%) & 0.12(7.9\%) & 0.16(10.4\%) \\
     \hline
-    \multirow{4}{*}{\rotatebox[origin=c]{90}{High (56.7\%)}} & Dense & 2.79 & \textemdash{} & 2.54(91.2\%) & 0.14(5.0\%) & 0.10(3.7\%) \\
-    & Tile skipping & 3.59 & \textemdash{} & 3.25(90.4\%) & 0.17(4.7\%) & 0.18(4.9\%) \\
-    & Gather & 11.82 & \textemdash{} & 0.83(7.0\%) & 0.09(0.8\%) & 10.90(92.2\%) \\
-    & \textbf{WISEConv} & 1.69 & 0.11(6.2\%) & 1.29(76.3\%) & 0.13(7.7\%) & 0.17(9.8\%) \\
+    \multirow{4}{*}{\rotatebox[origin=c]{90}{\strut AGX~Orin}} & Dense & 25.09 & \textemdash{} & 22.61(90.1\%) & 1.66(6.6\%) & 0.82(3.3\%) \\
+    & Tile skipping & 25.10 & \textemdash{} & 21.59(86.0\%) & 1.70(6.8\%) & 1.81(7.2\%) \\
+    & Gather & 39.87 & \textemdash{} & 9.14(22.9\%) & 0.94(2.4\%) & 29.79(74.7\%) \\
+    & \textbf{WISEConv} & 17.07 & 0.37(2.1\%) & 13.41(78.6\%) & 1.15(6.7\%) & 2.14(12.6\%) \\
     \hline
   \end{tabular}
-  \par\vspace{6pt}
-  \noindent\parbox{\columnwidth}{\footnotesize\textit{Notes.} Low and High
-  median-split the evaluated MOT16 frames by active ratio; labels report bin
-  means. Each stage time multiplies its per-frame NSYS fraction by the
-  corresponding end-to-end CUDA-event latency.}
+  \par\vspace{5pt}
+  \noindent\parbox{\columnwidth}{\footnotesize\textit{Notes.} Cons.,
+  Conv., and Elem. denote worklist construction, convolution, and
+  elementwise operators. Stage fractions from steady-state profiling are
+  scaled to full-trace CUDA-event latency.}
 \end{table}

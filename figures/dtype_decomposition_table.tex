@@ -1,0 +1,34 @@
+\begin{table*}[!t]
+  \centering
+  \caption{FP32 (SIMT) and FP16 (tensor core) full-model latency
+  decomposition for DynConv on RTX~3080 and FireFlowNet on AGX Orin.
+  Entries are milliseconds, with shares of total latency in parentheses.}
+  \Description{A table compares Dense and WISEConv in FP32 and FP16 for
+  DynConv on RTX 3080 and FireFlowNet on AGX Orin, decomposing latency
+  into construction, convolution, elementwise, and other work.}
+  \label{tab:dtype-decomposition}
+  \footnotesize
+  \setlength{\tabcolsep}{3.0pt}
+  \renewcommand{\arraystretch}{1.10}
+  \begin{tabular*}{\textwidth}{@{\extracolsep{\fill}}c c c c c c c c@{}}
+    \hline
+    \textbf{Setting} & \textbf{Type} & \textbf{System} & \textbf{Tot.}
+    & \textbf{Cons.} & \textbf{Conv.} & \textbf{Elem.} & \textbf{Other} \\
+    \hline
+    \multirow{4}{*}{\shortstack{DynConv\\RTX 3080}} & \multirow{2}{*}{FP32} & Dense & 5.99 & \textemdash{} & 5.25(87.7\%) & 0.09(1.5\%) & 0.65(10.8\%) \\
+    &  & \textbf{WISEConv} & 3.20 & 0.09(2.9\%) & 2.18(68.2\%) & 0.07(2.1\%) & 0.86(26.7\%) \\
+    & \multirow{2}{*}{FP16} & Dense & 3.37 & \textemdash{} & 2.22(66.0\%) & 0.05(1.5\%) & 1.10(32.5\%) \\
+    &  & \textbf{WISEConv} & 2.57 & 0.08(3.0\%) & 1.38(53.4\%) & 0.06(2.5\%) & 1.06(41.1\%) \\
+    \hline
+    \multirow{4}{*}{\shortstack{FireFlowNet\\AGX Orin}} & \multirow{2}{*}{FP32} & Dense & 12.47 & \textemdash{} & 11.82(94.9\%) & 0.62(5.0\%) & 0.02(0.2\%) \\
+    &  & \textbf{WISEConv} & 5.20 & 0.09(1.7\%) & 4.03(77.6\%) & 1.00(19.3\%) & 0.07(1.4\%) \\
+    & \multirow{2}{*}{FP16} & Dense & 4.31 & \textemdash{} & 3.82(88.7\%) & 0.48(11.0\%) & 0.01(0.2\%) \\
+    &  & \textbf{WISEConv} & 2.78 & 0.09(3.1\%) & 1.48(53.2\%) & 1.15(41.5\%) & 0.06(2.2\%) \\
+    \hline
+  \end{tabular*}
+  \par\vspace{5pt}
+  \noindent\parbox{\textwidth}{\footnotesize\textit{Notes.} Stage
+  fractions use the same semantic attribution as
+  Table~\ref{tab:cost-decomposition} and are scaled to each setting's
+  full-trace CUDA-event latency.}
+\end{table*}

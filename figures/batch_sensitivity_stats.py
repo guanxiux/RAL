@@ -23,6 +23,10 @@ HERE = Path(__file__).resolve().parent
 REPO = HERE.parents[1]
 RUN_NAME = "3080-yolov8n-mot16-03-b1248-r3"
 RUN_DIR = REPO / "logs" / "yolov8_batch_sensitivity" / RUN_NAME
+WISE_RUN_DIR = (
+    REPO / "logs" / "yolov8_batch_sensitivity"
+    / "3080-streamk-v10-yolov8n-batch-wiseconv-r3"
+)
 OUT_CSV = HERE / "batch_sensitivity.csv"
 
 SYSTEMS = ("dense", "tile_skip", "gather_scatter", "wiseconv")
@@ -120,6 +124,7 @@ def load_config(
     system: str,
     batch_size: int,
     timed_frames: int,
+    run_dir: Path = RUN_DIR,
 ) -> tuple[dict, set[tuple[str, int]]]:
     stored = summary["configs"][system][str(batch_size)]
     expected_batches = timed_frames // batch_size
@@ -134,7 +139,7 @@ def load_config(
     if int(stored["cuda_graph_count"]) != EXPECTED_GRAPHS[system]:
         raise ValueError(f"unexpected graph count for {system}/B{batch_size}")
 
-    latency_path = RUN_DIR / f"latency_{system}_batch{batch_size}.npz"
+    latency_path = run_dir / f"latency_{system}_batch{batch_size}.npz"
     with np.load(latency_path) as arrays:
         latency = arrays["gpu_latency_ms"].astype(np.float64)
         stream_ids = arrays["stream_ids"]
@@ -212,18 +217,42 @@ def load_config(
 
 def main() -> None:
     run, summary, timed_frames = load_protocol()
+    wise_run = load_json(WISE_RUN_DIR / "run.json")
+    wise_summary = load_json(WISE_RUN_DIR / "summary.json")
+    if (
+        wise_run.get("status") != "complete"
+        or wise_run.get("workload") != "yolov8n_mot16_stream_batch_sensitivity"
+        or wise_run.get("model") != "yolov8n"
+        or tuple(wise_run.get("sequences") or ()) != ("MOT16-03",)
+        or int(wise_run.get("base_streams_per_sequence", 0)) != 8
+        or tuple(wise_run.get("batch_sizes") or ()) != BATCH_SIZES
+        or tuple(wise_run.get("backends") or ()) != ("wiseconv",)
+        or int(wise_run.get("repetitions", 0)) != 3
+        or wise_run.get("tf32") is not False
+        or wise_run.get("autotune") is not True
+        or wise_run.get("fresh_model_per_batch_size") is not True
+        or not bool((wise_run.get("cuda_graph_by_backend") or {}).get("wiseconv"))
+    ):
+        raise ValueError(f"unexpected isolated WISEConv batch protocol at {WISE_RUN_DIR}")
+    if int(wise_run.get("timed_frames_per_round", 0)) != timed_frames:
+        raise ValueError("WISEConv batch run has a different timed-frame count")
+    if set(wise_summary.get("configs") or {}) != {"wiseconv"}:
+        raise ValueError("isolated WISEConv batch summary has unexpected systems")
     rows = []
     canonical_frames = None
     for system in SYSTEMS:
         for batch_size in BATCH_SIZES:
+            source_summary = wise_summary if system == "wiseconv" else summary
+            source_run_dir = WISE_RUN_DIR if system == "wiseconv" else RUN_DIR
+            source_run = wise_run if system == "wiseconv" else run
             row, frame_keys = load_config(
-                summary, system, batch_size, timed_frames
+                source_summary, system, batch_size, timed_frames, source_run_dir
             )
             row.update(
                 sequence="MOT16-03",
-                device=str(run["device"]["name"]),
-                tf32=str(run["tf32"]).lower(),
-                run_git_commit=str(run["git_commit"]),
+                device=str(source_run["device"]["name"]),
+                tf32=str(source_run["tf32"]).lower(),
+                run_git_commit=str(source_run["git_commit"]),
             )
             if canonical_frames is None:
                 canonical_frames = frame_keys
@@ -281,8 +310,9 @@ def main() -> None:
         writer.writeheader()
         writer.writerows(rows)
 
-    print(f"# source: {RUN_DIR.relative_to(REPO)}")
-    print(f"# commit: {run['git_commit']}")
+    print(f"# baseline source: {RUN_DIR.relative_to(REPO)}")
+    print(f"# WISEConv source: {WISE_RUN_DIR.relative_to(REPO)}")
+    print(f"# baseline commit: {run['git_commit']}")
     print(f"# identical timed-frame population: {len(canonical_frames or ())}")
     print("system             B   batch ms   ms/frame        fps   vs B1")
     for row in rows:
