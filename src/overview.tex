@@ -134,12 +134,19 @@ leaves the GPU underutilized at low activity, while unnecessary parallelism
 adds overhead at high activity, both degrading throughput. Yet the conventional
 approach of selecting a workload-size-specific decomposition on the host is
 impractical, because reading the length back would incur a synchronization on
-the critical path. \sysname instead reads the exact worklist
-length inside the compute kernel, looks up an offline-calibrated table keyed by
-the current length, and decomposes the workload accordingly to keep the GPU's
-processing capacity occupied. This on-device
-adaptation sustains GPU throughput as the worklist length changes from frame to
-frame without any host-side decision on the per-frame path.
+the critical path.
+
+Because the worklist changes only the number of output tiles
+while each tile's reduction datapath stays intact, \sysname launches a
+persistent grid whose block count is set by the GPU's concurrent residency, not
+by the current worklist length. The same blocks serve any worklist: when tiles
+do not fill every block, idle blocks absorb reduction work from
+undersubscribed tiles instead of sitting empty. Which blocks share and how much
+each reduces is determined on-device: the kernel reads the exact worklist
+length, indexes an offline-calibrated table keyed by the current length, and
+decomposes the workload accordingly. This on-device adaptation sustains GPU
+throughput as the worklist length changes from frame to frame without any
+host-side decision on the per-frame path.
 
 Neither stage suffices alone: excessive construction cost, a low useful-compute
 ratio, or low consumption throughput can each erase the benefit of issuing less

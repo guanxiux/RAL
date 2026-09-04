@@ -90,8 +90,9 @@ correctness; traversal order within each interval is retained for locality.
 
 \sysname thus confines its ordering guarantee to each contiguous segment:
 coordinates retain the tile's dense traversal, while independently reserved
-segments provide no cross-boundary locality guarantee. A $B_M$-wide compute
-tile may therefore span coordinates from multiple construction segments when
+segments provide no cross-boundary locality guarantee. A compute
+tile of $B_M$ positions (the output-position tile width used by the compute
+stage, \S\ref{sec:design:compute}) may therefore span coordinates from multiple construction segments when
 segments are shorter than $B_M$; the preserved locality is intra-segment
 contiguity, not compute-tile-to-construction-tile alignment. As shown in
 \S\ref{sec:eval:ablation-sensitivity}, this tile-local order achieves compute-stage
@@ -330,7 +331,7 @@ from the dense feature tensor by worklist coordinates rather than contiguous
 grid traversal. What changes per frame is how the $K$~reduction across output tiles is assigned
 to thread blocks. Within the compute kernel, \sysname reads the current
 $n^l_{\mathcal{W}}$ and selects among three decomposition modes derived from
-the Stream-$K$~\cite{streamk}:
+Stream-$K$:
 \begin{itemize}
   \item \emph{Data-parallel}: each block owns a complete output tile and
     reduces the full $K$~range.
@@ -371,8 +372,8 @@ combination:
 \end{equation}
 where the minimization ranges over the three modes and their compatible split
 factors.
-Both calibrations search small candidate sets over measured kernel
-latency~$t$ and run once at deployment; the tile configuration fixes per-tile throughput,
+Both calibrations search small candidate sets over measured
+latency and run once at deployment; the tile configuration fixes per-tile throughput,
 while the policy table adapts the $K$-splitting strategy to each possible tile
 count.
 

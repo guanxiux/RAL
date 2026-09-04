@@ -92,13 +92,12 @@ output-mask propagation with per-tile compaction, operating on only mask and
 coordinate metadata; compatible operators reuse valid
 metadata instead of reconstructing it. Consumption is dense-like: construction emits contiguous per-tile segments ordered by the dense
 tile traversal, giving the compute stage tile-local structure without global sorting.
-Compute adapts its parallel decomposition to runtime activity, selecting a
-per-operator configuration from an offline-calibrated mapping indexed by
-device, layer shape, and activity level; \sysname leverages temporal
-correlation across successive inputs in streaming workloads, such as video
-and event streams, by using the latest completed, lagged input-activity
-observation to select each layer's configuration, sustaining GPU utilization
-without host synchronization.
+Because the worklist changes only the number of output tiles while each tile's
+reduction datapath stays intact, a persistent grid can serve any worklist
+length with the same launch, and idle blocks can absorb reduction work from
+undersubscribed tiles. The kernel reads the device-resident worklist length and
+indexes a precomputed table to select this decomposition, sustaining GPU
+utilization across varying worklist lengths without host synchronization.
 
 This paper makes the following contributions:
 \begin{itemize}
