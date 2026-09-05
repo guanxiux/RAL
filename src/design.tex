@@ -279,7 +279,7 @@ dynamic problem size.
 \caption{On-Device Adaptive Hybrid Stream-$K$}
 \label{alg:streamk}
 \begin{algorithmic}[1]
-\REQUIRE $\mathcal{W}$, $P$, $g_{\mathrm{res}}$,
+\REQUIRE $\mathcal{W}$, $M_{out}$, $P$, $g_{\mathrm{res}}$,
          $B_M$, $B_N$, $B_K$, $\mathbf{x}$, $\mathbf{f}$, $k$, $\mathbf{Z}$
 \ENSURE $\mathbf{y}$
 \STATE $n_{\mathcal{W}} \leftarrow$ \textbf{read} device-resident worklist length
@@ -303,7 +303,7 @@ dynamic problem size.
            \mathbf{f}_{i}[c_k B_K{:}(c_k{+}1) B_K,\;b_n B_N{:}(b_n{+}1)B_N)$
     \STATE $\mathbf{Y} \leftarrow \mathbf{Y} + \mathbf{X} \cdot \mathbf{F}$
   \ENDFOR
-  \STATE $\mathbf{y}[\mathbf{w},\; b_n B_N{:}(b_n{+}1) B_N) \leftarrow \mathbf{Y}$
+  \STATE $\mathbf{y}[\mathbf{w},\; b_n B_N{:}(b_n{+}1) B_N) \leftarrow \mathbf{Y}$ \textbf{where} $M_{out}[\mathbf{w}]{=}1$
 \ENDFOR
 \STATE \COMMENT{-----------------------------Stream-$K$ tail-----------------------------}
 \STATE $s_{\mathrm{tail}} \leftarrow s - s_{\mathrm{dp}}$
@@ -325,7 +325,8 @@ dynamic problem size.
   \ENDFOR
   \STATE $\mathbf{Z}[b_m, b_n][r] \leftarrow \mathbf{Y}$ \COMMENT{partial to workspace}
   \IF{\textsc{LastArriver}($b_m, b_n$)}
-    \STATE $\mathbf{y}[\mathbf{w},\; b_n B_N{:}(b_n{+}1) B_N) \leftarrow \sum_{r'=0}^{S_k-1} \mathbf{Z}[b_m, b_n][r']$
+    \STATE $\mathbf{Y} \leftarrow \sum_{r'=0}^{S_k-1} \mathbf{Z}[b_m, b_n][r']$
+    \STATE $\mathbf{y}[\mathbf{w},\; b_n B_N{:}(b_n{+}1) B_N) \leftarrow \mathbf{Y}$ \textbf{where} $M_{out}[\mathbf{w}]{=}1$
   \ENDIF
 \ENDFOR
 \end{algorithmic}
@@ -456,7 +457,10 @@ $\max(S_k) \times |\mathbf{y}^l|$ elements per layer, where $\max(S_k)$
 is the largest split factor in the policy table $P^l$. A per-tile
 completion counter tracks how many contributors have finished; the last block
 to arrive loads all partial fragments, reduces them, applies the output
-epilogue, and writes the final result (Lines~33--35). No device-wide barrier
+epilogue, and writes the final result (Lines~33--37). Both write paths guard
+stores with the exact output mask $M_{out}$, so positions present in a reused
+superset worklist but no longer active under the current mask produce no
+output store. No device-wide barrier
 is needed; data-parallel tiles bypass the workspace entirely and write output
 directly.
 
