@@ -114,8 +114,10 @@ sequence by reusing one worklist across its operators.
 For layer $l$, let $\mathcal{G}^l$ denote its output grid, $M^l_{out}$ its
 output mask, $\mathcal{W}^l$ its worklist, and $n^l_{\mathcal{W}}$ its
 device-resident length. \sysname propagates the mask and worklist metadata
-alongside the feature tensor. From layer semantics, \sysname statically infers
-that consecutive layers are reuse-compatible when
+alongside the feature tensor. Whether two consecutive layers are
+reuse-compatible depends on their operator types, not on runtime mask values.
+An operator that preserves or narrows the output grid and active set
+guarantees, for any input mask, that
 $\mathcal{G}^{l+1}=\mathcal{G}^l$ and
 \begin{equation}
   \{p\in\mathcal{G}^{l+1} \mid M^{l+1}_{out}[p]=1\}
@@ -123,7 +125,8 @@ $\mathcal{G}^{l+1}=\mathcal{G}^l$ and
   \{p\in\mathcal{G}^l \mid M^l_{out}[p]=1\} .
   \label{eq:reuse-condition}
 \end{equation}
-Because $\mathcal{W}^l$ covers $M^l_{out}$,
+\sysname checks this condition once at model-conversion time. Because
+$\mathcal{W}^l$ covers $M^l_{out}$,
 Eq.~\ref{eq:reuse-condition} guarantees coverage for $M^{l+1}_{out}$.
 \sysname therefore forwards $\mathcal{W}^{l+1}=\mathcal{W}^l$ and
 $n^{l+1}_{\mathcal{W}}=n^l_{\mathcal{W}}$ without reconstruction and applies
@@ -275,62 +278,6 @@ dynamic problem size.
 \label{sec:design:compute}
 
 
-\begin{algorithm}[htb]
-\caption{On-Device Adaptive Hybrid Stream-$K$}
-\label{alg:streamk}
-\begin{algorithmic}[1]
-\REQUIRE $\mathcal{W}$, $M_{out}$, $P$, $g_{\mathrm{res}}$,
-         $B_M$, $B_N$, $B_K$, $\mathbf{x}$, $\mathbf{f}$, $k$, $\mathbf{Z}$
-\ENSURE $\mathbf{y}$
-\STATE $n_{\mathcal{W}} \leftarrow$ \textbf{read} device-resident worklist length
-\STATE $s_M \leftarrow \lceil n_{\mathcal{W}} / B_M \rceil$;\;
-       $s_N \leftarrow \lceil C_{out} / B_N \rceil$;\;
-       $s \leftarrow s_M \times s_N$
-\STATE $S_k \leftarrow P[s]$ \COMMENT{policy lookup}
-\STATE $K_{\mathrm{iters}} \leftarrow k^2 \lceil C_{in} / B_K \rceil$
-\STATE \COMMENT{---------------------------Data-parallel prefix---------------------------}
-\STATE $s_{\mathrm{dp}} \leftarrow s - (s \bmod g_{\mathrm{res}})$ \COMMENT{full-wave boundary}
-\FOR{$b = \mathrm{bid},\; \mathrm{bid}{+}g_{\mathrm{res}},\; \ldots < s_{\mathrm{dp}}$}
-  \STATE $(b_m, b_n) \leftarrow \textsc{Decode}(b,\, s_N)$
-  \STATE $\mathbf{w} \leftarrow \mathcal{W}[b_m B_M \,..\, (b_m{+}1) B_M)$ \COMMENT{worklist indirection}
-  \STATE $\mathbf{Y} \leftarrow \mathbf{0}_{B_M \times B_N}$
-  \FOR{$j = 0, \ldots, K_{\mathrm{iters}}{-}1$}
-    \STATE $(i, c_k) \leftarrow \textsc{Offset}(j)$ \COMMENT{kernel offset, channel tile}
-    \STATE $\mathbf{X} \leftarrow 
-           \mathbf{x}[\mathcal{N}_{i}(\mathbf{w}),\;
-           c_k B_K{:}(c_k{+}1) B_K)$
-    \STATE $\mathbf{F} \leftarrow
-           \mathbf{f}_{i}[c_k B_K{:}(c_k{+}1) B_K,\;b_n B_N{:}(b_n{+}1)B_N)$
-    \STATE $\mathbf{Y} \leftarrow \mathbf{Y} + \mathbf{X} \cdot \mathbf{F}$
-  \ENDFOR
-  \STATE $\mathbf{y}[\mathbf{w},\; b_n B_N{:}(b_n{+}1) B_N) \leftarrow \mathbf{Y}$ \textbf{where} $M_{out}[\mathbf{w}]{=}1$
-\ENDFOR
-\STATE \COMMENT{-----------------------------Stream-$K$ tail-----------------------------}
-\STATE $s_{\mathrm{tail}} \leftarrow s - s_{\mathrm{dp}}$
-\FOR{$b = \mathrm{bid},\; \mathrm{bid}{+}g_{\mathrm{res}},\; \ldots
-     < s_{\mathrm{tail}} \times S_k$}
-  \STATE $(b_m, b_n, r) \leftarrow \textsc{TailDecode}(b,\, s_N,\, S_k,\, s_{\mathrm{dp}})$
-  \STATE $(k_{\mathrm{lo}}, k_{\mathrm{hi}}) \leftarrow
-         \textsc{Partition}(K_{\mathrm{iters}},\, S_k,\, r)$ \COMMENT{$r$-th $K$-slice}
-  \STATE $\mathbf{w} \leftarrow \mathcal{W}[b_m B_M \,..\, (b_m{+}1) B_M)$
-  \STATE $\mathbf{Y} \leftarrow \mathbf{0}_{B_M \times B_N}$
-  \FOR{$j = k_{\mathrm{lo}}, \ldots, k_{\mathrm{hi}}{-}1$}
-    \STATE $(i, c_k) \leftarrow \textsc{Offset}(j)$
-    \STATE $\mathbf{X} \leftarrow 
-           \mathbf{x}[\mathcal{N}_{i}(\mathbf{w}),\;
-           c_k B_K{:}(c_k{+}1) B_K)$
-    \STATE $\mathbf{F} \leftarrow
-           \mathbf{f}_{i}[c_k B_K{:}(c_k{+}1) B_K,\;b_n B_N{:}(b_n{+}1)B_N)$
-    \STATE $\mathbf{Y} \leftarrow \mathbf{Y} + \mathbf{X} \cdot \mathbf{F}$
-  \ENDFOR
-  \STATE $\mathbf{Z}[b_m, b_n][r] \leftarrow \mathbf{Y}$ \COMMENT{partial to workspace}
-  \IF{\textsc{LastArriver}($b_m, b_n$)}
-    \STATE $\mathbf{Y} \leftarrow \sum_{r'=0}^{S_k-1} \mathbf{Z}[b_m, b_n][r']$
-    \STATE $\mathbf{y}[\mathbf{w},\; b_n B_N{:}(b_n{+}1) B_N) \leftarrow \mathbf{Y}$ \textbf{where} $M_{out}[\mathbf{w}]{=}1$
-  \ENDIF
-\ENDFOR
-\end{algorithmic}
-\end{algorithm}
 
 Construction and reuse fix $\eta_{\mathrm{construct}}$; the compute stage
 controls $\eta_{\mathrm{compute}}$ and throughput~$T$. Dense convolution maps
@@ -360,8 +307,9 @@ Adapting between these regimes requires knowing $n_{\mathcal{W}}$; transferring 
 per-operator synchronization on the critical path.
 
 \sysname builds on Stream-$K$~\cite{streamk}, the established solution to wave
-quantization in dense GEMM. Stream-$K$ launches a \emph{persistent grid} of blocks equal
-to the device's SM occupancy (not the tile count) and partitions all tiles'
+quantization in dense GEMM. Stream-$K$ launches a \emph{persistent grid} of
+$g_{\mathrm{res}}$ blocks determined by the device's SM occupancy (not the
+tile count) and partitions all tiles'
 $K$-iterations into $S_k$ units consumed by grid stride; partial $K$-slices
 fill SMs that would otherwise sit idle after the data-parallel waves complete.
 Its hybrid variant~\cite{cutlass} restricts the $K$-splitting to the partial
@@ -464,3 +412,60 @@ output store. No device-wide barrier
 is needed; data-parallel tiles bypass the workspace entirely and write output
 directly.
 
+
+\begin{algorithm}[htb]
+\caption{On-Device Adaptive Hybrid Stream-$K$}
+\label{alg:streamk}
+\begin{algorithmic}[1]
+\REQUIRE $\mathcal{W}$, $M_{out}$, $P$, $g_{\mathrm{res}}$,
+         $B_M$, $B_N$, $B_K$, $\mathbf{x}$, $\mathbf{f}$, $k$, $\mathbf{Z}$
+\ENSURE $\mathbf{y}$
+\STATE $n_{\mathcal{W}} \leftarrow$ \textbf{read} device-resident worklist length
+\STATE $s_M \leftarrow \lceil n_{\mathcal{W}} / B_M \rceil$;\;
+       $s_N \leftarrow \lceil C_{out} / B_N \rceil$;\;
+       $s \leftarrow s_M \times s_N$
+\STATE $S_k \leftarrow P[s]$ \COMMENT{policy lookup}
+\STATE $K_{\mathrm{iters}} \leftarrow k^2 \lceil C_{in} / B_K \rceil$
+\STATE \COMMENT{---------------------------Data-parallel prefix---------------------------}
+\STATE $s_{\mathrm{dp}} \leftarrow s - (s \bmod g_{\mathrm{res}})$ \COMMENT{full-wave boundary}
+\FOR{$b = \mathrm{bid},\; \mathrm{bid}{+}g_{\mathrm{res}},\; \ldots < s_{\mathrm{dp}}$}
+  \STATE $(b_m, b_n) \leftarrow \textsc{Decode}(b,\, s_N)$
+  \STATE $\mathbf{w} \leftarrow \mathcal{W}[b_m B_M \,..\, (b_m{+}1) B_M)$ \COMMENT{worklist indirection}
+  \STATE $\mathbf{Y} \leftarrow \mathbf{0}_{B_M \times B_N}$
+  \FOR{$j = 0, \ldots, K_{\mathrm{iters}}{-}1$}
+    \STATE $(i, c_k) \leftarrow \textsc{Offset}(j)$ \COMMENT{kernel offset, channel tile}
+    \STATE $\mathbf{X} \leftarrow 
+           \mathbf{x}[\mathcal{N}_{i}(\mathbf{w}),\;
+           c_k B_K{:}(c_k{+}1) B_K)$
+    \STATE $\mathbf{F} \leftarrow
+           \mathbf{f}_{i}[c_k B_K{:}(c_k{+}1) B_K,\;b_n B_N{:}(b_n{+}1)B_N)$
+    \STATE $\mathbf{Y} \leftarrow \mathbf{Y} + \mathbf{X} \cdot \mathbf{F}$
+  \ENDFOR
+  \STATE $\mathbf{y}[\mathbf{w},\; b_n B_N{:}(b_n{+}1) B_N) \leftarrow \mathbf{Y}$ \textbf{where} $M_{out}[\mathbf{w}]{=}1$
+\ENDFOR
+\STATE \COMMENT{-----------------------------Stream-$K$ tail-----------------------------}
+\STATE $s_{\mathrm{tail}} \leftarrow s - s_{\mathrm{dp}}$
+\FOR{$b = \mathrm{bid},\; \mathrm{bid}{+}g_{\mathrm{res}},\; \ldots
+     < s_{\mathrm{tail}} \times S_k$}
+  \STATE $(b_m, b_n, r) \leftarrow \textsc{TailDecode}(b,\, s_N,\, S_k,\, s_{\mathrm{dp}})$
+  \STATE $(k_{\mathrm{lo}}, k_{\mathrm{hi}}) \leftarrow
+         \textsc{Partition}(K_{\mathrm{iters}},\, S_k,\, r)$ \COMMENT{$r$-th $K$-slice}
+  \STATE $\mathbf{w} \leftarrow \mathcal{W}[b_m B_M \,..\, (b_m{+}1) B_M)$
+  \STATE $\mathbf{Y} \leftarrow \mathbf{0}_{B_M \times B_N}$
+  \FOR{$j = k_{\mathrm{lo}}, \ldots, k_{\mathrm{hi}}{-}1$}
+    \STATE $(i, c_k) \leftarrow \textsc{Offset}(j)$
+    \STATE $\mathbf{X} \leftarrow 
+           \mathbf{x}[\mathcal{N}_{i}(\mathbf{w}),\;
+           c_k B_K{:}(c_k{+}1) B_K)$
+    \STATE $\mathbf{F} \leftarrow
+           \mathbf{f}_{i}[c_k B_K{:}(c_k{+}1) B_K,\;b_n B_N{:}(b_n{+}1)B_N)$
+    \STATE $\mathbf{Y} \leftarrow \mathbf{Y} + \mathbf{X} \cdot \mathbf{F}$
+  \ENDFOR
+  \STATE $\mathbf{Z}[b_m, b_n][r] \leftarrow \mathbf{Y}$ \COMMENT{partial to workspace}
+  \IF{\textsc{LastArriver}($b_m, b_n$)}
+    \STATE $\mathbf{Y} \leftarrow \sum_{r'=0}^{S_k-1} \mathbf{Z}[b_m, b_n][r']$
+    \STATE $\mathbf{y}[\mathbf{w},\; b_n B_N{:}(b_n{+}1) B_N) \leftarrow \mathbf{Y}$ \textbf{where} $M_{out}[\mathbf{w}]{=}1$
+  \ENDIF
+\ENDFOR
+\end{algorithmic}
+\end{algorithm}
