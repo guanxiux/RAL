@@ -49,7 +49,7 @@ feature grid, so a single masked-convolution runtime serves them all.
 Masked convolution keeps the tensors and arithmetic of dense convolution
 and restricts only which output coordinates it computes. It operates on an input
 feature tensor $\mathbf{x}\in\mathbb{R}^{H_{in}\times W_{in}\times C_{in}}$, a
-weight tensor $\mathbf{w}\in\mathbb{R}^{k\times k\times C_{in}\times C_{out}}$ of
+weight tensor $\mathbf{f}\in\mathbb{R}^{k\times k\times C_{in}\times C_{out}}$ of
 kernel size $k$, and an output
 $\mathbf{y}\in\mathbb{R}^{H_{out}\times W_{out}\times C_{out}}$ on a coordinate
 grid $\mathcal{G}=\{1,\ldots,H_{out}W_{out}\}$, where each coordinate
@@ -71,7 +71,7 @@ $\mathcal{N}(p)$ is active,
 \end{equation}
 $M_{out}$ thus identifies the output positions that the execution path is required
 to compute, each by aggregating $\mathbf{x}$ over $\mathcal{N}(p)$ with the weights
-$\mathbf{w}$.
+$\mathbf{f}$.
 
 An execution path issues computation over a sequence of position slots
 $\mathcal{C}$, where each slot is drawn from
@@ -82,11 +82,11 @@ $\{p : M_{out}[p]=1\}\subseteq\{c\in\mathcal{C}:c\ne\bot\}$.
 For each non-$\bot$ slot $p\in\mathcal{C}$ it computes
 \begin{equation}
   \mathbf{y}[p] = \sum_{i=1}^{k^2}
-  \mathbf{x}[\mathcal{N}_i(p)]\,\mathbf{w}_i,
+  \mathbf{x}[\mathcal{N}_i(p)]\,\mathbf{f}_i,
   \label{eq:conv}
 \end{equation}
 where $\mathcal{N}_i(p)$ is the $i$-th position in $\mathcal{N}(p)$ and
-$\mathbf{w}_i\in\mathbb{R}^{C_{in}\times C_{out}}$ the corresponding weight
+$\mathbf{f}_i\in\mathbb{R}^{C_{in}\times C_{out}}$ the corresponding weight
 slice. How unrequested positions are represented or merged into a dense result
 is policy-specific. Event and temporal execution retains prior state, whereas
 learned gating merges the computed branch values into a residual or bypass

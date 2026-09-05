@@ -274,21 +274,75 @@ dynamic problem size.
 \subsection{On-Device Adaptive Stream-K Execution}
 \label{sec:design:compute}
 
+
+\begin{algorithm}[htb]
+\caption{On-Device Adaptive Hybrid Stream-$K$}
+\label{alg:streamk}
+\begin{algorithmic}[1]
+\REQUIRE $\mathcal{W}$, $P$, $g_{\mathrm{res}}$,
+         $B_M$, $B_N$, $B_K$, $\mathbf{x}$, $\mathbf{f}$, $k$, $\mathbf{Z}$
+\ENSURE $\mathbf{y}$
+\STATE $n_{\mathcal{W}} \leftarrow$ \textbf{read} device-resident worklist length
+\STATE $s_M \leftarrow \lceil n_{\mathcal{W}} / B_M \rceil$;\;
+       $s_N \leftarrow \lceil C_{out} / B_N \rceil$;\;
+       $s \leftarrow s_M \times s_N$
+\STATE $S_k \leftarrow P[s]$ \COMMENT{policy lookup}
+\STATE $K_{\mathrm{iters}} \leftarrow k^2 \lceil C_{in} / B_K \rceil$
+\STATE \COMMENT{---------------------------Data-parallel prefix---------------------------}
+\STATE $s_{\mathrm{dp}} \leftarrow s - (s \bmod g_{\mathrm{res}})$ \COMMENT{full-wave boundary}
+\FOR{$b = \mathrm{bid},\; \mathrm{bid}{+}g_{\mathrm{res}},\; \ldots < s_{\mathrm{dp}}$}
+  \STATE $(b_m, b_n) \leftarrow \textsc{Decode}(b,\, s_N)$
+  \STATE $\mathbf{w} \leftarrow \mathcal{W}[b_m B_M \,..\, (b_m{+}1) B_M)$ \COMMENT{worklist indirection}
+  \STATE $\mathbf{Y} \leftarrow \mathbf{0}_{B_M \times B_N}$
+  \FOR{$j = 0, \ldots, K_{\mathrm{iters}}{-}1$}
+    \STATE $(i, c_k) \leftarrow \textsc{Offset}(j)$ \COMMENT{kernel offset, channel tile}
+    \STATE $\mathbf{X} \leftarrow 
+           \mathbf{x}[\mathcal{N}_{i}(\mathbf{w}),\;
+           c_k B_K{:}(c_k{+}1) B_K)$
+    \STATE $\mathbf{F} \leftarrow
+           \mathbf{f}_{i}[c_k B_K{:}(c_k{+}1) B_K,\;b_n B_N{:}(b_n{+}1)B_N)$
+    \STATE $\mathbf{Y} \leftarrow \mathbf{Y} + \mathbf{X} \cdot \mathbf{F}$
+  \ENDFOR
+  \STATE $\mathbf{y}[\mathbf{w},\; b_n B_N{:}(b_n{+}1) B_N) \leftarrow \mathbf{Y}$
+\ENDFOR
+\STATE \COMMENT{-----------------------------Stream-$K$ tail-----------------------------}
+\STATE $s_{\mathrm{tail}} \leftarrow s - s_{\mathrm{dp}}$
+\FOR{$b = \mathrm{bid},\; \mathrm{bid}{+}g_{\mathrm{res}},\; \ldots
+     < s_{\mathrm{tail}} \times S_k$}
+  \STATE $(b_m, b_n, r) \leftarrow \textsc{TailDecode}(b,\, s_N,\, S_k,\, s_{\mathrm{dp}})$
+  \STATE $(k_{\mathrm{lo}}, k_{\mathrm{hi}}) \leftarrow
+         \textsc{Partition}(K_{\mathrm{iters}},\, S_k,\, r)$ \COMMENT{$r$-th $K$-slice}
+  \STATE $\mathbf{w} \leftarrow \mathcal{W}[b_m B_M \,..\, (b_m{+}1) B_M)$
+  \STATE $\mathbf{Y} \leftarrow \mathbf{0}_{B_M \times B_N}$
+  \FOR{$j = k_{\mathrm{lo}}, \ldots, k_{\mathrm{hi}}{-}1$}
+    \STATE $(i, c_k) \leftarrow \textsc{Offset}(j)$
+    \STATE $\mathbf{X} \leftarrow 
+           \mathbf{x}[\mathcal{N}_{i}(\mathbf{w}),\;
+           c_k B_K{:}(c_k{+}1) B_K)$
+    \STATE $\mathbf{F} \leftarrow
+           \mathbf{f}_{i}[c_k B_K{:}(c_k{+}1) B_K,\;b_n B_N{:}(b_n{+}1)B_N)$
+    \STATE $\mathbf{Y} \leftarrow \mathbf{Y} + \mathbf{X} \cdot \mathbf{F}$
+  \ENDFOR
+  \STATE $\mathbf{Z}[b_m, b_n][r] \leftarrow \mathbf{Y}$ \COMMENT{partial to workspace}
+  \IF{\textsc{LastArriver}($b_m, b_n$)}
+    \STATE $\mathbf{y}[\mathbf{w},\; b_n B_N{:}(b_n{+}1) B_N) \leftarrow \sum_{r'=0}^{S_k-1} \mathbf{Z}[b_m, b_n][r']$
+  \ENDIF
+\ENDFOR
+\end{algorithmic}
+\end{algorithm}
+
 Construction and reuse fix $\eta_{\mathrm{construct}}$; the compute stage
 controls $\eta_{\mathrm{compute}}$ and throughput~$T$. Dense convolution maps
 to an implicit GEMM with $M$ output positions, $N=C_{out}$ output channels, and
 reduction depth $K=k^2 C_{in}$. An output tile covers $B_M$ positions and
-$B_N$ channels; the reduction over $K$ proceeds in steps of $B_K$.
+$B_N$ output channels; the reduction over $K$ proceeds in steps of $B_K$.
 In the standard \emph{data-parallel} decomposition, each of the
 $\lceil M/B_M\rceil \times \lceil N/B_N\rceil$ output tiles is assigned to one
 thread block, which performs the full $K$ reduction; split-$K$ instead
 replicates each tile across $S_k$ blocks that each reduce a disjoint
-$K$-slice. Because all three dimensions
-are static functions of the layer shape, the output tile shape $(B_M, B_N)$,
-reduction step $B_K$, and any $K$-axis parallelism (split-$K$) can be selected
-once offline by profiling each candidate at the known problem size and keeping
-the fastest. This shape-specific calibration is how dense GEMM libraries (e.g., cuDNN) sustain
-high throughput.
+$K$-slice. Because $M$, $N$, and $K$ are static, the tile shape $(B_M, B_N)$,
+reduction step $B_K$, and split factor can be selected once offline by
+profiling and keeping the fastest.
 
 In worklist convolution, $N$ and $K$ remain static, but the
 $M$~dimension becomes $n_{\mathcal{W}}$, the device-resident worklist length
@@ -301,40 +355,36 @@ activity is low and tiles are scarce, data-parallel execution leaves
 streaming multiprocessors (SMs) without work because the tile count no longer
 fills a full \emph{wave} (the set of thread blocks that co-reside across all
 SMs), referred to as the problem of wave quantization.
-Adapting between these regimes requires knowing $n_{\mathcal{W}}$, which is device-resident, and transferring it to the host inserts a
+Adapting between these regimes requires knowing $n_{\mathcal{W}}$; transferring it to the host inserts a
 per-operator synchronization on the critical path.
 
 \sysname builds on Stream-$K$~\cite{streamk}, the established solution to wave
-quantization in dense GEMM and a non-uniform generalization of split-$K$.
-Uniform split-$K$ replicates every tile $S_k$ times to create more schedulable
-units, but a $S_k$ high enough for low tile counts overburdens high-tile-count
-regimes with unnecessary partial reduction. Stream-$K$ avoids this by launching
-a \emph{persistent grid} of blocks equal to the device's SM occupancy (not the
-tile count), each consuming tiles through a grid-stride loop, and splitting
-$K$ non-uniformly: complete-wave tiles are handled one block per tile, while
-the partial tail wave's tiles distribute their $K$-iterations across blocks
-that have finished the complete waves and would otherwise sit idle. The wave
-boundary that governs this split is a static function of the tile count in
-Stream-$K$. In worklist convolution the tile count changes every frame, so the
-boundary shifts with it. This shifting boundary is the operating point of
-\sysname's \emph{on-device adaptive Stream-$K$ execution}: the compute kernel
-reads the exact worklist length on the device, determines the current wave
-boundary, and applies data-parallel, uniform split-$K$, or non-uniform hybrid
-Stream-$K$ decomposition accordingly, without host involvement.
+quantization in dense GEMM. Stream-$K$ launches a \emph{persistent grid} of blocks equal
+to the device's SM occupancy (not the tile count) and partitions all tiles'
+$K$-iterations into $S_k$ units consumed by grid stride; partial $K$-slices
+fill SMs that would otherwise sit idle after the data-parallel waves complete.
+Its hybrid variant~\cite{cutlass} restricts the $K$-splitting to the partial
+tail wave, handling complete waves data-parallel to avoid partial-reduction
+overhead where it is unnecessary. In worklist convolution the tile count
+changes every frame, so the wave boundary shifts with it. This shifting
+boundary is the operating point of \sysname's \emph{on-device adaptive
+Stream-$K$ execution}: the compute kernel reads the exact worklist length on
+the device, determines the current wave boundary, and selects between
+data-parallel, Stream-$K$, and hybrid Stream-$K$ decomposition accordingly,
+without host involvement.
 
 Because the host cannot observe $n^l_{\mathcal{W}}$ without synchronization,
 \sysname fixes the tile configuration~$\hat{q}^l=(B_M,B_N,B_K)$ per layer at
-deployment and adapts only the decomposition mode on-device. The GEMM pipeline
-is identical to dense implicit GEMM except that the coordinate source is
-replaced by the worklist; what changes per frame is how the $K$~reduction
-across output tiles is assigned to thread blocks, selected from three modes
-derived from Stream-$K$:
+deployment and adapts only the decomposition mode on-device. What changes per
+frame is how the $K$~reduction across output tiles is assigned to thread
+blocks, selected from three modes:
 \begin{itemize}
   \item \emph{Data-parallel}: each block owns a complete output tile and
     reduces the full $K$~range.
-  \item \emph{Aligned split-$K$}: each output tile is replicated across
-    $S_k$~blocks, each reducing a disjoint $K$-slice, multiplying the
-    schedulable unit count to fill the device.
+  \item \emph{Stream-$K$}: each output tile's $K$-iterations are
+    partitioned into $S_k$ units; the persistent grid consumes all
+    units by grid stride, and partial results from blocks sharing
+    a tile are resolved through the workspace.
   \item \emph{Hybrid Stream-$K$}: a data-parallel prefix handles complete
     waves; a streaming tail distributes the remaining tiles' $K$-iterations
     across one wave of blocks, eliminating partial-wave waste without applying
@@ -358,10 +408,9 @@ essentially maximizes throughput~$T$, ensuring competitiveness with dense
 execution. The choice of $B_M$ also determines $\eta_{\mathrm{compute}}$ at
 every other worklist length: the issued slot count is
 $|\mathcal{C}|=B_M\lceil n^l_{\mathcal{W}}/B_M\rceil$, so
-$\eta_{\mathrm{compute}}=n^l_{\mathcal{W}}/|\mathcal{C}|$ falls as
+$\eta_{\mathrm{compute}}=n^l_{\mathcal{W}}/|\mathcal{C}|$ can drop as
 $n^l_{\mathcal{W}}$ shrinks relative to~$B_M$. Fixing $B_M$ per layer is a
-necessary constraint (adapting it per frame would require the host to know
-$n^l_{\mathcal{W}}$), but per-shape profiling partially mitigates the cost:
+necessary constraint, but per-shape profiling partially mitigates the cost:
 a large~$B_M$ on a small output grid often produces too few tiles to fill the device
 even at full worklist, so such layers naturally select a smaller~$B_M$ that
 also limits $\eta_{\mathrm{compute}}$ loss at low activity. The mode table below
@@ -369,13 +418,12 @@ compensates for the remaining throughput gap by adapting the $K$-splitting
 strategy on-device.
 
 Within~$\hat{q}^l$, \sysname builds a \emph{policy table}~$P^l$ indexed by
-tile count $s=\lceil n^l_{\mathcal{W}}/B_M\rceil$. For each~$s$ it profiles
-every candidate mode~$m$ and split factor~$S_k$ using a synthetic
-worklist~$\mathcal{W}_s$ of length~$s\cdot B_M$:
+tile count $s=\lceil n^l_{\mathcal{W}}/B_M\rceil \times \lceil C_{out}/B_N\rceil$. For each~$s$ it profiles
+every candidate mode~$m$ and split factor~$S_k$:
 \begin{equation}
   P^l[s]
   = \arg\min_{m,\,S_k}\;
-    t(\hat{q}^l,\;\mathcal{W}_s,\;m,\;S_k),
+    t(\hat{q}^l,\;s,\;m,\;S_k),
   \label{eq:policy}
 \end{equation}
 where the minimization ranges over the three modes and their compatible split
@@ -384,66 +432,31 @@ $K$-iterations are assigned to blocks, so $\eta_{\mathrm{compute}}$ is
 invariant across modes and minimizing latency directly maximizes
 throughput~$T$, and hence $\eta_{\mathrm{compute}}\,T$.
 
-At runtime, the compute kernel reads $n^l_{\mathcal{W}}$ from the device scalar
-written by construction, computes $s$, and indexes~$P^l[s]$
-(Algorithm~\ref{alg:streamk}, Lines~1--3). All three modes share the same
-gather-at-load reduction datapath; only the block-to-work mapping differs
-(Lines~4--20).
+Algorithm~\ref{alg:streamk} presents the hybrid mode, which subsumes the
+other two: data-parallel execution corresponds to $s_{\mathrm{dp}}=s$ (empty
+tail), while pure Stream-$K$ corresponds to $s_{\mathrm{dp}}=0$ (no
+data-parallel prefix); the policy table selects among the three based on the
+current tile count. All three modes share the same gather-at-load reduction
+datapath; only the block-to-work mapping differs.
 
-When split-$K$ or hybrid Stream-$K$ assigns multiple blocks to disjoint
-$K$-ranges of the same output tile, each block writes its partial accumulator
-(a $B_M \times B_N$ fragment in the accumulation precision, typically FP32) to
-a pre-allocated workspace slot for that tile. The workspace is sized to
-$\max(S_k) \times |\mathbf{y}^l|$ elements per layer, where $\max(S_k)$ is
-the largest split factor in $P^l$. A per-tile completion counter tracks how many contributors
-have finished; the last block to arrive loads all partial fragments, reduces
-them, applies the output epilogue, and writes the final result
-(Algorithm~\ref{alg:streamk}, Lines~21--23). No device-wide barrier is needed;
-data-parallel tiles bypass the workspace entirely and write output directly.
+At runtime, the kernel reads $n_{\mathcal{W}}$, derives
+the tile count, and looks up the decomposition mode from the policy table $P^l$
+(Lines~1--4 in Algorithm~\ref{alg:streamk}).
+The persistent grid first processes complete waves data-parallel
+(Lines~6--14): each block decodes its position and channel tile indices,
+reads $B_M$ output coordinates from the worklist $\mathcal{W}$, and reduces the full
+reduction depth, writing the result directly to the output.
+The remaining partial-wave tiles enter the Stream-$K$ tail
+(Lines~16--25): the reduction depth of each tile is partitioned among $S_k$
+contributors (the split factor selected by the policy table), and each block
+reduces its assigned slice into a pre-allocated workspace slot for that tile.
+Each slot holds a $B_M \times B_N$ partial accumulator in accumulation
+precision (typically FP32); the workspace $\mathbf{Z}$ is sized to
+$\max(S_k) \times |\mathbf{y}^l|$ elements per layer, where $\max(S_k)$
+is the largest split factor in the policy table $P^l$. A per-tile
+completion counter tracks how many contributors have finished; the last block
+to arrive loads all partial fragments, reduces them, applies the output
+epilogue, and writes the final result (Lines~22--24). No device-wide barrier
+is needed; data-parallel tiles bypass the workspace entirely and write output
+directly.
 
-\begin{algorithm}[t]
-\caption{On-Device Adaptive Stream-$K$ Worklist Computation}
-\label{alg:streamk}
-\begin{algorithmic}[1]
-\REQUIRE Worklist $\mathcal{W}$ (device-resident), policy table~$P$,
-         persistent grid of $G$ blocks, workspace~$S$
-\ENSURE Output $\mathbf{y}$ (updated at worklist positions)
-\STATE $n_{\mathcal{W}} \leftarrow$ \textbf{read} worklist length from device memory
-\STATE $s \leftarrow \lceil n_{\mathcal{W}} / B_M \rceil$
-\STATE $(\mathit{mode}, S_k) \leftarrow P[s]$
-       \hfill\COMMENT{precomputed policy lookup}
-\IF{$\mathit{mode} = \textsc{DataParallel}$}
-  \FOR{$\mathrm{tile} = \mathrm{bid},\; \mathrm{bid}{+}G,\; \ldots < s$}
-    \STATE \textsc{Compute}($\mathcal{W}$, $\mathrm{tile}$,
-           $K_{\mathrm{range}}=[0,K)$) $\to$ $\mathbf{y}$
-  \ENDFOR
-\ELSIF{$\mathit{mode} = \textsc{AlignedSplitK}$}
-  \STATE $n_{\mathrm{units}} \leftarrow s \times S_k$
-  \FOR{$u = \mathrm{bid},\; \mathrm{bid}{+}G,\; \ldots < n_{\mathrm{units}}$}
-    \STATE $\mathrm{tile} \leftarrow \lfloor u / S_k \rfloor$;
-           $K_{\mathrm{range}} \leftarrow \textsc{Partition}(K, S_k, u \bmod S_k)$
-    \STATE \textsc{Accumulate}($S$, $\mathcal{W}$, $\mathrm{tile}$,
-           $K_{\mathrm{range}}$)
-  \ENDFOR
-\ELSE[Hybrid Stream-$K$]
-  \STATE $s_{\mathrm{dp}} \leftarrow s - (s \bmod G)$
-         \hfill\COMMENT{full-wave prefix}
-  \FOR{$\mathrm{tile} = \mathrm{bid},\; \mathrm{bid}{+}G,\; \ldots < s_{\mathrm{dp}}$}
-    \STATE \textsc{Compute}($\mathcal{W}$, $\mathrm{tile}$,
-           $K_{\mathrm{range}}=[0,K)$) $\to$ $\mathbf{y}$
-  \ENDFOR
-  \STATE $I_{\mathrm{tail}} \leftarrow (s - s_{\mathrm{dp}}) \times K$
-  \FOR{$i = \mathrm{bid},\; \mathrm{bid}{+}G,\; \ldots < I_{\mathrm{tail}}$}
-    \STATE $(\mathrm{tile}, K_{\mathrm{range}}) \leftarrow
-           \textsc{Unflatten}(i, s_{\mathrm{dp}}, K)$
-    \STATE \textsc{Accumulate}($S$, $\mathcal{W}$, $\mathrm{tile}$,
-           $K_{\mathrm{range}}$)
-  \ENDFOR
-\ENDIF
-\IF{$S_k > 1$ \textbf{or} $\mathit{mode} = \textsc{StreamK}$}
-  \IF{\textsc{LastArriver}($\mathrm{tile}$)}
-    \STATE \textsc{Reduce}($S$, $\mathrm{tile}$) $\to$ $\mathbf{y}$
-  \ENDIF
-\ENDIF
-\end{algorithmic}
-\end{algorithm}

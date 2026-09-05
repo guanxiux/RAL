@@ -49,13 +49,18 @@ single active position triggers computation for the entire tile.
 active positions into a packed representation, computes, and
 scatters the results back, incurring extraction, irregular access, and
 writeback overhead that damages throughput.
-In our evaluation of YOLOv8n~\cite{yolov8} on RTX~3080 (\S\ref{sec:bg:gap}), a temporal difference mask
-policy~\cite{deltacnn} renders
-52.2\% of the convolution work unnecessary, yet tile
-skipping~\cite{deltacnn} runs 26.1\% slower than dense with a useful-compute
-ratio of only ??\%. Gather-scatter~\cite{mmcv} lifts the useful-compute ratio
-to near one but sustains only ??\% of tile skipping's throughput, running at
-4.3$\times$ dense latency.
+
+Neither path converts sparsity into proportional latency reduction
+(\S\ref{sec:bg:gap}). Under a temporal difference mask
+policy~\cite{deltacnn}, 52\% of YOLOv8n~\cite{yolov8}'s convolution work is
+unnecessary, yet tile skipping~\cite{deltacnn} runs 26.1\% slower than dense
+with a useful-compute ratio of only ??\%; gather-scatter~\cite{mmcv} lifts
+the useful-compute ratio to near one but runs 4.3$\times$ slower than dense.
+Even on the sparser FireFlowNet~\cite{fireflownet} under event-camera
+increments~\cite{evconv}, where 75.1\% of work is unnecessary and tile skipping
+does cut latency by 42.0\%, it still wastes 26.4\% of its issued operations;
+gather-scatter sustains only ??\% of tile skipping's throughput, running
+2.0$\times$ slower than dense.
 
 Our key insight is that output coordinates form the interface between
 position selection and the reduction datapath in tiled execution;
