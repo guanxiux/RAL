@@ -443,11 +443,11 @@ At runtime, the kernel reads $n_{\mathcal{W}}$, derives
 the tile count, and looks up the decomposition mode from the policy table $P^l$
 (Lines~1--4 in Algorithm~\ref{alg:streamk}).
 The persistent grid first processes complete waves data-parallel
-(Lines~6--14): each block decodes its position and channel tile indices,
+(Lines~7--18): each block decodes its position and channel tile indices,
 reads $B_M$ output coordinates from the worklist $\mathcal{W}$, and reduces the full
 reduction depth, writing the result directly to the output.
 The remaining partial-wave tiles enter the Stream-$K$ tail
-(Lines~16--25): the reduction depth of each tile is partitioned among $S_k$
+(Lines~21--36): the reduction depth of each tile is partitioned among $S_k$
 contributors (the split factor selected by the policy table), and each block
 reduces its assigned slice into a pre-allocated workspace slot for that tile.
 Each slot holds a $B_M \times B_N$ partial accumulator in accumulation
@@ -456,7 +456,7 @@ $\max(S_k) \times |\mathbf{y}^l|$ elements per layer, where $\max(S_k)$
 is the largest split factor in the policy table $P^l$. A per-tile
 completion counter tracks how many contributors have finished; the last block
 to arrive loads all partial fragments, reduces them, applies the output
-epilogue, and writes the final result (Lines~22--24). No device-wide barrier
+epilogue, and writes the final result (Lines~33--35). No device-wide barrier
 is needed; data-parallel tiles bypass the workspace entirely and write output
 directly.
 
