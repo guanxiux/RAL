@@ -12,8 +12,8 @@ Xavier NX and AGX Orin; we also measure board energy on both. The discrete
 platforms use PyTorch 2.1.2, CUDA 12.1, and cuDNN 8.9.2; both Jetson platforms
 use PyTorch 2.1.0, CUDA 11.4, and cuDNN 8.6. All paths in the full workload
 comparison use FP32 (SIMT) with TF32 disabled. Targeted sensitivity studies
-also evaluate FP16 (tensor core) for DynConv on RTX~3080 and FireFlowNet on
-AGX Orin. On each platform, all backends run under the same fixed clock and
+also evaluate the device-resident Stream-K FP16 (tensor core) adapters on
+selected workload--platform pairs. On each platform, all backends run under the same fixed clock and
 power configuration.
 
 \paragraph{Models, tasks, and mask sources.}
@@ -42,10 +42,10 @@ Our workloads span three vision tasks.
         performing diverse activities and annotates their 2D body joints.
         DynConv's learned spatial gates produce an input-dependent mask for
         each gated block from intermediate features, and MPII samples are
-        temporally unrelated. We deliberately include this workload, where
-        trace-driven adaptation is entirely disabled, to isolate and justify
-        the worklist-driven execution model's latency gains independent of
-        runtime adaptation.
+        temporally unrelated. We deliberately include this workload, where the
+        device-resident Stream-K path consumes the exact worklist length without
+        a temporal predictor, to isolate the worklist-driven execution model's
+        latency gains from input-correlation assumptions.
 \end{itemize}
 
 
@@ -110,11 +110,14 @@ work:
 We measure per-frame full-model GPU latency over the complete evaluation
 datasets. CUDA events bracket each frame's inference call; after
 workload-specific warm-up we run three complete rounds and average per-frame
-latency across all frames and rounds. The bracketed interval includes
-nonblocking activity polling and bucket lookup, mask propagation, worklist
-construction, all network operators, and output update; it excludes input
-transfer, offline calibration and autotuning, and one-time state
-initialization. We report $\eta$, $T$, and $T_{\mathrm{eff}}$ at the model
+latency across all frames and rounds. The bracketed interval includes mask
+propagation, worklist construction, all network operators, and output update;
+it excludes input transfer, offline calibration and autotuning, and one-time
+state initialization. Legacy activity-mapped controls additionally perform
+nonblocking activity polling and bucket lookup in this interval; current
+Stream-K adapters read the device-resident count in the compute kernel and do
+not perform those host-side operations. We report $\eta$, $T$, and
+$T_{\mathrm{eff}}$ at the model
 level by accumulating required and issued convolution work across all layers
 within each frame before applying Eq.~\ref{eq:efficiency-framework}, then
 averaging across frames. On the Jetson platforms, we integrate board-level
@@ -265,9 +268,9 @@ FireFlowNet and the two YOLO workloads. DynConv instead has
 $\eta_{\mathrm{compute}}=90.1\%$: its low
 active ratio and small spatial grids yield exceptionally short worklists
 (P10, P50, and P90 lengths of 3, 43, and 389), making final-tile padding
-proportionally large. Because trace-driven adaptation is disabled for its
-temporally unrelated inputs (\S\ref{sec:eval:setup}), DynConv uses a fixed
-per-layer decomposition. Even in this setting, its 90.1\% useful-compute ratio
+proportionally large. Because its inputs are temporally unrelated, DynConv uses
+the same exact-length device policy without a temporal activity selector. Even
+in this setting, its 90.1\% useful-compute ratio
 is substantially above tile skipping's 48.9\% on RTX~3080.
 
 \input{figures/cost_decomposition_table}
@@ -365,16 +368,16 @@ requested outputs but does not improve mask quality. Across our workloads, the
 evaluation shows that \sysname most effectively converts the supplied mask
 sparsity into end-to-end latency reduction among the evaluated sparse paths.
 The adaptive decomposition is deployment-specific and must be
-recalibrated for a new model, device, or mask workload, although prediction
-error affects performance rather than correctness.
+recalibrated for a new model, device, or mask workload. Runtime dispatch reads
+the exact device-resident length. Only offline policy interpolation can affect
+performance; it cannot affect coverage or correctness.
 
 The full workload comparison uses FP32 (SIMT): the evaluated
 masked-convolution
 baselines~\cite{deltacnn,dynconv,mmcv} provide only FP32 execution paths, so
 FP32 isolates execution-model differences from arithmetic-precision effects.
-Extending the worklist compute stage to tensor cores also raises an open
-reduction problem: split-K partitions must atomically accumulate FP32 partial
-sums and convert them back to FP16, and for short worklists this overhead can
-outweigh the FP16 arithmetic savings. The targeted sensitivity studies confirm
-that \sysname retains end-to-end gains under tensor cores; a dedicated tensor
-core reduction design for short worklists is a natural next step.
+The current FP16 adapter uses the same worklist contract with tensor cores.
+Split-$K$ partitions accumulate FP32 partial sums and convert completed outputs
+to FP16. The sensitivity study measures where this implementation retains an
+end-to-end gain and where dense tensor cores absorb the available savings,
+without mixing FP16 sparse baselines into the FP32 comparison.

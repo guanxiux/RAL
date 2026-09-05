@@ -44,14 +44,13 @@
 %    persistent thread blocks，并让这些 blocks 根据 device-resident n_W 以 grid-stride
 %    方式消费 worklist，从而不需要 host synchronization。
 % 3. 为在不查询精确 n_W 的情况下选择合适的 workload decomposition，WISEConv 在
-%    representative temporal traces 上建立 input-activity level 到兼顾 throughput 与
-%    padding 的 configuration table，并在 runtime 用滞后一帧或更多帧、已经完成传回的
-%    最新 input-activity observation 索引该表；相邻 inputs 的 temporal correlation 使
-%    这个 lagged signal 仍有预测力，而 completed-only polling 避免 runtime 为它等待。
-% 4. 因而，device-resident count 决定当前执行多少工作，data-driven signal 决定这些
-%    工作如何分解；两者结合，使 WISEConv 能够以 synchronization-free 的 per-frame
-%    path 消费 variable-length worklists，同时维持 high useful-compute ratio 和 high
-%    GPU throughput。
+%    deployment-time 对固定 envelope 的 DP、aligned Split-K 与 Hybrid Stream-K 做
+%    length-indexed profiling，并把 policy table 放在 device 上；runtime 直接读取当前
+%    device-resident worklist length，避免 input-activity prediction 和 host readback。
+% 4. 因而，device-resident count 同时决定当前执行多少工作以及如何分解这些工作；
+%    三种模式共享 reduction datapath，使 WISEConv 能够以 synchronization-free 的
+%    per-frame path 消费 variable-length worklists，同时维持 high useful-compute ratio
+%    和 high GPU throughput。
 %
 % Synthesis paragraph
 % 1. Low-cost construction 与 efficient consumption 缺一不可：过高的 worklist
