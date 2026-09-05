@@ -20,7 +20,7 @@ latency-critical vision tasks~\cite{nanoflownet,fastdepth,perclatency}, yet
 on a given input much of that computation is spatially redundant. A
 common remedy is masked convolution: an upstream policy marks spatially
 active positions on the dense feature grid, and a dedicated sparse
-convolution operator computes only at these positions. The mask may derive
+convolution operator updates only these positions in the dense output. The mask may derive
 from event-camera increments~\cite{evconv,asyncsparse}, temporal
 differences~\cite{deltacnn,skipconv}, or learned spatial
 gates~\cite{dynconv,dgnet}. These mask sources promise large reductions in
@@ -51,16 +51,16 @@ scatters the results back, incurring extraction, irregular access, and
 writeback overhead that damages throughput.
 
 Neither path converts sparsity into proportional latency reduction
-(\S\ref{sec:bg:gap}). Under a temporal difference mask
+(\S\ref{sec:bg:gap}). In our evaluation, under a temporal difference mask
 policy~\cite{deltacnn}, 52\% of YOLOv8n~\cite{yolov8}'s convolution work is
-unnecessary, yet tile skipping~\cite{deltacnn} runs 26.1\% slower than dense
-with a useful-compute ratio of only ??\%; gather-scatter~\cite{mmcv} lifts
-the useful-compute ratio to near one but runs 4.3$\times$ slower than dense.
+unnecessary, yet tile skipping~\cite{deltacnn} incurs 26.1\% higher latency
+than dense with a useful-compute ratio of only ??\%; gather-scatter~\cite{mmcv} lifts
+the useful-compute ratio to near one but at 4.3$\times$ the latency of dense.
 Even on the sparser FireFlowNet~\cite{fireflownet} under event-camera
 increments~\cite{evconv}, where 75.1\% of work is unnecessary and tile skipping
 does cut latency by 42.0\%, it still wastes 26.4\% of its issued operations;
-gather-scatter sustains only ??\% of tile skipping's throughput, running
-2.0$\times$ slower than dense.
+gather-scatter sustains only ??\% of tile skipping's throughput, at
+2.0$\times$ the latency of dense.
 
 Our key insight is that output coordinates form the interface between
 position selection and the reduction datapath in tiled execution;

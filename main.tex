@@ -35,18 +35,19 @@ sparsity into proportional latency reduction. We present \sysname, a
 masked-convolution runtime built on the observation that output coordinates
 form the interface between position selection and the regular reduction datapath in the
 dense tiled pipeline. \sysname replaces the dense tiled pipeline's contiguous coordinate
-source with an active-output worklist, restricting computation to active
-positions while retaining dense tensor layouts and the regular per-position
-reduction. 
+source with an active-output worklist, restricting computation to almost
+exclusively active
+positions while retaining dense tensor layouts and the regular reduction
+datapath.
 To keep worklist construction cheap and sustain throughput as the number of
-active outputs changes from frame to frame, \sysname fuses mask propagation
+active outputs changes per frame, \sysname fuses mask propagation
 with tile-local compaction, reuses coordinate metadata across compatible
 operators, and adapts its compute decomposition without host synchronization,
 securing both a high useful-compute ratio and high throughput.
 We evaluate \sysname on
 four perception models across six GPU platforms: four discrete GPUs and two
-Jetson platforms. \sysname achieves a 1.57$\times$ geometric-mean end-to-end speedup over
-the fastest evaluated competing path selected for each workload-platform pair,
+Jetson platforms. \sysname achieves a 1.57$\times$ geometric-mean speedup over
+the fastest competing path per model-platform pair,
 reducing full-model latency by 22.1--46.5\%. On the Jetson platforms, it also
 reduces per-frame board energy by 28.5--72.6\% relative to dense execution.
 \end{abstract}

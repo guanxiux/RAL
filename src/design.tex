@@ -387,6 +387,10 @@ tail), while pure Stream-$K$ corresponds to $s_{\mathrm{dp}}=0$ (no
 data-parallel prefix); the policy table selects among the three based on the
 current tile count. All three modes share the same gather-at-load reduction
 datapath; only the block-to-work mapping differs.
+Algorithm~\ref{alg:streamk} omits boundary-tile padding when
+$n_{\mathcal{W}}$, $C_{in}$, or $C_{out}$ is not divisible by $B_M$, $B_K$,
+or $B_N$, respectively; the implementation masks out-of-bounds accesses in
+these tiles.
 
 At runtime, the kernel reads $n_{\mathcal{W}}$, derives
 the tile count, and looks up the decomposition mode from the policy table $P^l$
