@@ -125,38 +125,60 @@ $\mathcal{C}$.
   \label{fig:gap}
 \end{figure}
 Existing systems execute a mask along one of two paths. \emph{Tile
-skipping}~\cite{sbnet,skipconv,evconv,dynaspa,motiondelta,sparsetem} inherits the dense pipeline's tile-based
-computation without additional metadata passes, skipping a tile only when all its coordinates are inactive and
+skipping}~\cite{sbnet,skipconv,evconv,dynaspa,motiondelta,sparsetem} inherits the dense pipeline's tile-based computation without additional metadata passes, skipping a tile only when all its coordinates are inactive and
 otherwise computing the whole tile; DeltaCNN~\cite{deltacnn} fuses a selective
 path into the kernel, taken when a tile is estimated to be mostly empty, to cut
 wasted work. \emph{Gather-scatter}~\cite{sai,dgnet}
 instead abandons the dense pipeline: it extracts exactly the active
 coordinates into a packed representation, runs a separate GEMM, and scatters
 the results back, removing the inactive arithmetic but adding extraction,
-irregular access, and writeback overhead; DynConv~\cite{dynconv} adopts a model structure suited to
-gather-scatter, where one gather feeds several consecutive layers before a single
+irregular access, and writeback overhead; DynConv~\cite{dynconv} adopts a model structure suited to gather-scatter, where one gather feeds several consecutive layers before a single
 scatter, amortizing that overhead.
 
-These paths fail for different reasons, so we separate policy sparsity from
-execution efficiency. The policy fixes its active ratio $\alpha$, the fraction
-of output-grid positions marked active. An execution path instead determines
-its useful-compute ratio $\eta$ and throughput $T$, which combine into effective
-throughput $T_{\mathrm{eff}}$:
+\newrev{A policy fixes the active ratio $\alpha$, defined as the fraction of output-grid positions marked active, whereas a concrete execution path determines the useful-compute ratio $\eta$, defined as the fraction of issued slots that correspond to required outputs:
 \begin{equation}
   \begin{aligned}
     \alpha &= \frac{\|M_{out}\|_0}{|\mathcal{G}|},
-    & \eta &= \frac{\|M_{out}\|_0}{|\mathcal{C}|} \le 1,\\
-    T &= \frac{2|\mathcal{C}|k^2 C_{in} C_{out}}{t},
-    & T_{\mathrm{eff}} &= \eta T .
+    & \eta &= \frac{\|M_{out}\|_0}{|\mathcal{C}|}.
   \end{aligned}
   \label{eq:efficiency-framework}
 \end{equation}
-For $|\mathcal{C}|>0$, $\eta$ captures inactive and padding slots in the issued
-schedule, while $T$ captures how quickly the path processes those slots. The
-latency $t$ includes all auxiliary mask and coordinate work, so such work lowers
-$T$ without changing~$\eta$; the factor of two counts each multiply-accumulate
-as two FLOPs. Consequently, $T_{\mathrm{eff}}$ measures the rate of
-required-output computation and therefore determines its latency.
+For $|\mathcal{C}|>0$, $\eta$ quantifies schedule efficiency by capturing the fraction of issued computation that is useful; the remaining slots correspond to inactive or padding positions. An execution path also determines its throughput $T$, which combines with the useful-compute ratio $\eta$ to yield the effective throughput $T_{\mathrm{eff}}$:
+\begin{equation}
+  \begin{aligned}
+    T &= \frac{2|\mathcal{C}|k^2 C_{in} C_{out}}{t},
+    & T_{\mathrm{eff}} &= \eta T.
+  \end{aligned}
+  \label{eq:efficiency-framework-throughput}
+\end{equation}
+where \(t\) denotes the latency of the execution path, including auxiliary mask and coordinate processing, \(k\) is the convolution kernel size, and \(C_{in}\) and \(C_{out}\) are the input and output channel counts of the masked convolution layer, respectively. The factor of two counts each multiply-accumulate as two FLOPs. Consequently, \(T_{\mathrm{eff}}\) directly characterizes the processing rate of required outputs and therefore determines the realized latency.
+}
+
+% These paths fail for different reasons, so we separate policy sparsity from
+% execution efficiency. The policy fixes its active ratio $\alpha$, the fraction
+% of output-grid positions marked active. An execution path instead determines
+% its useful-compute ratio $\eta$ and throughput $T$, which combine into effective
+% throughput $T_{\mathrm{eff}}$:
+% \begin{equation}
+%   \begin{aligned}
+%     \alpha &= \frac{\|M_{out}\|_0}{|\mathcal{G}|},
+%     & \eta &= \frac{\|M_{out}\|_0}{|\mathcal{C}|} .
+%   \end{aligned}
+%   \label{eq:efficiency-framework}
+% \end{equation}
+% \begin{equation}
+%   \begin{aligned}
+%     T &= \frac{2|\mathcal{C}|k^2 C_{in} C_{out}}{t},
+%     & T_{\mathrm{eff}} &= \eta T .
+%   \end{aligned}
+%   \label{eq:efficiency-framework}
+% \end{equation}
+% For $|\mathcal{C}|>0$, $\eta$ captures inactive and padding slots in the issued
+% schedule, while $T$ captures how quickly the path processes those slots. The
+% latency $t$ includes all auxiliary mask and coordinate work, so such work lowers
+% $T$ without changing~$\eta$; the factor of two counts each multiply-accumulate
+% as two FLOPs. Consequently, $T_{\mathrm{eff}}$ measures the rate of
+% required-output computation and therefore determines its latency.
 
 Figure~\ref{fig:gap} traces this on RTX~3080 for
 FireFlowNet~\cite{fireflownet} under the Ev-Conv~\cite{evconv} mask policy.
