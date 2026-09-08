@@ -135,7 +135,7 @@ the results back, removing the inactive arithmetic but adding extraction,
 irregular access, and writeback overhead; DynConv~\cite{dynconv} adopts a model structure suited to gather-scatter, where one gather feeds several consecutive layers before a single
 scatter, amortizing that overhead.
 
-\newrev{A policy fixes the active ratio $\alpha$, defined as the fraction of output-grid positions marked active, whereas a concrete execution path determines the useful-compute ratio $\eta$, defined as the fraction of issued slots that correspond to required outputs:
+A policy fixes the active ratio $\alpha$, defined as the fraction of output-grid positions marked active, whereas a concrete execution path determines the useful-compute ratio $\eta$, defined as the fraction of issued slots that correspond to required outputs:
 \begin{equation}
   \begin{aligned}
     \alpha &= \frac{\|M_{out}\|_0}{|\mathcal{G}|},
@@ -143,7 +143,7 @@ scatter, amortizing that overhead.
   \end{aligned}
   \label{eq:efficiency-framework}
 \end{equation}
-For $|\mathcal{C}|>0$, $\eta$ quantifies schedule efficiency by capturing the fraction of issued computation that is useful; the remaining slots correspond to inactive or padding positions. An execution path also determines its throughput $T$, which combines with the useful-compute ratio $\eta$ to yield the effective throughput $T_{\mathrm{eff}}$:
+For $|\mathcal{C}|>0$, $\eta$ quantifies schedule efficiency by capturing the fraction of issued computation that is useful; the remaining slots correspond to inactive or padding positions. An ideal execution path achieves $\eta=1$ by issuing only required outputs; dense convolution, which issues the entire grid, has $\eta\approx\alpha$. An execution path also determines its throughput $T$, which combines with $\eta$ to yield the effective throughput $T_{\mathrm{eff}}$:
 \begin{equation}
   \begin{aligned}
     T &= \frac{2|\mathcal{C}|k^2 C_{in} C_{out}}{t},
@@ -152,7 +152,7 @@ For $|\mathcal{C}|>0$, $\eta$ quantifies schedule efficiency by capturing the fr
   \label{eq:efficiency-framework-throughput}
 \end{equation}
 where \(t\) denotes the latency of the execution path, including auxiliary mask and coordinate processing, \(k\) is the convolution kernel size, and \(C_{in}\) and \(C_{out}\) are the input and output channel counts of the masked convolution layer, respectively. The factor of two counts each multiply-accumulate as two FLOPs. Consequently, \(T_{\mathrm{eff}}\) directly characterizes the processing rate of required outputs and therefore determines the realized latency.
-}
+
 
 % These paths fail for different reasons, so we separate policy sparsity from
 % execution efficiency. The policy fixes its active ratio $\alpha$, the fraction

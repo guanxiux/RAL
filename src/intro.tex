@@ -62,7 +62,7 @@ does cut latency by 42.0\%, it still wastes 26.4\% of its issued operations;
 gather-scatter sustains only ??\% of tile skipping's throughput, at
 2.0$\times$ the latency of dense.
 
-\newrev{Our key insight is that output coordinates form the interface between position selection and the reduction datapath in tiled execution. Replacing the contiguous coordinate source with an active-output worklist changes only how output coordinates are supplied, while preserving dense tensor layouts and the regular reduction structure of tiled execution. This separation makes it possible to compute almost exclusively required outputs without abandoning the high throughput potential of the dense convolution pipeline.}
+Our key insight is that output coordinates form the interface between position selection and the reduction datapath in tiled execution. Replacing the contiguous coordinate source with an active-output worklist changes only which positions are scheduled, while preserving the dense tensor layouts and regular reduction datapath that sustain throughput. The worklist interface makes it possible to compute almost exclusively required outputs without abandoning the dense pipeline's throughput potential.
 % Our key insight is that output coordinates form the interface between
 % position selection and the reduction datapath in tiled execution;
 % replacing the contiguous coordinate source with an active-output worklist
