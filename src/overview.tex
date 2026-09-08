@@ -80,34 +80,35 @@ requirements, as Figure~\ref{fig:overview} summarizes.
 % TODO: Replace this placeholder with the final two-stage overview figure.
 \begin{figure*}[t]
   \centering
-  \fbox{\parbox{0.9\textwidth}{\centering\vspace{2.5cm}%
-    \textbf{[TODO]} \sysname overview. Left: the mask-space construction stage
-    propagates the output mask, emits tile-local worklist segments into a
-    preallocated buffer, and records the worklist length on the device;
-    compatible operators reuse this metadata. Right: a persistent compute grid
-    reads the device-resident worklist length and selects among data-parallel,
-    split-$K$, and hybrid Stream-$K$ decompositions via a policy table
-    calibrated offline.
-    \vspace{2.5cm}}}
-  \caption{The \sysname two-stage pipeline. Construction emits tile-locally
-  ordered worklist segments using only mask and coordinate metadata, then reuses
-  the metadata across compatible operators. Compute launches a persistent grid
-  capped by SM occupancy and adapts its $K$-splitting decomposition on-device
-  from the exact worklist length without host synchronization.}
-  \Description{Placeholder for the \sysname overview figure. The construction
-  stage emits and reuses mask and worklist metadata. The compute stage consumes
-  a device-bounded worklist with a persistent grid and selects its
-  decomposition mode from a device-resident policy table indexed by the current
-  tile count.}
+  \includegraphics[width=\textwidth]{figures/wiseconv_overview.png}
+  \caption{Overview of \sysname and baseline execution paths.
+  (a)~Masked convolution: $M_{out}$ marks active output positions
+  (colored); the operator computes only these from $\mathbf{x}$ and
+  $\mathbf{f}$.
+  (b)~Tile skipping skips only fully inactive tiles; partially active
+  tiles compute all positions.
+  (c)~Gather-scatter packs exactly the receptive fields of active positions, computes, and
+  scatters results back.
+  (d)~\sysname: \ding{192}~constructs a tile-local worklist and
+  \ding{193}~consumes it via on-device adaptive Stream-$K$ execution.}
+  \Description{Four-panel figure comparing masked-convolution execution
+  paths. Panel~(a) shows the masked-convolution operation. Panel~(b)
+  shows tile skipping with per-tile skip decisions. Panel~(c) shows
+  gather-scatter with explicit extraction and writeback. Panel~(d) shows
+  the \sysname two-stage pipeline: worklist construction from mask tiles
+  and on-device adaptive Stream-$K$ execution with a data-parallel prefix
+  and a Stream-$K$ tail that splits reduction across SMs.}
   \label{fig:overview}
 \end{figure*}
 
 \paragraph{Construction stage.}
 To prevent worklist construction from erasing the savings of selective compute,
-\sysname confines construction to mask and coordinate metadata, never reading
-feature or weight tensors. In one mask-space pass, it fuses the output-mask
-propagation in Eq.~\ref{eq:mask} with tile-local compaction, producing $M_{out}$
-and a worklist $\mathcal{W}$; the requested coordinates from each spatial tile
+\sysname confines construction to mask and coordinate metadata
+(Figure~\ref{fig:overview}d, \ding{192}), never reading feature or weight
+tensors. In one mask-space pass, it fuses the output-mask propagation in
+Eq.~\ref{eq:mask} with tile-local compaction, producing $M_{out}$ and a
+worklist $\mathcal{W}$ (the figure shows the compaction step; mask propagation
+precedes it but is omitted); the requested coordinates from each spatial tile
 form a segment in local dense-traversal order, preserving spatial grouping
 without global ordering.
 \sysname stores $\mathcal{W}$ in a buffer preallocated for
@@ -116,7 +117,9 @@ $|\mathcal{W}|$. A device-resident counter records
 $n_{\mathcal{W}}=|\mathcal{W}|$, so construction needs neither runtime
 allocation nor a host-visible active count.
 
-Even this metadata-only pass must scan the layer's mask grid. \sysname therefore
+Because construction cost scales with the spatial grid rather than the active
+count or channel widths, its share of latency grows as activity falls and
+accumulates when every layer rebuilds. \sysname therefore
 propagates and reuses the resulting mask and worklist metadata across compatible
 operators instead of reconstructing it, amortizing one construction across the
 compatible operator sequence. The fused pass lowers the cost of each
@@ -124,9 +127,10 @@ construction, while cross-operator reuse reduces how often it occurs; together,
 they address the Worklist Construction Cost challenge.
 
 \paragraph{Compute stage.}
-The compute stage replaces only the coordinate source of a dense tiled
-implicit-GEMM pipeline with the worklist; tensor layouts, weight access, and the
-per-position channel-and-kernel reduction remain unchanged from the dense path.
+The compute stage (Figure~\ref{fig:overview}d, \ding{193}) replaces only the
+coordinate source of a dense tiled implicit-GEMM pipeline with the worklist;
+tensor layouts, weight access, and the per-position channel-and-kernel
+reduction remain unchanged from the dense path.
 The worklist length varies across layers and inputs and remains device-resident.
 A fixed decomposition cannot serve the full range: too little parallelism
 leaves the GPU underutilized at low activity, while unnecessary parallelism
@@ -135,17 +139,18 @@ approach of selecting a workload-size-specific decomposition on the host is
 impractical, because reading the length back would incur a synchronization on
 the critical path.
 
-Because the worklist changes only the number of output tiles
-while each tile's reduction datapath stays intact, \sysname launches a
-persistent grid whose block count is set by the GPU's concurrent residency, not
-by the current worklist length. The same blocks serve any worklist: when tiles
-do not fill every block, idle blocks absorb reduction work from
-undersubscribed tiles instead of sitting empty. Which blocks share and how much
-each reduces is determined on-device: the kernel reads the exact worklist
-length, looks up an offline-calibrated table keyed by that length, and
-decomposes the workload accordingly. This on-device adaptation sustains GPU
-throughput as the worklist length changes from frame to frame without any
-host-side decision on the per-frame path.
+The worklist length varies per frame with the input mask: the tile count is
+unknown before launch and device-resident after construction. Synchronizing it
+to the host for decomposition selection would insert a per-operator stall on
+the critical path, yet a fixed decomposition loses efficiency across the
+resulting range of tile counts. \sysname builds on Stream-$K$~\cite{streamk}, which addresses GPU
+underutilization when tiles cannot fill all SMs but assumes the tile count is
+host-visible at launch. \sysname designs
+\emph{on-device adaptive Stream-$K$ execution}: it launches a persistent grid
+sized to SM residency, and the kernel reads the device-resident worklist
+length, looks up an offline-calibrated policy table, and selects its
+decomposition per frame without host involvement. This sustains GPU throughput as the worklist length
+varies from frame to frame.
 
 Neither stage suffices alone: excessive construction cost, a low useful-compute
 ratio, or low consumption throughput can each erase the benefit of issuing less
