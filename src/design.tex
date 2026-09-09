@@ -116,7 +116,7 @@ output mask, $\mathcal{W}^l$ its worklist, and $n^l_{\mathcal{W}}$ its
 device-resident length. \sysname propagates the mask and worklist metadata
 alongside the feature tensor. Whether two consecutive layers are
 reuse-compatible depends on their operator types, not on runtime mask values.
-An operator that preserves or narrows the output grid and active set
+An operator that preserves the output grid and does not expand the active set
 guarantees, for any input mask, that
 $\mathcal{G}^{l+1}=\mathcal{G}^l$ and
 \begin{equation}
@@ -136,8 +136,8 @@ Equality in Eq.~\ref{eq:reuse-condition} covers same-grid $1\times1$
 convolutions, mask-preserving activations, and inference-time normalization,
 leaving $\eta_{\mathrm{construct}}$ unchanged. Strict inclusion can result from
 mask-narrowing operators in the upstream policy, such as the activation-fused
-update truncation that DeltaCNN uses to increase downstream
-sparsity~\cite{deltacnn}. The inherited worklist remains a valid superset,
+update truncation that DeltaCNN~\cite{deltacnn} uses to increase downstream
+sparsity. The inherited worklist remains a valid superset,
 trading a lower $\eta_{\mathrm{construct}}$ for one fewer construction pass
 without violating coverage. Because compute gates all output writes by the
 exact mask, positions scheduled but no longer active under the current mask

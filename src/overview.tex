@@ -81,7 +81,8 @@ requirements, as Figure~\ref{fig:overview} summarizes.
 \begin{figure*}[t]
   \centering
   \includegraphics[width=\textwidth]{figures/wiseconv_overview.png}
-  \caption{Overview of \sysname and baseline execution paths.
+  \caption{Overview of \sysname and baseline execution paths on a
+  two-streaming-multiprocessor (SM) example.
   (a)~Masked convolution: $M_{out}$ marks active output positions
   (colored); the operator computes only these from $\mathbf{x}$ and
   $\mathbf{f}$.
@@ -90,7 +91,10 @@ requirements, as Figure~\ref{fig:overview} summarizes.
   (c)~Gather-scatter packs exactly the receptive fields of active positions, computes, and
   scatters results back.
   (d)~\sysname: \ding{192}~constructs a tile-local worklist and
-  \ding{193}~consumes it via on-device adaptive Stream-$K$ execution.}
+  \ding{193}~consumes it via on-device adaptive Stream-$K$ execution,
+  where data-parallel tiles complete a full reduction each while
+  Stream-$K$ tail tiles split their reduction across SMs ($O_{14}^0$,
+  $O_{14}^1$) and merge the partials.}
   \Description{Four-panel figure comparing masked-convolution execution
   paths. Panel~(a) shows the masked-convolution operation. Panel~(b)
   shows tile skipping with per-tile skip decisions. Panel~(c) shows
@@ -111,9 +115,8 @@ worklist $\mathcal{W}$ (the figure shows the compaction step; mask propagation
 precedes it but is omitted); the requested coordinates from each spatial tile
 form a segment in local dense-traversal order, preserving spatial grouping
 without global ordering.
-\sysname stores $\mathcal{W}$ in a buffer preallocated for
-$|\mathcal{G}|=H_{out}W_{out}$ coordinates, the static upper bound on
-$|\mathcal{W}|$. A device-resident counter records
+\sysname writes $\mathcal{W}$ into a preallocated buffer large enough for the
+full output grid. A device-resident counter records
 $n_{\mathcal{W}}=|\mathcal{W}|$, so construction needs neither runtime
 allocation nor a host-visible active count.
 
