@@ -86,8 +86,8 @@ requirements, as Figure~\ref{fig:overview} summarizes.
   (a)~Masked convolution: $M_{out}$ marks active output positions
   (colored); the operator computes only these from $\mathbf{x}$ and
   $\mathbf{f}$.
-  (b)~Tile skipping skips only fully inactive tiles; partially active
-  tiles compute all positions.
+  (b)~Tile skipping skips only fully inactive tiles; a single active
+  position triggers computation for that tile.
   (c)~Gather-scatter packs exactly the receptive fields of active positions, computes, and
   scatters results back.
   (d)~\sysname: \ding{192}~constructs a tile-local worklist and

@@ -40,8 +40,9 @@ per-frame position selection imposed by the mask conflicts with the contiguous
 coordinate assumption that sustains this throughput, placing the two
 requirements in tension.
 
-Existing systems either retain the tiled execution for high throughput or
-eliminate wasted work for a high useful-compute ratio, but not both.
+Existing systems follow one of two execution paths, retaining tiled execution
+for high throughput or eliminating wasted work for a high useful-compute ratio,
+but not both.
 \emph{Tile skipping}~\cite{sbnet,skipconv,evconv,deltacnn} retains the dense
 pipeline and suppresses a tile only when all its outputs are inactive, so a
 single active position triggers computation for the entire tile.
@@ -77,11 +78,11 @@ with the active count or channel widths, while the compute it enables shrinks wi
 both. Construction's share of latency therefore grows as activity falls and
 channels thin,
 and accumulates across operators when every layer rebuilds.
-Second, \emph{end-to-end worklist efficiency}: the worklist's order and length both
+Second, \emph{worklist consumption efficiency}: the worklist's order and length both
 affect its consumption throughput.
 An unordered worklist scatters the input neighborhoods that adjacent work
 touches, lowering locality; its length falls below the dense grid and shifts with
-layer and input, so no fixed tiling keeps the GPU full, and because the length
+layer and input, so a naive fixed decomposition cannot keep the GPU full, and because the length
 is device-resident, any host-side decision that depends on it costs a
 synchronization on the per-frame path. Both effects sharpen
 as activity falls.
@@ -89,7 +90,7 @@ as activity falls.
 We present \sysname (\textbf{W}orklist-dr\textbf{I}ven ma\textbf{S}k\textbf{E}d
 % ORIG word "runtime": an execution model
 \textbf{Conv}o\-lu\-tion), a masked-convolution runtime that fuses
-position-level selectivity into the dense tiled pipeline, securing both a high
+position-level selectivity into the dense tiled pipeline, enabling both a high
 useful-compute ratio and high throughput by co-designing worklist construction
 and consumption.
 To reduce worklist construction cost, a
@@ -97,7 +98,7 @@ single mask-space pass fuses output-mask propagation with per-tile compaction,
 operating on only mask and coordinate metadata; compatible operators reuse valid
 metadata instead of reconstructing it.
 
-To sustain end-to-end worklist efficiency, construction emits contiguous per-tile segments ordered by the dense
+To sustain worklist consumption efficiency, construction emits contiguous per-tile segments ordered by the dense
 tile traversal, giving the compute stage tile-local structure without global sorting.
 Because the worklist changes the number of output-coordinate rows while each row's tensor layout and reduction datapath remain unchanged, \sysname launches a persistent grid that
 serves any worklist length, with idle thread blocks absorbing reduction work from
@@ -107,9 +108,9 @@ utilization across varying worklist lengths without host synchronization.
 
 This paper makes the following contributions:
 \begin{itemize}
-  \item We characterize existing masked-convolution systems along
+  \item We characterize existing masked-convolution execution paths along
         two axes, useful-compute ratio and throughput, exposing why
-        these systems do not translate upstream sparsity into proportional
+        they do not translate upstream sparsity into proportional
         latency reduction.
 
   \item We design \sysname, which fuses position-level selectivity into the

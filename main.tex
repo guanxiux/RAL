@@ -3,6 +3,24 @@
 \settopmatter{printacmref=false}
 \renewcommand\footnotetextcopyrightpermission[1]{}
 \setcopyright{none}
+\acmConference[]{ }{ }{ }
+\acmBooktitle{ }
+% Strip all running heads. acmart installs "standardpagestyle" from its own
+% \AtBeginDocument hook, so \pagestyle in the preamble is overwritten; we
+% redefine the style itself (keeping review line numbers and the page folio).
+\makeatletter
+\AtBeginDocument{%
+  \fancypagestyle{standardpagestyle}{%
+    \fancyhf{}%
+    \renewcommand{\headrulewidth}{\z@}%
+    \renewcommand{\footrulewidth}{\z@}%
+    \fancyhead[L]{\ACM@linecountL}%
+    \fancyhead[R]{\ACM@linecountR}%
+    \fancyfoot[C]{\if@ACM@printfolios\footnotesize\thepage\fi}%
+  }%
+  \pagestyle{standardpagestyle}%
+}
+\makeatother
 
 \usepackage{amsmath,amsfonts}
 \usepackage{algorithm}
