@@ -40,14 +40,12 @@ upstream policy emits a spatial mask, and the operator computes only the marked
 positions. The mask comes from sources including event-camera
 increments~\cite{asyncsparse,evconv}, temporal residuals between video
 frames~\cite{cbinfer,skipconv,deltacnn,motiondelta,sparsetem}, or learned input-dependent
-gates~\cite{sact,sai,dgnet,dynconv}. The event and temporal
-policies mark positions that changed since the previous frame; the learned gates
-mark positions the task treats as relevant. These sources differ in sensing
+gates~\cite{sact,sai,dgnet,dynconv}. These sources differ in sensing
 modality and policy, but all expose the same dynamic spatial sparsity on a dense 2D
 feature grid, so a single masked-convolution runtime serves them all.
 
-Masked convolution keeps the tensors and arithmetic of dense convolution
-and restricts only which output coordinates it computes. It operates on an input
+Masked convolution retains dense tensor layouts and arithmetic, restricting
+only which output coordinates are computed. It operates on an input
 feature tensor $\mathbf{x}\in\mathbb{R}^{H_{in}\times W_{in}\times C_{in}}$, a
 weight tensor $\mathbf{f}\in\mathbb{R}^{k\times k\times C_{in}\times C_{out}}$ of
 kernel size $k$, and an output
@@ -87,17 +85,14 @@ For each non-$\bot$ slot $p\in\mathcal{C}$ it computes
 \end{equation}
 where $\mathcal{N}_i(p)$ is the $i$-th position in $\mathcal{N}(p)$ and
 $\mathbf{f}_i\in\mathbb{R}^{C_{in}\times C_{out}}$ the corresponding weight
-slice. How unrequested positions are represented or merged into a dense result
-is policy-specific. Event and temporal execution retains prior state, whereas
-learned gating merges the computed branch values into a residual or bypass
-tensor. Coverage is therefore the operator-level correctness condition: every
-position requested by the policy is computed, while the policy determines the
-treatment of all other positions.
+slice. How unrequested positions are treated is policy-specific: event and
+temporal execution retains prior state, while learned gating merges results
+into a residual. Coverage is therefore the operator-level correctness
+condition; the policy determines the treatment of all other positions.
 Beyond coverage, a path may issue inactive or $\bot$ slots; dense
 convolution is the extreme where
 $\{c\in\mathcal{C}:c\ne\bot\}=\mathcal{G}$. The policy fixes the accuracy
-and required work, whereas the execution path determines the issued sequence
-$\mathcal{C}$.
+and required work.
 
 \subsection{The Sparsity-to-Latency Gap}
 \label{sec:bg:gap}
@@ -143,7 +138,7 @@ A policy fixes the active ratio $\alpha$, defined as the fraction of output-grid
   \end{aligned}
   \label{eq:efficiency-framework}
 \end{equation}
-For $|\mathcal{C}|>0$, $\eta$ quantifies schedule efficiency by capturing the fraction of issued computation that is useful; the remaining slots correspond to inactive or padding positions. An ideal execution path achieves $\eta=1$ by issuing only required outputs; dense convolution, which issues the entire grid, has $\eta\approx\alpha$. An execution path also determines its throughput $T$, which combines with $\eta$ to yield the effective throughput $T_{\mathrm{eff}}$:
+For $|\mathcal{C}|>0$, an ideal path achieves $\eta=1$ by issuing only required outputs; dense convolution, which issues the entire grid, has $\eta\approx\alpha$. An execution path also determines its throughput $T$, which combines with $\eta$ to yield the effective throughput $T_{\mathrm{eff}}$:
 \begin{equation}
   \begin{aligned}
     T &= \frac{2|\mathcal{C}|k^2 C_{in} C_{out}}{t},
@@ -232,8 +227,6 @@ community; thus directly introducing coordinate indirection into 2D convolution
 which already tiles densely appears unattractive. 2D masked convolution, however, presents a structurally simpler
 mapping problem: the output grid is regular, the mask is a bitmap, and each
 coordinate's receptive-field addresses follow from fixed grid arithmetic, so
-the coordinate-map machinery of 3D systems is unnecessary. For 2D masked
-convolution, \sysname identifies the coordinate source as the replaceable
-interface between position selection and tiled reduction, while the co-design
-of worklist construction and consumption realizes this insight to secure both
-a high useful-compute ratio and high throughput.
+the coordinate-map machinery of 3D systems is unnecessary. \sysname exploits
+this simpler mapping by replacing the coordinate source without altering the
+tiled reduction.

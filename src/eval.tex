@@ -152,8 +152,7 @@ teacher~\cite{yolo26}.
 \end{figure*}
 
 \paragraph{Latency.}
-\sysname consistently converts upstream sparsity into lower full-model latency
-across all evaluated workloads and platforms. It is the fastest path in all 24
+\sysname is the fastest path in all 24
 measured workload-platform pairs (Figure~\ref{fig:e2e-latency}). Relative to
 the fastest evaluated competing path in each pair, it achieves a 1.57$\times$
 geometric-mean speedup; individual-pair speedups range from 1.28$\times$ to
@@ -177,13 +176,10 @@ where an existing sparse path crosses the dense baseline.
 
 \sysname's lead over the per-pair fastest competing path is narrower on the
 embedded platforms (geometric mean 1.48$\times$ on Jetson vs.\ 1.62$\times$ on
-discrete GPUs), though it remains fastest in all eight Jetson pairs. The gap
-narrows because sparse paths themselves are more effective on Jetson: the
-fastest sparse path beats Dense in six of eight Jetson pairs but only three of
-16 discrete-GPU pairs (geometric-mean speedup over Dense: 1.26$\times$ vs.\
-0.80$\times$). Dense convolution is more latency-bound on the narrower Jetson
-GPUs, so the same active ratio yields a larger absolute latency reduction,
-making sparse paths more likely to outperform dense.
+discrete GPUs), though it remains fastest in all eight Jetson pairs.
+Dense convolution is more latency-bound on the narrower Jetson
+GPUs, so sparse paths are more effective there, leaving less headroom for
+\sysname to capture.
 
 \sysname also realizes more of the available sparsity headroom than every
 competing path. It is the closest path to the ideal proportional-scaling
@@ -197,9 +193,8 @@ short worklists, as further discussed in
 \S\ref{sec:eval:microbenchmarks}.
 
 \paragraph{Energy.}
-\sysname's latency gains also reduce per-frame board energy on both Jetson
-platforms. It is the lowest-energy path for every workload
-(Table~\ref{tab:e2e-energy}), reducing energy by
+\sysname is the lowest-energy path for every workload on both Jetson
+platforms (Table~\ref{tab:e2e-energy}), reducing energy by
 17.0--39.8\% relative to the lowest-energy competing path in each pair and by
 28.5--72.6\% relative to dense execution.
 
@@ -249,7 +244,7 @@ with dense execution, the upstream sparsity policies lower AP and PCKh by only
 \input{figures/worklist_efficiency_table}
 
 \paragraph{Effective throughput.}
-Under the same execution settings as the end-to-end evaluation, we estimate
+Under the same settings, we estimate
 full-model throughput $T$ and effective throughput $\eta T$ on RTX~3080 and
 AGX Orin (Figure~\ref{fig:effective-throughput}). \sysname sustains
 30.7--87.2\% of Dense raw throughput on RTX~3080 and 58.6--83.5\% on AGX
@@ -270,7 +265,7 @@ active ratio and small spatial grids yield exceptionally short worklists
 (P10, P50, and P90 lengths of 3, 43, and 389), making final-tile padding
 proportionally large. Because its inputs are temporally unrelated, DynConv uses
 the same exact-length device policy without a temporal activity selector. Even
-in this setting, its 90.1\% useful-compute ratio
+in this setting, this ratio
 is substantially above tile skipping's 48.9\% on RTX~3080.
 
 \input{figures/cost_decomposition_table}
@@ -280,9 +275,8 @@ We decompose full-model YOLOv8n latency by execution stage on RTX~3080 and AGX
 Orin (Table~\ref{tab:cost-decomposition}). On the randomly sampled RTX~3080
 frames, \sysname reduces the convolution share from 2.55 to 1.10\,ms while
 adding only 0.10\,ms of construction; the corresponding sampled-row totals
-are 2.79 and 1.49\,ms. The AGX Orin row shows the same balance at its slower
-operating point: construction accounts for 0.37\,ms, while convolution falls
-from 22.61 to 13.41\,ms and the sampled-row total falls from 25.09 to
+are 2.79 and 1.49\,ms. On AGX Orin, construction accounts for 0.37\,ms, while convolution falls
+from 22.61 to 13.41\,ms and the total falls from 25.09 to
 17.07\,ms.
 
 Gather-scatter shows why exact selection alone is insufficient. Although it
@@ -318,8 +312,7 @@ selected for several full-worklist shapes by the relaxed guard. Synchronizing
 the exact worklist length costs 6.207\,ms (3.82$\times$ Ours), so its host
 readback dominates any gain from exact launch sizing. Cons. and Conv. are
 shown for Ours using the current semantic attribution; the remaining variant
-rows report their measured full-model latency and useful-compute ratio. AGX
-Orin entries are reserved for the multi-platform refresh.
+rows report their measured full-model latency and useful-compute ratio.
 
 \input{figures/dtype_decomposition_table}
 
@@ -355,9 +348,8 @@ high-end GPUs~\cite{deltacnn}. The effect is
 concentrated in convolution: from batch size~1 to~8, tile skipping's per-frame
 convolution cost falls 2.68$\times$, compared with 1.72$\times$ for \sysname.
 \sysname remains fastest, but its lead narrows from 1.76$\times$ to
-1.55$\times$. These results, in turn, show why adaptive decomposition matters
-at batch size~1: \sysname adapts its work decomposition to each short worklist
-instead of relying on a larger batch to expand the launch grid.
+1.55$\times$. At batch size~1, adaptive decomposition substitutes for the
+occupancy that batching would otherwise provide.
 
 \subsection{Discussion}
 \label{sec:eval:discussion}

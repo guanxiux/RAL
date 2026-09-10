@@ -2,43 +2,58 @@
 \label{sec:impl}
 
 We implement \sysname as a PyTorch extension with a Python frontend and a CUDA
-backend written in C++. A model-conversion pass replaces supported modules, preserves their
-parameters and weights, and statically marks worklist-reuse edges and rebuild
-points. The compute backend adapts CUTLASS~\cite{cutlass} dense tiled
-implicit-GEMM pipelines for direct worklist consumption, covering both FP32
-(SIMT) and FP16 (tensor core) arithmetic with NHWC tensors. The full-workload
-comparison uses the FP32 datapath; sensitivity studies additionally
-exercise the FP16 datapath. The backend supports standard, grouped, depthwise,
-and transposed convolutions, as well as the mask-aware auxiliary operators
-required
-by evaluated workloads. Each output
-carries a lightweight record that references its device-resident $M_{out}$,
-$\mathcal{W}$, and $n_{\mathcal{W}}$ buffers. All buffers are allocated during
-module initialization; mask selection remains with the upstream application.
+backend written in C++. A model-conversion pass replaces supported modules,
+preserves their parameters and weights, and statically marks worklist-reuse
+edges and rebuild points. The compute backend adapts
+CUTLASS~\cite{cutlass} dense tiled implicit-GEMM pipelines for direct worklist
+consumption, covering both FP32 (SIMT) and FP16 (tensor core) arithmetic with
+NHWC tensors; the full-workload comparison uses the FP32 datapath, while
+sensitivity studies additionally exercise the FP16 datapath. The backend
+covers all convolution variants used by the evaluated models, as well as
+mask-aware auxiliary operators.
+The partial-reduction workspace $\mathbf{Z}$ is shared across all layers at
+the maximum required size and allocated once during initialization. Every
+backend variant agrees numerically with cuDNN at each active output position.
 
-The construction kernel maps one CUDA block to each construction tile in
-Algorithm~\ref{alg:construct}. Warp ballots compute lane-local ranks, a short
-shared-memory prefix combines the warp counts, and one \texttt{atomicAdd}
-reserves the tile's contiguous worklist segment. Worklists use 32-bit linear
-coordinates and are provisioned for $|\mathcal{G}|$ entries; the runtime resets
-$n_{\mathcal{W}}$ on the operator's CUDA stream before each construction.
-When a learned gate
-supplies $M_{out}$ directly, construction skips mask propagation and compacts
-active coordinates from the supplied mask. Compatible operators reuse the
-worklist and its length by aliasing the $\mathcal{W}$ and $n_{\mathcal W}$
-buffers, while $M_{out}$ always denotes the current operator's exact output
-mask.
-
-The compute backend instantiates a C++ template family over
-$(B_M,B_N,B_K)$; each template variant determines its persistent grid size
-from CUDA occupancy and the GPU's SM count. The partial-reduction workspace is
-shared across all layers at the maximum required size
-($\max_l \max(S_k^l) \times |\mathbf{y}^l|$ accumulation-precision elements),
-allocated once during initialization. When a layer's policy table~$P^l$
-selects the same mode for every tile count~$s$, \sysname eliminates the
-unused mode branches and partial-reduction logic from that layer's kernel,
-producing a streamlined variant that avoids the per-tile policy decode and
-workspace access. Each invocation launches its fixed persistent grid; the
-kernel reads device-resident $n^l_{\mathcal{W}}$, looks up~$P^l$, and
-dispatches accordingly. Every backend variant agrees numerically with cuDNN at
-each active output position.
+% --- OLD VERSION ---
+% We implement \sysname as a PyTorch extension with a Python frontend and a CUDA
+% backend written in C++. A model-conversion pass replaces supported modules, preserves their
+% parameters and weights, and statically marks worklist-reuse edges and rebuild
+% points. The compute backend adapts CUTLASS~\cite{cutlass} dense tiled
+% implicit-GEMM pipelines for direct worklist consumption, covering both FP32
+% (SIMT) and FP16 (tensor core) arithmetic with NHWC tensors. The full-workload
+% comparison uses the FP32 datapath; sensitivity studies additionally
+% exercise the FP16 datapath. The backend supports standard, grouped, depthwise,
+% and transposed convolutions, as well as the mask-aware auxiliary operators
+% required
+% by evaluated workloads. Each output
+% carries a lightweight record that references its device-resident $M_{out}$,
+% $\mathcal{W}$, and $n_{\mathcal{W}}$ buffers. All buffers are allocated during
+% module initialization; mask selection remains with the upstream application.
+%
+% The construction kernel maps one CUDA block to each construction tile in
+% Algorithm~\ref{alg:construct}. Warp ballots compute lane-local ranks, a short
+% shared-memory prefix combines the warp counts, and one \texttt{atomicAdd}
+% reserves the tile's contiguous worklist segment. Worklists use 32-bit linear
+% coordinates and are provisioned for $|\mathcal{G}|$ entries; the runtime resets
+% $n_{\mathcal{W}}$ on the operator's CUDA stream before each construction.
+% When a learned gate
+% supplies $M_{out}$ directly, construction skips mask propagation and compacts
+% active coordinates from the supplied mask. Compatible operators reuse the
+% worklist and its length by aliasing the $\mathcal{W}$ and $n_{\mathcal W}$
+% buffers, while $M_{out}$ always denotes the current operator's exact output
+% mask.
+%
+% The compute backend instantiates a C++ template family over
+% $(B_M,B_N,B_K)$; each template variant determines its persistent grid size
+% from CUDA occupancy and the GPU's SM count. The partial-reduction workspace is
+% shared across all layers at the maximum required size
+% ($\max_l \max(S_k^l) \times |\mathbf{y}^l|$ accumulation-precision elements),
+% allocated once during initialization. When a layer's policy table~$P^l$
+% selects the same mode for every tile count~$s$, \sysname eliminates the
+% unused mode branches and partial-reduction logic from that layer's kernel,
+% producing a streamlined variant that avoids the per-tile policy decode and
+% workspace access. Each invocation launches its fixed persistent grid; the
+% kernel reads device-resident $n^l_{\mathcal{W}}$, looks up~$P^l$, and
+% dispatches accordingly. Every backend variant agrees numerically with cuDNN at
+% each active output position.

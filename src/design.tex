@@ -21,7 +21,7 @@ does, regularizes the compute input at the cost of feature traffic proportional
 to the active count and $k^2C_{in}$. The useful middle ground is therefore a
 metadata-only schedule with local rather than global ordering.
 
-\sysname realizes this middle ground with contiguous, tile-local worklist
+\sysname realizes this with contiguous, tile-local worklist
 segments. Because the number of active positions is not known before the pass,
 it preallocates a coordinate buffer with capacity
 $|\mathcal{G}|=H_{out}W_{out}$, the static upper bound on
@@ -51,18 +51,15 @@ $n_{\mathcal{W}}>0$,
   \underbrace{\frac{n_{\mathcal{W}}}{|\mathcal{C}|}}_{\eta_{\mathrm{compute}}} .
   \label{eq:eta-decomp}
 \end{equation}
-Here, $\eta_{\mathrm{construct}}$ compares required positions with worklist
-entries, while $\eta_{\mathrm{compute}}$ compares worklist entries with issued
-slots. We analyze the former here and the latter after defining the compute
-organization in \S\ref{sec:design:compute}. The factorization decomposes
-$\eta$ only; all stage costs remain reflected in throughput~$T$.
+We analyze $\eta_{\mathrm{construct}}$ (required positions vs.\ worklist
+entries) here and $\eta_{\mathrm{compute}}$ (worklist entries vs.\ issued
+slots) in \S\ref{sec:design:compute}; the factorization decomposes $\eta$
+only, with all stage costs reflected in throughput~$T$.
 
 Because construction tiles partition the output grid and use disjoint
 reservations, each active coordinate appears exactly once, so
 $n_{\mathcal{W}}=\|M_{out}\|_0$. Fresh construction therefore has
-$\eta_{\mathrm{construct}}=1$ for a nonempty worklist. Coverage constrains
-membership rather than order, so tile reservation order does not affect
-correctness; traversal order within each interval is retained for locality.
+$\eta_{\mathrm{construct}}=1$ for a nonempty worklist.
 
 \begin{algorithm}[t]
 \caption{Tile-Local Worklist Construction}
@@ -106,10 +103,8 @@ Each construction pass examines all $H_{out}W_{out}$ positions and, when
 deriving $M_{out}$ from $M_{in}$, performs $O(k^2)$ mask work per position.
 This channel-independent grid scan contrasts with required convolution work,
 which scales with the active ratio, spatial extent, and both channel
-dimensions. Repeating the scan
-across same-grid layers that introduce no new required positions is therefore
-redundant. \sysname instead amortizes construction over each compatible layer
-sequence by reusing one worklist across its operators.
+dimensions. \sysname therefore amortizes construction by reusing one worklist
+across each compatible layer sequence.
 
 For layer $l$, let $\mathcal{G}^l$ denote its output grid, $M^l_{out}$ its
 output mask, $\mathcal{W}^l$ its worklist, and $n^l_{\mathcal{W}}$ its
@@ -322,7 +317,6 @@ the device, determines the current wave boundary, and selects between
 data-parallel, Stream-$K$, and hybrid Stream-$K$ decomposition accordingly,
 without host involvement.
 
-Because the host cannot observe $n^l_{\mathcal{W}}$ without synchronization,
 \sysname fixes the tile configuration~$\hat{q}^l=(B_M,B_N,B_K)$ per layer at
 deployment and adapts only the decomposition mode on-device. What changes per
 frame is how the $K$~reduction across output tiles is assigned to thread
@@ -385,16 +379,14 @@ Algorithm~\ref{alg:streamk} presents the hybrid mode, which subsumes the
 other two: data-parallel execution corresponds to $s_{\mathrm{dp}}=s$ (empty
 tail), while pure Stream-$K$ corresponds to $s_{\mathrm{dp}}=0$ (no
 data-parallel prefix); the policy table selects among the three based on the
-current tile count. All three modes share the same gather-at-load reduction
-datapath; only the block-to-work mapping differs.
+current tile count.
 Algorithm~\ref{alg:streamk} omits boundary-tile padding when
 $n_{\mathcal{W}}$, $C_{in}$, or $C_{out}$ is not divisible by $B_M$, $B_K$,
 or $B_N$, respectively; the implementation masks out-of-bounds accesses in
 these tiles.
 
-At runtime, the kernel reads $n_{\mathcal{W}}$, derives
-the tile count, and looks up the decomposition mode from the policy table $P^l$
-(Lines~1--4 in Algorithm~\ref{alg:streamk}).
+Lines~1--4 of Algorithm~\ref{alg:streamk} read $n_{\mathcal{W}}$, derive
+the tile count, and look up the mode from~$P^l$.
 The persistent grid first processes complete waves data-parallel
 (Lines~7--18): each block decodes its position and channel tile indices,
 reads $B_M$ output coordinates from the worklist $\mathcal{W}$, and reduces the full
@@ -410,11 +402,8 @@ is the largest split factor in the policy table $P^l$. A per-tile
 completion counter tracks how many contributors have finished; the last block
 to arrive loads all partial fragments, reduces them, applies the output
 epilogue, and writes the final result (Lines~33--37). Both write paths guard
-stores with the exact output mask $M_{out}$, so positions present in a reused
-superset worklist but no longer active under the current mask produce no
-output store. No device-wide barrier
-is needed; data-parallel tiles bypass the workspace entirely and write output
-directly.
+stores with $M_{out}$ (\S\ref{sec:design:reuse}). No device-wide barrier
+is needed; data-parallel tiles bypass the workspace entirely.
 
 
 \begin{algorithm}[htb]
