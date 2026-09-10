@@ -134,13 +134,6 @@ The compute stage (Figure~\ref{fig:overview}d, \ding{193}) replaces only the
 coordinate source of a dense tiled implicit-GEMM pipeline with the worklist;
 tensor layouts, weight access, and the per-position channel-and-kernel
 reduction remain unchanged from the dense path.
-The worklist length varies across layers and inputs and remains device-resident.
-A fixed decomposition cannot serve the full range: too little parallelism
-leaves the GPU underutilized at low activity, while unnecessary parallelism
-adds overhead at high activity, both degrading throughput. Yet the conventional
-approach of selecting a workload-size-specific decomposition on the host is
-impractical, because reading the length back would incur a synchronization on
-the critical path.
 
 The worklist length varies per frame with the input mask: the tile count is
 unknown before launch and device-resident after construction. Synchronizing it
