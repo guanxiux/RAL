@@ -83,9 +83,9 @@ WORKLOAD_LABELS = {
 
 # Exact ACM sigplan width under the repository's acmart.cls.  The canvas
 # reserves enough room for the two-line bottom-row workload labels at 1:1 size.
-FIG_W, FIG_H = 7.00, 4.12
+FIG_W, FIG_H = 7.00, 3.00
 FS_TICK, FS_AXIS, FS_PANEL, FS_LEG, FS_WORKLOAD = 6.1, 7.2, 7.0, 7.2, 6.9
-BREAK_RATIO = 1.75
+BREAK_RATIO = 1.45
 IDEAL_COLOR = "#b23b3b"
 IDEAL_LINESTYLE = (0, (4, 2))
 
@@ -141,7 +141,7 @@ def style_axis(ax) -> None:
 
 def natural_ticks(max_value: float):
     """Choose a 1/2/2.5/5-scaled axis with four to seven labeled ticks."""
-    desired_top = max_value * 1.08
+    desired_top = max_value * 1.02
     exponent = math.floor(math.log10(desired_top))
     choices = []
     for power in range(exponent - 2, exponent + 2):
@@ -149,10 +149,10 @@ def natural_ticks(max_value: float):
         for multiplier in (1.0, 2.0, 2.5, 5.0):
             step = multiplier * scale
             intervals = math.ceil(desired_top / step - 1e-12)
-            if 3 <= intervals <= 6:
+            if 2 <= intervals <= 6:
                 top = intervals * step
                 choices.append(
-                    (abs(intervals - 5), (top - desired_top) / desired_top, step,
+                    ((top - desired_top) / desired_top, abs(intervals - 4), step,
                      intervals)
                 )
     if not choices:
@@ -223,7 +223,7 @@ def draw_broken_axis(fig, rect, values, reference):
 
     outlier = values["gather_scatter"]
     body_max = max(value for key, value in values.items() if key != "gather_scatter")
-    ax_bottom.set_ylim(0, body_max * 1.20)
+    ax_bottom.set_ylim(0, body_max * 1.10)
     ax_top.set_ylim(outlier * 0.94, outlier * 1.07)
     ax_top.set_yticks([outlier])
     outlier_label = f"{outlier:.1f}" if outlier < 10 else f"{outlier:.0f}"
@@ -348,7 +348,7 @@ def draw_latency_figure(by_key) -> None:
             )
         else:
             fig.text(
-                (panel_box_left + 0.095) / FIG_W,
+                (panel_box_left + 0.055) / FIG_W,
                 (y_origin + 0.5 * panel_height) / FIG_H,
                 "Latency (ms)",
                 ha="center",
@@ -457,10 +457,10 @@ def draw_accuracy_figure(by_key) -> None:
     """Draw four metric-specific workload panels with a shared path legend."""
     # acmart's sigplan layout uses a 3.334-inch column.  Emit at that width so
     # LaTeX does not rescale the figure and its typography.
-    fig_width, fig_height = 3.334, 1.53
+    fig_width, fig_height = 3.334, 0.92
     fig = plt.figure(figsize=(fig_width, fig_height))
     margin_left, margin_right = 0.31, 0.01
-    margin_bottom, margin_top = 0.20, 0.34
+    margin_bottom, margin_top = 0.20, 0.22
     panel_gap = 0.265
     panel_width = (
         fig_width - margin_left - margin_right - 3 * panel_gap
@@ -515,7 +515,7 @@ def draw_accuracy_figure(by_key) -> None:
             linespacing=1.25,
         )
         ax.set_ylabel(metric_labels[metric], fontsize=FS_AXIS, labelpad=0.8)
-        ax.yaxis.set_label_coords(-0.28, 0.5)
+        ax.yaxis.set_label_coords(-0.35, 0.5)
         ax.tick_params(
             axis="y", labelsize=FS_TICK, pad=0.8, length=1.8, width=0.6
         )

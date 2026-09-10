@@ -44,7 +44,7 @@ for directory in (
 
 # acmart's sigplan column is 240.945 TeX pt, or 3.334 physical inches.  Emit
 # at that width so LaTeX does not rescale the typography.
-FIG_W, FIG_H = 3.334, 1.82
+FIG_W, FIG_H = 3.334, 1.15
 FS_TICK, FS_LAB, FS_LEG, FS_CAP, FS_REF = 6.5, 7.0, 7.0, 7.5, 6.0
 
 plt.rcParams.update(
@@ -88,7 +88,7 @@ reference_ms = float(rows["Dense"]["proportional_reference_ms"])
 # Equal-area panel geometry in figure fractions.  The central gutter carries
 # both panel (a)'s right y label and panel (b)'s left y label.
 LX0, RX0, PW = 0.120, 0.680, 0.300
-PB, PT = 0.190, 0.895
+PB, PT = 0.22, 0.82
 PH = PT - PB
 
 # Panel (a) contains two groups of three touching bars.  The gap between groups
@@ -132,8 +132,8 @@ def draw_latency_and_aee(fig: plt.Figure) -> None:
 
     for axis in (ax_latency, ax_aee):
         axis.set_xlim(AX_LO, AX_HI)
-        axis.set_ylim(0.0, 2.5)
-        axis.set_yticks([0.0, 0.5, 1.0, 1.5, 2.0, 2.5])
+        axis.set_ylim(0.0, 2.2)
+        axis.set_yticks([0.0, 0.5, 1.0, 1.5, 2.0])
         axis.tick_params(axis="y", labelsize=FS_TICK, pad=1.5)
         axis.spines["top"].set_visible(False)
 
@@ -200,7 +200,7 @@ def draw_relative_throughput(fig: plt.Figure) -> None:
             )
 
     ax.set_xlim(-0.55, 1.55)
-    ax.set_ylim(0.0, 1.15)
+    ax.set_ylim(0.0, 1.1)
     ax.set_yticks([0.0, 0.25, 0.5, 0.75, 1.0])
     ax.yaxis.set_major_formatter(FuncFormatter(relative_tick))
     ax.set_xticks(group_centers)
@@ -236,7 +236,7 @@ def main() -> None:
     shared_legend(fig)
     fig.text(
         LX0 + PW / 2,
-        0.015,
+        0.005,
         "(a) Latency and accuracy",
         ha="center",
         va="bottom",
@@ -244,7 +244,7 @@ def main() -> None:
     )
     fig.text(
         RX0 + PW / 2,
-        0.015,
+        0.005,
         "(b) Relative throughput",
         ha="center",
         va="bottom",

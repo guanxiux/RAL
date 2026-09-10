@@ -97,7 +97,7 @@ and required work.
 \subsection{The Sparsity-to-Latency Gap}
 \label{sec:bg:gap}
 
-\begin{figure}[tb]
+\begin{figure}[htb]
   \centering
   \includegraphics[width=\columnwidth]{figures/gap.pdf}
   \caption{FireFlowNet~\cite{fireflownet} using the
@@ -188,7 +188,7 @@ approaches it: tile skipping (DeltaCNN~\cite{deltacnn}) reaches 0.606\,ms, still
 2.21$\times$ the reference, and gather-scatter (MMCV~\cite{mmcv}) runs at
 2.052\,ms, almost twice the latency of dense convolution itself. The gap traces
 to low effective throughput on both paths. Tile skipping holds throughput at
-61.6\% of dense but at a useful-compute ratio of only 73.6\%; gather-scatter
+61.6\% of dense but at a useful-compute ratio of only 70.1\%; gather-scatter
 lifts the useful-compute ratio to one, yet extraction and data movement collapse
 its throughput to 13.4\% of dense (Fig.~\ref{fig:gap}b). Neither path efficiently
 converts the GPU's capability into effective

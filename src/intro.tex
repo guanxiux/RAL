@@ -53,14 +53,14 @@ writeback overhead that damages throughput.
 
 Neither path converts sparsity into proportional latency reduction
 (\S\ref{sec:bg:gap}). In our evaluation, under a temporal difference mask
-policy~\cite{deltacnn}, 52\% of YOLOv8n~\cite{yolov8}'s convolution work is
+policy~\cite{deltacnn}, 51.3\% of YOLOv8n~\cite{yolov8}'s convolution work is
 unnecessary, yet tile skipping~\cite{deltacnn} incurs 26.1\% higher latency
-than dense with a useful-compute ratio of only ??\%; gather-scatter~\cite{mmcv} lifts
+than dense with a useful-compute ratio of only 73.0\%; gather-scatter~\cite{mmcv} lifts
 the useful-compute ratio to near one but at 4.3$\times$ the latency of dense.
 Even on the sparser FireFlowNet~\cite{fireflownet} under event-camera
-increments~\cite{evconv}, where 75.1\% of work is unnecessary and tile skipping
-does cut latency by 42.0\%, it still wastes 26.4\% of its issued operations;
-gather-scatter sustains only ??\% of tile skipping's throughput, at
+increments~\cite{evconv}, where 73.7\% of work is unnecessary and tile skipping
+does cut latency by 42.0\%, it still wastes 29.9\% of its issued operations;
+gather-scatter sustains only 21.7\% of tile skipping's throughput, at
 2.0$\times$ the latency of dense.
 
 Our key insight is that output coordinates form the interface between position selection and the reduction datapath in tiled execution. Replacing the contiguous coordinate source with an active-output worklist changes only which positions are scheduled, while preserving the dense tensor layouts and regular reduction datapath that sustain throughput. The worklist interface makes it possible to compute almost exclusively required outputs without abandoning the dense pipeline's throughput potential.

@@ -65,7 +65,7 @@ WORKLOAD_LABELS = {
 
 # The 192 pt canvas is 80% of the measured 240 pt acmart column width and is
 # included at that physical size. Both panels are deliberately shallow.
-FIG_W, FIG_H = 192.0 / 72.0, 2.15
+FIG_W, FIG_H = 3.334, 1.85
 FS_TICK, FS_AXIS, FS_WORKLOAD, FS_PANEL, FS_LEG = 6.1, 6.9, 6.4, 6.7, 5.8
 WASTED_COLOR = "#e3e3e3"
 WASTED_HATCH = "...."
@@ -100,9 +100,9 @@ def relative_tick(value: float, _: int) -> str:
 
 
 def plot_panel(ax, rows, device, show_xlabels):
-    group_step = 0.92
-    within_step = 0.180
-    bar_width = 0.145
+    group_step = 0.85
+    within_step = 0.170
+    bar_width = 0.130
     centers = {
         workload: index * group_step
         for index, workload in enumerate(WORKLOADS)
@@ -132,8 +132,8 @@ def plot_panel(ax, rows, device, show_xlabels):
 
     half_group = midpoint * within_step + bar_width / 2.0
     ax.set_xlim(
-        centers[WORKLOADS[0]] - half_group - 0.08,
-        centers[WORKLOADS[-1]] + half_group + 0.08,
+        centers[WORKLOADS[0]] - half_group - 0.04,
+        centers[WORKLOADS[-1]] + half_group + 0.04,
     )
     ax.set_ylim(0.0, 1.05)
     ax.set_yticks((0.0, 0.5, 1.0))
@@ -155,21 +155,21 @@ def main() -> None:
     rows = read_rows()
     fig = plt.figure(figsize=(FIG_W, FIG_H))
     axes = (
-        fig.add_axes([0.14, 0.585, 0.845, 0.245]),
-        fig.add_axes([0.14, 0.205, 0.845, 0.245]),
+        fig.add_axes([0.08, 0.60, 0.91, 0.27]),
+        fig.add_axes([0.08, 0.18, 0.91, 0.27]),
     )
     for ax, device in zip(axes, DEVICES, strict=True):
         plot_panel(ax, rows, device, show_xlabels=True)
     fig.text(
-        0.562, 0.505, f"(a) {DEVICE_LABELS[DEVICES[0]]}",
+        0.535, 0.50, f"(a) {DEVICE_LABELS[DEVICES[0]]}",
         ha="center", va="center", fontsize=FS_PANEL,
     )
     fig.text(
-        0.562, 0.115, f"(b) {DEVICE_LABELS[DEVICES[1]]}",
+        0.535, 0.08, f"(b) {DEVICE_LABELS[DEVICES[1]]}",
         ha="center", va="center", fontsize=FS_PANEL,
     )
     fig.text(
-        0.025, 0.515, "Relative throughput", rotation=90,
+        0.015, 0.52, "Relative throughput", rotation=90,
         ha="center", va="center", fontsize=FS_AXIS,
     )
 
@@ -186,7 +186,7 @@ def main() -> None:
     ]
     legend = fig.legend(
         handles=[handles_by_label[label] for label in labels], labels=labels,
-        loc="upper center", bbox_to_anchor=(0.535, 0.985), ncol=3,
+        loc="upper center", bbox_to_anchor=(0.535, 0.97), ncol=3,
         frameon=False, fontsize=FS_LEG, handlelength=0.75,
         handletextpad=0.22, columnspacing=0.40, labelspacing=0.22,
         borderaxespad=0.0, borderpad=0.0,

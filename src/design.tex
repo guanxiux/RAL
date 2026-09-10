@@ -117,7 +117,7 @@ $\mathcal{G}^{l+1}=\mathcal{G}^l$ and
 \begin{equation}
   \{p\in\mathcal{G}^{l+1} \mid M^{l+1}_{out}[p]=1\}
   \subseteq
-  \{p\in\mathcal{G}^l \mid M^l_{out}[p]=1\} .
+  \{p\in\mathcal{G}^l \mid M^l_{out}[p]=1\}.
   \label{eq:reuse-condition}
 \end{equation}
 \sysname checks this condition once at model-conversion time. Because
@@ -361,32 +361,35 @@ compensates for the remaining throughput gap by adapting the $K$-splitting
 strategy on-device.
 
 Within~$\hat{q}^l$, \sysname builds a \emph{policy table}~$P^l$ indexed by
-tile count $s=\lceil n^l_{\mathcal{W}}/B_M\rceil \times \lceil C_{out}/B_N\rceil$. For each~$s$ it profiles
-every candidate mode~$m$ and split factor~$S_k$:
+tile count $s=\lceil n^l_{\mathcal{W}}/B_M\rceil \times \lceil C_{out}/B_N\rceil$.
+Each entry stores a tail-tile count $s_{\mathrm{tail}}$ and a split
+factor~$S_k$: $s_{\mathrm{tail}}=0$ yields data-parallel execution,
+$s_{\mathrm{tail}}=s$ yields full Stream-$K$, and $0<s_{\mathrm{tail}}<s$
+yields hybrid Stream-$K$ with $s{-}s_{\mathrm{tail}}$ data-parallel prefix tiles.
+\sysname profiles a set of sampled tile counts and interpolates to fill the
+remaining entries:
 \begin{equation}
   P^l[s]
-  = \arg\min_{m,\,S_k}\;
-    t(\hat{q}^l,\;s,\;m,\;S_k),
+  = \arg\min_{s_{\mathrm{tail}},\,S_k}\;
+    t(\hat{q}^l,\;s,\;s_{\mathrm{tail}},\;S_k),
   \label{eq:policy}
 \end{equation}
-where the minimization ranges over the three modes and their compatible split
-factors. All three modes process the same output tiles and differ only in how
+where the minimization ranges over candidate tail-tile counts and split
+factors. All candidates process the same output tiles and differ only in how
 $K$-iterations are assigned to blocks, so $\eta_{\mathrm{compute}}$ is
-invariant across modes and minimizing latency directly maximizes
-throughput~$T$, and hence $\eta_{\mathrm{compute}}\,T$.
+invariant and minimizing latency directly maximizes $\eta_{\mathrm{compute}}\,T$.
 
 Algorithm~\ref{alg:streamk} presents the hybrid mode, which subsumes the
-other two: data-parallel execution corresponds to $s_{\mathrm{dp}}=s$ (empty
-tail), while pure Stream-$K$ corresponds to $s_{\mathrm{dp}}=0$ (no
-data-parallel prefix); the policy table selects among the three based on the
-current tile count.
+other two: $s_{\mathrm{tail}}=0$ yields data-parallel (empty tail), while
+$s_{\mathrm{tail}}=s$ yields full Stream-$K$ (no data-parallel prefix); the
+policy table selects among the three based on the current tile count.
 Algorithm~\ref{alg:streamk} omits boundary-tile padding when
 $n_{\mathcal{W}}$, $C_{in}$, or $C_{out}$ is not divisible by $B_M$, $B_K$,
 or $B_N$, respectively; the implementation masks out-of-bounds accesses in
 these tiles.
 
 Lines~1--4 of Algorithm~\ref{alg:streamk} read $n_{\mathcal{W}}$, derive
-the tile count, and look up the mode from~$P^l$.
+the tile count, and look up $(s_{\mathrm{tail}}, S_k)$ from~$P^l$.
 The persistent grid first processes complete waves data-parallel
 (Lines~7--18): each block decodes its position and channel tile indices,
 reads $B_M$ output coordinates from the worklist $\mathcal{W}$, and reduces the full
@@ -417,10 +420,10 @@ is needed; data-parallel tiles bypass the workspace entirely.
 \STATE $s_M \leftarrow \lceil n_{\mathcal{W}} / B_M \rceil$;\;
        $s_N \leftarrow \lceil C_{out} / B_N \rceil$;\;
        $s \leftarrow s_M \times s_N$
-\STATE $S_k \leftarrow P[s]$ \COMMENT{policy lookup}
+\STATE $(s_{\mathrm{tail}},\, S_k) \leftarrow P[s]$ \COMMENT{policy lookup}
 \STATE $K_{\mathrm{iters}} \leftarrow k^2 \lceil C_{in} / B_K \rceil$
 \STATE \COMMENT{---------------------------Data-parallel prefix---------------------------}
-\STATE $s_{\mathrm{dp}} \leftarrow s - (s \bmod g_{\mathrm{res}})$ \COMMENT{full-wave boundary}
+\STATE $s_{\mathrm{dp}} \leftarrow s - s_{\mathrm{tail}}$
 \FOR{$b = \mathrm{bid},\; \mathrm{bid}{+}g_{\mathrm{res}},\; \ldots < s_{\mathrm{dp}}$}
   \STATE $(b_m, b_n) \leftarrow \textsc{Decode}(b,\, s_N)$
   \STATE $\mathbf{w} \leftarrow \mathcal{W}[b_m B_M \,..\, (b_m{+}1) B_M)$ \COMMENT{worklist indirection}
@@ -437,7 +440,6 @@ is needed; data-parallel tiles bypass the workspace entirely.
   \STATE $\mathbf{y}[\mathbf{w},\; b_n B_N{:}(b_n{+}1) B_N) \leftarrow \mathbf{Y}$ \textbf{where} $M_{out}[\mathbf{w}]{=}1$
 \ENDFOR
 \STATE \COMMENT{-----------------------------Stream-$K$ tail-----------------------------}
-\STATE $s_{\mathrm{tail}} \leftarrow s - s_{\mathrm{dp}}$
 \FOR{$b = \mathrm{bid},\; \mathrm{bid}{+}g_{\mathrm{res}},\; \ldots
      < s_{\mathrm{tail}} \times S_k$}
   \STATE $(b_m, b_n, r) \leftarrow \textsc{TailDecode}(b,\, s_N,\, S_k,\, s_{\mathrm{dp}})$

@@ -214,3 +214,11 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
+# TODO: gap_stats.py currently uses MAC-weighted E/D and E/A from
+# tile_skip_amplification/summary.json.  The paper defines alpha and eta
+# as spatial position-count ratios (||M_out||_0 / |G| and ||M_out||_0 / |C|).
+# To match the definitions, this script should source spatial ratios from
+# effective_throughput.csv (which records model-level position-count-based
+# useful_compute_ratio) instead of MAC-weighted FLOPs ratios.
+# The throughput T remains MAC-weighted by definition.

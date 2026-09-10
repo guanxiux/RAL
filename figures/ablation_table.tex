@@ -1,11 +1,10 @@
-\begin{table}[!t]
+\begin{table}[htb]
   \centering
-  \caption{YOLOv8n component ablation on RTX~3080; AGX Orin is
-  reserved for the multi-platform refresh. Times are milliseconds.}
+  \caption{YOLOv8n component ablation on RTX~3080 and AGX~Orin.
+  Times are milliseconds.}
   \Description{A table compares seven WISEConv design variants on RTX
-  3080 and reserves the corresponding AGX Orin columns. Each platform
-  reports useful-compute ratio, construction time, convolution time,
-  and full-model latency when available.}
+  3080 and AGX Orin. Each platform reports useful-compute ratio,
+  construction time, convolution time, and full-model latency.}
   \label{tab:ablation}
   \fontsize{7.0}{7.8}\selectfont
   \setlength{\tabcolsep}{0.7pt}
@@ -19,19 +18,13 @@
     & $\boldsymbol{\eta}$ & \textbf{Cons.} & \textbf{Conv.} & \textbf{Total}
     & $\boldsymbol{\eta}$ & \textbf{Cons.} & \textbf{Conv.} & \textbf{Total} \\
     \hline
-    Atomic append & 95.6\% & \textemdash{} & \textemdash{} & 1.726 & \textemdash{} & \textemdash{} & \textemdash{} & \textemdash{} \\
-    Global order & 95.6\% & \textemdash{} & \textemdash{} & 1.759 & \textemdash{} & \textemdash{} & \textemdash{} & \textemdash{} \\
-    No reuse & 97.0\% & \textemdash{} & \textemdash{} & 1.726 & \textemdash{} & \textemdash{} & \textemdash{} & \textemdash{} \\
-    DP only & 95.5\% & \textemdash{} & \textemdash{} & 2.179 & \textemdash{} & \textemdash{} & \textemdash{} & \textemdash{} \\
-    No Hybrid & 95.5\% & \textemdash{} & \textemdash{} & 1.619 & \textemdash{} & \textemdash{} & \textemdash{} & \textemdash{} \\
-    Sync exact selector & 95.5\% & \textemdash{} & \textemdash{} & 6.207 & \textemdash{} & \textemdash{} & \textemdash{} & \textemdash{} \\
-    \textbf{Ours} & 95.5\% & 0.105 & 1.173 & 1.626 & \textemdash{} & \textemdash{} & \textemdash{} & \textemdash{} \\
+    Atomic append   & 95.6\% & 0.169 & 1.241 & 1.862 & 93.1\% & 0.538 & 12.984 & 17.065 \\
+    Global order    & 95.6\% & 0.265 & 1.180 & 1.897 & 93.1\% & 0.695 & 12.894 & 17.426 \\
+    No reuse        & 97.0\% & 0.226 & 1.184 & 1.862 & 94.5\% & 0.648 & 12.739 & 17.112 \\
+    DP only         & 95.5\% & 0.113 & 1.561 & 2.127 & 93.1\% & 0.359 & 13.940 & 17.942 \\
+    No Hybrid       & 95.5\% & 0.113 & 1.227 & 1.793 & 93.1\% & 0.359 & 13.189 & 17.191 \\
+    Sync exact selector & 95.5\% & 0.113 & 0.945 & 6.695 & 93.8\% & 0.352 & 10.328 & 23.787 \\
+    \textbf{Ours}   & 95.5\% & 0.113 & 1.189 & 1.754 & 93.1\% & 0.359 & 12.994 & 16.996 \\
     \hline
   \end{tabular*}
-  \par\vspace{5pt}
-  \noindent\parbox{\columnwidth}{\scriptsize\textit{Notes.}
-  $\eta$ is the full-model useful-compute ratio. Cons. and Conv. are
-  construction- and convolution-stage latency; dashes indicate that
-  variant-level stage attribution was not collected. AGX Orin entries
-  are intentionally blank pending the multi-platform refresh.}
 \end{table}
