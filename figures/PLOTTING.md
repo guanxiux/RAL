@@ -95,3 +95,36 @@ Set2 的青/珊瑚/长春花,WISEConv 使用 muted gold。要点:
 2. `pdffonts` 确认嵌入 TeXGyreTermes、无 DejaVu。
 3. `RAL/` 下 `latexmk -pdf main.tex`,确认无新 undefined reference。
 4. 高 DPI 渲染该页(`pdftoppm -png -r 300`)肉眼比对:图内字与正文同字体、同粗细、字号相称。
+
+## 9. 已知问题:YOLO e2e 的跨 sequence 统计口径
+
+`e2e_stats.py` 里 YOLO 的 e2e 延迟是:
+
+```python
+values = [sequence["latency"]["all_frames_gpu_ms"]["mean"]
+          for sequence in backends[backend] if sequence != "aggregate_accuracy"]
+reference = statistics.fmean(values)
+```
+
+即每个 sequence 取"全部帧的 mean",再对 sequence **做不加权平均**。这有明显问题:
+三个 MOT16 sequence 的帧数差 3.3 倍(449 / 1499 / 624),不加权平均会让短序列
+(MOT16-01)与长序列(MOT16-03)同权,与总时间占比不符;对每个 sequence 先取
+frame-mean 也会把长尾帧(spike)带进数字。
+
+**方向已定:改用 pooled per-frame 统计**(2026-09-18,先记录不改码)。目标口径:
+
+- 首选 **pooled per-frame median**:把所有 sequence 的全部帧放在一起,对逐帧延迟
+  取 median(抗 spike,且不受帧数比例影响);
+- 备选 pooled per-frame mean(`Σ_latency / Σ_frames`,等价于按帧数加权)。
+
+暂不立即改的原因:所有 bar 目前统一用 mean-based 口径,单独换某一个 workload 的统计
+方法会让同一张图内不可比。迁移必须一次做完并同步刷新:
+
+1. `e2e_stats.py`(YOLO 的 `all_frames_gpu_ms` 路径,行 193/328;optical-flow/pose 的
+   `round_mean_gpu_ms` 路径同批处理);
+2. `gap_stats.py` / `batch_sensitivity_stats.py` 中同样依赖 mean 的推导;
+3. `plot_*.py` 重出 PDF → `latexmk` → 正文数字与 §7 的"数值归正文"一起更新。
+
+对当前 fp16 e2e 数据,三种口径只差 ~1pp(yolov8n 0.924 / 0.918 / 0.913;
+yolov8m 0.728 / 0.726 / 0.723,依次为 paper 口径 / pooled mean / pooled median),
+所以迁移不会改变结论,只修正方法学。
