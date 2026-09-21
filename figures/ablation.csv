@@ -1,15 +1,15 @@
-device,device_label,variant,variant_label,eta_percent,eta_coverage_percent,construction_ms,convolution_ms,total_ms,cuda_graph,source,work_source
-rtx3080,RTX 3080,atomic_append,Atomic append,95.5743984975,98.54,,,1.72590866648,true,logs/yolov8n_ablation/3080-streamk-v7-atomic-append-final-policy-r3/summary.json,logs/effective_throughput/3080/3080-streamk-v10-yolov8n-work-final-policy/summary.json
-rtx3080,RTX 3080,global_order,Global order,95.6130851973,98.54,,,1.75863032161,true,logs/yolov8n_ablation/3080-streamk-v7-global-order-final-policy-r3/summary.json,logs/effective_throughput/3080/3080-streamk-v10-yolov8n-work-final-policy/summary.json
-rtx3080,RTX 3080,no_reuse,No reuse,97.0361518125,100.0,,,1.72648090852,true,logs/yolov8n_ablation/3080-streamk-v7-no-reuse-final-policy-r3/summary.json,logs/effective_throughput/3080/3080-streamk-v10-yolov8n-work-final-policy/summary.json
-rtx3080,RTX 3080,dp_only,DP only,95.5091581989,98.54,,,2.17923284745,true,logs/yolov8n_ablation/3080-streamk-v7-dp-only-capability-r3/summary.json,logs/effective_throughput/3080/3080-streamk-v10-yolov8n-work-final-policy/summary.json
-rtx3080,RTX 3080,no_hybrid,No Hybrid,95.5091581989,98.54,,,1.61852507518,true,logs/yolov8n_ablation/3080-streamk-v7-no-hybrid-capability-r3/summary.json,logs/effective_throughput/3080/3080-streamk-v10-yolov8n-work-final-policy/summary.json
-rtx3080,RTX 3080,sync_exact_selector,Sync exact selector,95.5091581989,98.54,,,6.20748868052,false,logs/yolov8n_ablation/3080-streamk-v7-sync-exact-selector-r3/summary.json,logs/effective_throughput/3080/3080-streamk-v10-yolov8n-work-final-policy/summary.json
-rtx3080,RTX 3080,ours,Ours,95.5091581989,98.54,0.105335099092,1.17306897281,1.62621915952,true,logs/yolov8n_ablation/3080-streamk-v7-ours-final-policy-r3/summary.json,logs/effective_throughput/3080/3080-streamk-v10-yolov8n-work-final-policy/summary.json
-agx_orin,AGX Orin,atomic_append,Atomic append,,,,,,,,
-agx_orin,AGX Orin,global_order,Global order,,,,,,,,
-agx_orin,AGX Orin,no_reuse,No reuse,,,,,,,,
-agx_orin,AGX Orin,dp_only,DP only,,,,,,,,
-agx_orin,AGX Orin,no_hybrid,No Hybrid,,,,,,,,
-agx_orin,AGX Orin,sync_exact_selector,Sync exact selector,,,,,,,,
-agx_orin,AGX Orin,ours,Ours,,,,,,,,
+device,device_label,variant,variant_label,eta_percent,construction_ms,convolution_ms,total_ms,source
+rtx3080,RTX 3080,atomic_append,Atomic append,98.2410870576,,,1.71997869015,ablation_and_sensitivity/yolov8n/3080/fp32/atomic_append/summary.json
+rtx3080,RTX 3080,global_order,Global order,98.2580775755,,,2.04697597027,ablation_and_sensitivity/yolov8n/3080/fp32/global_order/summary.json
+rtx3080,RTX 3080,no_reuse,No reuse,99.6825970778,,,1.742506663,ablation_and_sensitivity/yolov8n/3080/fp32/no_reuse/summary.json
+rtx3080,RTX 3080,dp_only,DP only,98.2580775755,,,1.72782933712,ablation_and_sensitivity/yolov8n/3080/fp32/dp_only/summary.json
+rtx3080,RTX 3080,no_hybrid,No Hybrid,98.2580775755,,,1.72748800119,ablation_and_sensitivity/yolov8n/3080/fp32/no_hybrid/summary.json
+rtx3080,RTX 3080,sync_exact_selector,Sync exact selector,98.2580775755,,,7.03030943871,ablation_and_sensitivity/yolov8n/3080/fp32/sync_exact/summary.json
+rtx3080,RTX 3080,ours,Ours,98.1868365312,0.126847596695,1.05641557338,1.70922666788,latency/yolov8n/3080/fp32/yolov8n-full-r3-wiseconv/summary.json
+agx_orin,AGX Orin,atomic_append,Atomic append,97.9141779466,,,10.3472533226,ablation_and_sensitivity/yolov8n/agx-orin/fp32/atomic_append/summary.json
+agx_orin,AGX Orin,global_order,Global order,97.9143278706,,,11.2037013372,ablation_and_sensitivity/yolov8n/agx-orin/fp32/global_order/summary.json
+agx_orin,AGX Orin,no_reuse,No reuse,99.3243358241,,,10.3815894127,ablation_and_sensitivity/yolov8n/agx-orin/fp32/no_reuse/summary.json
+agx_orin,AGX Orin,dp_only,DP only,97.9141779466,,,10.3596480687,ablation_and_sensitivity/yolov8n/agx-orin/fp32/dp_only/summary.json
+agx_orin,AGX Orin,no_hybrid,No Hybrid,97.9141779466,,,10.3757761319,ablation_and_sensitivity/yolov8n/agx-orin/fp32/no_hybrid/summary.json
+agx_orin,AGX Orin,sync_exact_selector,Sync exact selector,97.9143278706,,,23.4369869232,ablation_and_sensitivity/yolov8n/agx-orin/fp32/sync_exact/summary.json
+agx_orin,AGX Orin,ours,Ours,97.9569672001,,,11.1175893148,latency/yolov8n/agx-orin/fp32/yolov8n-full-r3-wiseconv/summary.json

@@ -1,0 +1,5 @@
+workload,workload_label,dense,tile_skip,gather_scatter,wiseconv
+fireflownet,FireFlowNet,130,292,182,290
+yolov8n,YOLOv8n,110,302,272,308
+yolov8m,YOLOv8m,304,972,954,898
+dynconv,DynConv,80,104,28,164

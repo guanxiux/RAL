@@ -1,28 +1,36 @@
 #!/usr/bin/env python3
-"""Build the paper-facing YOLOv8n ablation data.
+"""Build the paper-facing YOLOv8n ablation data from the unified logs.
 
-The RTX~3080 rows use the final device-resident Stream-K runs.  Those runs
-record full-trace latency and work efficiency, but do not include a separate
-semantic NSYS stage attribution for every variant.  Consequently, Cons./Conv.
-are emitted only for Ours, for which the current cost-decomposition capture is
-available; the other stage cells remain explicit dashes in the generated table.
-The AGX Orin rows use the corresponding v7 refresh runs.  Stage attribution
-is reported only for Ours on each device; the other rows intentionally remain
-latency/work-efficiency measurements without a variant-specific stage split.
+Sources (all under ``logs/``):
+
+  * variant rows   ``ablation_and_sensitivity/<model>/<device>/<dtype>/<variant>/summary.json``
+  * Ours row       the deployed E2E run
+                   ``latency/<model>/<device>/<dtype>/<run>-wiseconv/summary.json``
+                   with its ``eta`` taken from the matching ``work/`` run when
+                   present, otherwise from a mode-only variant (see below)
+  * Ours stages    ``latency_cost_decomposition/<model>/<device>/<dtype>/<run>/summary.json``
+
+Stage attribution is reported only for Ours; the other rows intentionally
+remain latency/useful-compute measurements without a variant-specific split.
 """
 
 from __future__ import annotations
 
 import csv
 import json
+import statistics
 from pathlib import Path
 
 
 HERE = Path(__file__).resolve().parent
 REPO = HERE.parents[1]
 OUT_CSV = HERE / "ablation.csv"
+LOGS = REPO / "logs"
+MODEL = "yolov8n"
+DTYPE = "fp32"
 
 DEVICES = ("rtx3080", "agx_orin")
+DEVICE_DIRS = {"rtx3080": "3080", "agx_orin": "agx-orin"}
 DEVICE_LABELS = {"rtx3080": "RTX 3080", "agx_orin": "AGX Orin"}
 VARIANTS = (
     "atomic_append",
@@ -42,34 +50,13 @@ VARIANT_LABELS = {
     "sync_exact_selector": "Sync exact selector",
     "ours": "Ours",
 }
-RUNS = {
-    "atomic_append": "3080-streamk-v7-atomic-append-final-policy-r3",
-    "global_order": "3080-streamk-v7-global-order-final-policy-r3",
-    "no_reuse": "3080-streamk-v7-no-reuse-final-policy-r3",
-    "dp_only": "3080-streamk-v7-dp-only-capability-r3",
-    "no_hybrid": "3080-streamk-v7-no-hybrid-capability-r3",
-    "sync_exact_selector": "3080-streamk-v7-sync-exact-selector-r3",
-    "ours": "3080-streamk-v7-ours-final-policy-r3",
-}
-RUNS_BY_DEVICE = {
-    "rtx3080": RUNS,
-    "agx_orin": {
-        "atomic_append": "agx-streamk-v7-ablation-atomic-append",
-        "global_order": "agx-streamk-v7-ablation-global-order",
-        "no_reuse": "agx-streamk-v7-ablation-no-reuse",
-        "dp_only": "agx-streamk-v7-ablation-dp-only",
-        "no_hybrid": "agx-streamk-v7-ablation-no-hybrid",
-        "sync_exact_selector": "agx-streamk-v7-ablation-sync-exact-selector",
-        "ours": "agx-streamk-v7-ablation-ours",
-    },
-}
-RUN_ROOT = REPO / "logs" / "yolov8n_ablation"
-WORK_SUMMARY = (
-    REPO / "logs" / "effective_throughput" / "3080"
-    / "3080-streamk-v10-yolov8n-work-final-policy" / "summary.json"
-)
-LEGACY_ETA_SOURCE = REPO / "logs" / "yolov8n_ablation" / "ablation_table_v4_gridcap.json"
-COST_CSV = HERE / "cost_decomposition.csv"
+# Directory name of the staged variant run.
+VARIANT_DIRS = {v: v for v in VARIANTS}
+VARIANT_DIRS["sync_exact_selector"] = "sync_exact"
+# The decomposition-mode variants never change the requested or packed work, so
+# they share Ours' useful-compute ratio.  Used only when the reused Ours work
+# pass is unavailable (e.g. the deployed run was measured latency-only).
+ETA_FALLBACK = ("dp_only", "no_hybrid")
 
 
 def load_json(path: Path) -> dict:
@@ -80,114 +67,127 @@ def load_json(path: Path) -> dict:
     return value
 
 
-def load_totals(device: str) -> dict[str, float]:
-    totals = {}
-    for variant, run_name in RUNS_BY_DEVICE[device].items():
-        run_dir = RUN_ROOT / run_name
-        run = load_json(run_dir / "run.json")
-        summary = load_json(run_dir / "summary.json")
-        if run.get("status") != "complete":
-            raise ValueError(f"incomplete ablation run: {run_dir}")
-        if run.get("variant", {}).get("key") != variant:
-            raise ValueError(f"variant mismatch at {run_dir}")
-        aggregate = (
-            summary.get("latency", {})
-            .get("aggregate", {})
-            .get("per_frame_round_median_gpu_ms", {})
-        )
-        if int(aggregate.get("count", 0)) != 2572:
-            raise ValueError(f"unexpected frame count at {run_dir}")
-        totals[variant] = float(aggregate["mean"])
-    return totals
+def ablation_dir(device: str) -> Path:
+    return LOGS / "ablation_and_sensitivity" / MODEL / DEVICE_DIRS[device] / DTYPE
 
 
-def load_eta(device: str) -> dict[str, float]:
-    """Load exact work η where available without mixing latency protocols."""
-
-    if device == "agx_orin":
-        values = {}
-        for variant, run_name in RUNS_BY_DEVICE[device].items():
-            run_dir = RUN_ROOT / run_name
-            summary = load_json(run_dir / "summary.json")
-            work = (summary.get("work") or {}).get("aggregate") or {}
-            ratio = work.get("useful_compute_ratio")
-            if ratio is None:
-                raise ValueError(f"AGX work ratio is missing at {run_dir}")
-            values[variant] = 100.0 * float(ratio)
-        return values
-
-    old_rows = {
-        row["variant"]: row
-        for row in load_json(LEGACY_ETA_SOURCE).get("rows", ())
-    }
-    values = {
-        variant: float(old_rows[variant]["eta_percent"])
-        for variant in ("atomic_append", "global_order", "no_reuse")
-    }
-    work = load_json(WORK_SUMMARY)
-    totals = {
-        key: sum(int(value[key]) for value in work["sequences"].values())
-        for key in ("dense_macs", "required_macs", "issued_macs")
-    }
-    values["ours"] = 100.0 * totals["required_macs"] / totals["issued_macs"]
-    # DP/aligned/Hybrid mode selection does not change requested or packed
-    # work, so they share Ours' useful-compute ratio.
-    for variant in ("dp_only", "no_hybrid", "sync_exact_selector"):
-        values[variant] = values["ours"]
-    return values
+def find_e2e_run(device: str) -> str | None:
+    base = LOGS / "latency" / MODEL / DEVICE_DIRS[device] / DTYPE
+    if not base.is_dir():
+        return None
+    runs = sorted(p.name for p in base.iterdir()
+                  if p.is_dir() and p.name.endswith("-wiseconv"))
+    return runs[-1] if runs else None
 
 
-def load_ours_stages() -> dict[str, tuple[float, float]]:
-    with COST_CSV.open(encoding="utf-8", newline="") as source:
-        rows = list(csv.DictReader(source))
-    result = {}
-    for row in rows:
-        if row.get("system") != "wiseconv":
+def latency_total(summary: dict) -> float | None:
+    medians = [
+        value["all_frames_gpu_ms"]["median"]
+        for value in summary.get("sequences", {}).values()
+        if "all_frames_gpu_ms" in value
+    ]
+    return statistics.fmean(medians) if medians else None
+
+
+def work_eta(summary: dict) -> float | None:
+    position, mac = [], []
+    for value in summary.get("sequences", {}).values():
+        if value.get("useful_position_ratio") is not None:
+            position.append(value["useful_position_ratio"])
+        if value.get("useful_compute_ratio") is not None:
+            mac.append(value["useful_compute_ratio"])
+    if position:
+        return statistics.fmean(position)
+    if mac:
+        return statistics.fmean(mac)
+    return None
+
+
+def read_variant_rows(device: str) -> dict[str, dict]:
+    """Total and eta per variant, from the staged ablation summaries."""
+    base = ablation_dir(device)
+    rows: dict[str, dict] = {}
+    for variant in VARIANTS:
+        if variant == "ours":
             continue
-        device = row.get("device")
-        if device in DEVICES:
-            result[device] = (
-                float(row["construction_ms"]),
-                float(row["convolution_ms"]),
-            )
-    missing = set(DEVICES) - set(result)
-    if missing:
-        raise ValueError(f"WISEConv cost rows are missing for {sorted(missing)}")
-    return result
+        path = base / VARIANT_DIRS[variant] / "summary.json"
+        if not path.is_file():
+            continue
+        summary = load_json(path)
+        rows[variant] = {
+            "total_ms": summary.get("total_ms"),
+            "eta": summary.get("eta"),
+        }
+    return rows
+
+
+def read_ours_row(device: str, variants: dict[str, dict]) -> dict:
+    """Ours total from the deployed E2E run and eta from its work pass."""
+    run = find_e2e_run(device)
+    total = None
+    eta = None
+    source = ""
+    if run is not None:
+        lat = LOGS / "latency" / MODEL / DEVICE_DIRS[device] / DTYPE / run \
+            / "summary.json"
+        if lat.is_file():
+            total = latency_total(load_json(lat))
+            source = f"latency/{MODEL}/{DEVICE_DIRS[device]}/{DTYPE}/{run}/summary.json"
+        work = LOGS / "work" / MODEL / DEVICE_DIRS[device] / DTYPE / run \
+            / "summary.json"
+        if work.is_file():
+            eta = work_eta(load_json(work))
+    if eta is None:
+        for variant in ETA_FALLBACK:
+            if variants.get(variant, {}).get("eta") is not None:
+                eta = variants[variant]["eta"]
+                break
+    return {"total_ms": total, "eta": eta, "source": source}
+
+
+def load_ours_stages(device: str, run: str | None) -> tuple[float, float] | None:
+    if run is None:
+        return None
+    path = LOGS / "latency_cost_decomposition" / MODEL / DEVICE_DIRS[device] \
+        / DTYPE / run / "summary.json"
+    for candidate in (path, path.parent.parent / "full" / "summary.json"):
+        if not candidate.is_file():
+            continue
+        categories = load_json(candidate).get("categories_ms", {})
+        if "construction" in categories and "convolution" in categories:
+            return float(categories["construction"]), \
+                float(categories["convolution"])
+    return None
 
 
 def build_rows() -> list[dict]:
-    totals = {device: load_totals(device) for device in DEVICES}
-    eta = {device: load_eta(device) for device in DEVICES}
-    ours_stages = load_ours_stages()
     rows = []
     for device in DEVICES:
+        variants = read_variant_rows(device)
+        ours = read_ours_row(device, variants)
+        stages = load_ours_stages(device, find_e2e_run(device))
         for variant in VARIANTS:
-            is_ours = variant == "ours"
+            if variant == "ours":
+                total, eta = ours["total_ms"], ours["eta"]
+                construction = stages[0] if stages else None
+                convolution = stages[1] if stages else None
+                source = ours["source"]
+            else:
+                entry = variants.get(variant, {})
+                total, eta = entry.get("total_ms"), entry.get("eta")
+                construction = convolution = None
+                source = f"ablation_and_sensitivity/{MODEL}/{DEVICE_DIRS[device]}" \
+                    f"/{DTYPE}/{VARIANT_DIRS[variant]}/summary.json"
             rows.append({
                 "device": device,
                 "device_label": DEVICE_LABELS[device],
                 "variant": variant,
                 "variant_label": VARIANT_LABELS[variant],
-                "eta_percent": f"{eta[device][variant]:.12g}",
-                "eta_coverage_percent": (
-                    "100.0" if variant == "no_reuse"
-                    else "98.54"
-                ),
-                "construction_ms": (
-                    f"{ours_stages[device][0]:.12g}" if is_ours else ""
-                ),
-                "convolution_ms": (
-                    f"{ours_stages[device][1]:.12g}" if is_ours else ""
-                ),
-                "total_ms": f"{totals[device][variant]:.12g}",
-                "cuda_graph": (
-                    "false" if variant == "sync_exact_selector" else "true"
-                ),
-                "source": f"logs/yolov8n_ablation/{RUNS_BY_DEVICE[device][variant]}/summary.json",
-                "work_source": (
-                    str((RUN_ROOT / RUNS_BY_DEVICE[device][variant] / "summary.json").relative_to(REPO))
-                ),
+                "eta_percent": "" if eta is None else f"{100.0 * eta:.12g}",
+                "construction_ms": "" if construction is None else f"{construction:.12g}",
+                "convolution_ms": "" if convolution is None else f"{convolution:.12g}",
+                "total_ms": "" if total is None else f"{total:.12g}",
+                "source": source,
             })
     return rows
 
@@ -201,12 +201,6 @@ def main() -> None:
         writer.writerows(rows)
     temporary.replace(OUT_CSV)
     print(f"wrote {OUT_CSV}")
-    for row in rows:
-        print(
-            f"{row['device_label']:<10} {row['variant_label']:<24} "
-            f"eta={float(row['eta_percent']):.2f}% "
-            f"total={float(row['total_ms']):.3f} ms"
-        )
 
 
 if __name__ == "__main__":

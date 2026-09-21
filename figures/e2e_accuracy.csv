@@ -1,17 +1,17 @@
 workload,workload_label,backend,backend_label,metric,direction,value,source
-fireflownet,FireFlowNet,dense,Dense,AEE,lower,1.903317789,logs/optical_flow/dense/3080-v23-full-r3-1800mhz/summary.json
-fireflownet,FireFlowNet,tile_skip,Tile skipping,AEE,lower,1.887515812,logs/optical_flow/tile_skip/3080-v23-full-r3-1800mhz/summary.json
-fireflownet,FireFlowNet,gather_scatter,Gather-scatter,AEE,lower,1.887514624,logs/optical_flow/gather_scatter/3080-v23-full-r3-1800mhz/summary.json
-fireflownet,FireFlowNet,wiseconv,WISEConv,AEE,lower,1.887509345,logs/optical_flow/wiseconv/3080-v23-full-r3-1800mhz/summary.json
-yolov8n,YOLOv8n,dense,Dense,AP50:95 (%),higher,68.227514206,logs/yolov8_mot16/3080-v23-yolov8n-full-r3-1800mhz/summary.json
-yolov8n,YOLOv8n,tile_skip,Tile skipping,AP50:95 (%),higher,67.373214396,logs/yolov8_mot16/3080-v23-yolov8n-full-r3-1800mhz/summary.json
-yolov8n,YOLOv8n,gather_scatter,Gather-scatter,AP50:95 (%),higher,67.118190965,logs/yolov8_mot16/3080-v23-yolov8n-full-r3-1800mhz/summary.json
-yolov8n,YOLOv8n,wiseconv,WISEConv,AP50:95 (%),higher,67.069415436,logs/yolov8_mot16/3080-v23-yolov8n-full-r3-1800mhz/summary.json
-yolov8m,YOLOv8m,dense,Dense,AP50:95 (%),higher,79.393054896,logs/yolov8_mot16/3080-v23-yolov8m-full-r3-1800mhz/summary.json
-yolov8m,YOLOv8m,tile_skip,Tile skipping,AP50:95 (%),higher,76.717459767,logs/yolov8_mot16/3080-v23-yolov8m-full-r3-1800mhz/summary.json
-yolov8m,YOLOv8m,gather_scatter,Gather-scatter,AP50:95 (%),higher,76.437228129,logs/yolov8_mot16/3080-v23-yolov8m-full-r3-1800mhz/summary.json
-yolov8m,YOLOv8m,wiseconv,WISEConv,AP50:95 (%),higher,76.636454176,logs/yolov8_mot16/3080-v23-yolov8m-full-r3-1800mhz/summary.json
-dynconv_pose,DynConv,dense,Dense,PCKh (%),higher,88.064012490,logs/dynconv_pose/3080-v23-full-s0125-r3-1800mhz/summary.json
-dynconv_pose,DynConv,tile_skip,Tile skipping,PCKh (%),higher,86.679677335,logs/dynconv_pose/3080-v23-full-s0125-r3-1800mhz/summary.json
-dynconv_pose,DynConv,gather_scatter,Gather-scatter,PCKh (%),higher,86.679677335,logs/dynconv_pose/3080-v23-full-s0125-r3-1800mhz/summary.json
-dynconv_pose,DynConv,wiseconv,WISEConv,PCKh (%),higher,86.679677335,logs/dynconv_pose/3080-v23-full-s0125-r3-1800mhz/summary.json
+fireflownet,FireFlowNet,dense,Dense,AEE,lower,1.903317789,logs/accuracy/fireflownet/3080/fp32/full-r3-dense/summary.json
+fireflownet,FireFlowNet,tile_skip,Tile skipping,AEE,lower,1.887515812,logs/accuracy/fireflownet/3080/fp32/full-r3-tile_skip/summary.json
+fireflownet,FireFlowNet,gather_scatter,Gather-scatter,AEE,lower,1.887514624,logs/accuracy/fireflownet/3080/fp32/full-r3-gather_scatter/summary.json
+fireflownet,FireFlowNet,wiseconv,WISEConv,AEE,lower,1.887511219,logs/accuracy/fireflownet/3080/fp32/full-r3-wiseconv/summary.json
+yolov8n,YOLOv8n,dense,Dense,AP50:95 (%),higher,65.802842448,logs/accuracy/yolov8n/3080/fp32/yolov8n-full-r3-dense/summary.json
+yolov8n,YOLOv8n,tile_skip,Tile skipping,AP50:95 (%),higher,64.221129548,logs/accuracy/yolov8n/3080/fp32/yolov8n-full-r3-tile_skip/summary.json
+yolov8n,YOLOv8n,gather_scatter,Gather-scatter,AP50:95 (%),higher,64.095747799,logs/accuracy/yolov8n/3080/fp32/yolov8n-full-r3-gather_scatter/summary.json
+yolov8n,YOLOv8n,wiseconv,WISEConv,AP50:95 (%),higher,,
+yolov8m,YOLOv8m,dense,Dense,AP50:95 (%),higher,79.868880064,logs/accuracy/yolov8m/3080/fp32/yolov8m-full-r3-dense/summary.json
+yolov8m,YOLOv8m,tile_skip,Tile skipping,AP50:95 (%),higher,77.077562592,logs/accuracy/yolov8m/3080/fp32/yolov8m-full-r3-tile_skip/summary.json
+yolov8m,YOLOv8m,gather_scatter,Gather-scatter,AP50:95 (%),higher,76.917343321,logs/accuracy/yolov8m/3080/fp32/yolov8m-full-r3-gather_scatter/summary.json
+yolov8m,YOLOv8m,wiseconv,WISEConv,AP50:95 (%),higher,77.012976309,logs/accuracy/yolov8m/3080/fp32/yolov8m-full-r3-wiseconv/summary.json
+dynconv_pose,DynConv,dense,Dense,PCKh (%),higher,88.064012490,logs/accuracy/dynconv_pose/3080/fp32/full-s0125-r3-dense/summary.json
+dynconv_pose,DynConv,tile_skip,Tile skipping,PCKh (%),higher,86.679677335,logs/accuracy/dynconv_pose/3080/fp32/full-s0125-r3-tile_skip/summary.json
+dynconv_pose,DynConv,gather_scatter,Gather-scatter,PCKh (%),higher,86.679677335,logs/accuracy/dynconv_pose/3080/fp32/full-s0125-r3-dynconv/summary.json
+dynconv_pose,DynConv,wiseconv,WISEConv,PCKh (%),higher,86.679677335,logs/accuracy/dynconv_pose/3080/fp32/full-s0125-r3-wiseconv/summary.json

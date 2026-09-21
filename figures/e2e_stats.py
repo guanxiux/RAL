@@ -1,32 +1,27 @@
 #!/usr/bin/env python3
 """Derive end-to-end latency, energy, accuracy, and reference data from logs.
 
-The output contains one row per platform, workload, and execution path across
-four discrete GPUs and two embedded platforms.
+The unified logs split the three passes into sibling trees:
 
-Latency follows the aggregation used by benchmarks/.agg_intro.py: optical-flow
-and detection latencies are averaged across evaluation sequences, and pose
-latency is read from the full-run aggregate.  Energy uses the formal Jetson
-protocol: each steady-state round's mean VDD_IN power is multiplied by that
-round's cumulative CUDA-event GPU time, then summed over rounds and divided by
-the total timed frames.  AGX Orin summaries already contain this quantity.  The
-legacy Xavier NX markers are upgraded in memory from their original latency
-JSONL files; the source logs are not modified.
+  * latency  ``logs/latency/<workload>/<device>/<dtype>/<run-prefix>-<backend>/``
+  * accuracy ``logs/accuracy/<workload>/<device>/<dtype>/<run-prefix>-<backend>/``
+  * work     ``logs/work/<workload>/<device>/<dtype>/<run-prefix>-<backend>/``
 
-The ideal proportional-scaling reference applies each evaluation sequence's
-model-level active ratio to that sequence's dense latency before using the same
-aggregation as the latency bars.  Active ratios are platform-independent under
-the fixed inputs and mask policies, so the formal RTX 3080 work logs anchor them.
-The result is an idealized reference under proportional latency scaling, not a
-hard lower bound.
+Only platforms that actually have logs are emitted; missing cells stay blank so
+the figure degrades gracefully instead of failing.
+
+Latency is the mean of the per-sequence ``all_frames_gpu_ms.mean``.  Active
+ratios come from the work pass (or the effective-throughput work-only replay
+when a workload's work pass has no per-sequence counters).  Energy is the AGX
+Orin run's own ``energy`` block (total joules over attributed frames).  The
+proportional reference scales each sequence's dense latency by that sequence's
+active ratio before matching the latency aggregation.
 """
 
 from __future__ import annotations
 
 import csv
-import importlib.util
 import json
-import os
 import statistics
 from pathlib import Path
 
@@ -37,13 +32,12 @@ LOGS = REPO / "logs"
 OUT_CSV = HERE / "e2e_stats.csv"
 OUT_ACCURACY_CSV = HERE / "e2e_accuracy.csv"
 
+# Platforms with logs in the unified tree.  Device-directory names equal ids.
 PLATFORMS = [
     ("a100", "NVIDIA A100", "measured"),
     ("4090", "RTX 4090", "measured"),
     ("3080", "RTX 3080", "measured"),
-    ("4070-laptop", "RTX 4070 Laptop", "measured"),
     ("agx-orin", "Jetson AGX Orin", "measured"),
-    ("xavier-nx", "Jetson Xavier NX", "measured"),
 ]
 
 WORKLOADS = [
@@ -60,103 +54,18 @@ BACKENDS = [
     ("wiseconv", "WISEConv"),
 ]
 
-OPTICAL_RUN = {
-    "a100": "a100-full-r3",
-    "4090": "4090-full-r3",
-    "3080": "3080-v23-full-r3-1800mhz",
-    "4070-laptop": "4070-laptop-full-r3",
-    "agx-orin": "agx-orin-30w-locked-energy-v4-full-r3",
-    "xavier-nx": "xavier-nx-20w-locked-full-r3",
+DTYPE = "fp32"
+RUN_PREFIX = {
+    "fireflownet": "full-r3",
+    "yolov8n": "yolov8n-full-r3",
+    "yolov8m": "yolov8m-full-r3",
+    "dynconv_pose": "full-s0125-r3",
 }
-
-# The 3080 Stream-K refresh stores the current WISEConv latency and work-only
-# replay separately from the legacy multi-backend directory.  Keep the dense
-# and competing paths on their canonical formal run while selecting the latest
-# WISEConv artifacts explicitly; this also lets legacy directories be archived
-# without making the statistics script silently fall back to stale latency.
-OPTICAL_WISE_RUN = {
-    **OPTICAL_RUN,
-    "3080": "3080-native-fp32-streamk-fireflownet-full-r3-v1",
-}
-OPTICAL_WORK_RUN = {
-    **OPTICAL_RUN,
-    "3080": "3080-streamk-v10-work-full",
-}
-
-YOLO_RUN = {
-    "a100": {
-        "yolov8n": "a100-yolov8n-full-r3",
-        "yolov8m": "a100-yolov8m-full-r3",
-    },
-    "4090": {
-        "yolov8n": "4090-yolov8n-full-r3",
-        "yolov8m": "4090-yolov8m-full-r3",
-    },
-    "3080": {
-        # YOLOv8n shares the canonical 3080 multi-backend run with
-        # FireFlowNet-era naming; the more specific directory never existed.
-        "yolov8n": "3080-v23-full-r3-1800mhz",
-        "yolov8m": "3080-v23-yolov8m-full-r3-1800mhz",
-    },
-    "4070-laptop": {
-        "yolov8n": "4070-laptop-yolov8n-full-r3",
-        "yolov8m": "4070-laptop-yolov8m-full-r3",
-    },
-    "agx-orin": {
-        "yolov8n": "agx-orin-30w-locked-energy-v4-yolov8n-full-r3",
-        "yolov8m": "agx-orin-30w-locked-energy-v4-yolov8m-full-r3",
-    },
-    "xavier-nx": {
-        "yolov8n": "xavier-nx-20w-locked-yolov8n-full-r3",
-        "yolov8m": "xavier-nx-20w-locked-yolov8m-full-r3",
-    },
-}
-
-POSE_RUN = {
-    "a100": "a100-full-s0125-r3",
-    "4090": "4090-full-s0125-r3",
-    "3080": "3080-v23-full-s0125-r3-1800mhz",
-    "4070-laptop": "4070-laptop-full-s0125-r3",
-    "agx-orin": "agx-orin-30w-locked-energy-v4-full-s0125-r3",
-    "xavier-nx": "xavier-nx-20w-locked-full-s0125-r3",
-}
-
 ACTIVE_RATIO_PLATFORM = "3080"
-
-AGX_ENERGY = {
-    "fireflownet": "fireflownet-full-r3-energy-v4.per_backend_energy.json",
-    "yolov8n": "yolov8n-full-r3-energy-v4.per_backend_energy.json",
-    "yolov8m": "yolov8m-full-r3-energy-v4.per_backend_energy.json",
-    "dynconv_pose": "dynconv-pose-full-s0125-r3-energy-v4.per_backend_energy.json",
-}
-
-_AGX_REFRESH_ENERGY_ROOT = (
-    Path(os.environ["AGX_ENERGY_ROOT"]).expanduser()
-    if os.environ.get("AGX_ENERGY_ROOT") else None
-)
-if _AGX_REFRESH_ENERGY_ROOT is not None:
-    AGX_ENERGY = {
-        workload: str(
-            _AGX_REFRESH_ENERGY_ROOT / filename
-        )
-        for workload, filename in {
-            "fireflownet": "fireflownet-full-r3-energy-v4.per_backend_energy.json",
-            "yolov8n": "yolov8n-full-r3-energy-v4.per_backend_energy.json",
-            "yolov8m": "yolov8m-full-r3-energy-v4.per_backend_energy.json",
-            "dynconv_pose": "dynconv-pose-full-s0125-r3-energy-v4.per_backend_energy.json",
-        }.items()
-    }
-
-XAVIER_ENERGY = {
-    "fireflownet": "fireflownet-full-r3-energy-v3",
-    "yolov8n": "yolov8n-full-r3-energy-v3",
-    "yolov8m": "yolov8m-full-r3-energy-v3",
-    "dynconv_pose": "dynconv-pose-full-s0125-r3-energy-v3",
-}
 
 
 def load_json(path: Path) -> dict:
-    if not path.exists():
+    if not path.is_file():
         raise FileNotFoundError(path)
     with path.open(encoding="utf-8") as source:
         value = json.load(source)
@@ -165,416 +74,228 @@ def load_json(path: Path) -> dict:
     return value
 
 
-def actual_backend(workload: str, backend: str) -> str:
+def backend_dir(workload: str, backend: str) -> str:
     if workload == "dynconv_pose" and backend == "gather_scatter":
         return "dynconv"
     return backend
 
 
-def optical_latency(platform: str, backend: str) -> tuple[float, str]:
-    run = OPTICAL_WISE_RUN[platform] if backend == "wiseconv" else OPTICAL_RUN[platform]
-    path = LOGS / "optical_flow" / backend / run / "summary.json"
-    summary = load_json(path)
-    values = [
-        sequence["latency"]["round_mean_gpu_ms"]["mean"]
-        for sequence in summary["sequences"].values()
-    ]
+def run_path(tree: str, platform: str, workload: str, backend: str) -> Path:
+    run = f"{RUN_PREFIX[workload]}-{backend_dir(workload, backend)}"
+    return LOGS / tree / workload / platform / DTYPE / run / "summary.json"
+
+
+def latency(platform: str, workload: str, backend: str):
+    path = run_path("latency", platform, workload, backend)
+    if not path.is_file():
+        return None, ""
+    sequences = load_json(path)["sequences"]
+    values = [float(seq["all_frames_gpu_ms"]["mean"]) for seq in sequences.values()]
     if not values or any(value <= 0 for value in values):
-        raise ValueError(f"invalid optical-flow latency in {path}")
+        raise ValueError(f"invalid latency in {path}")
     return statistics.fmean(values), str(path.relative_to(REPO))
 
 
-def yolo_latency(
-    platform: str, workload: str, backend: str
-) -> tuple[float, str]:
-    path = LOGS / "yolov8_mot16" / YOLO_RUN[platform][workload] / "summary.json"
-    summary = load_json(path)
-    values = [
-        sequence["latency"]["all_frames_gpu_ms"]["mean"]
-        for name, sequence in summary["backends"][backend].items()
-        if name != "aggregate_accuracy"
-    ]
-    if not values or any(value <= 0 for value in values):
-        raise ValueError(f"invalid YOLO latency in {path}")
-    return statistics.fmean(values), str(path.relative_to(REPO))
+def energy(platform: str, workload: str, backend: str):
+    path = run_path("latency", platform, workload, backend)
+    if not path.is_file():
+        return None
+    block = load_json(path).get("energy")
+    if not block:
+        return None
+    frames = block.get("attributed_frames") or block.get("frame_count")
+    total = block.get("total_energy_j")
+    if not frames or not total:
+        return None
+    return float(total) / float(frames)
 
 
-def pose_latency(platform: str, backend: str) -> tuple[float, str]:
-    path = LOGS / "dynconv_pose" / POSE_RUN[platform] / "summary.json"
-    summary = load_json(path)
-    value = summary["backends"][actual_backend("dynconv_pose", backend)]["latency"][
-        "mean"
-    ]
-    if value <= 0:
-        raise ValueError(f"invalid pose latency in {path}")
-    return value, str(path.relative_to(REPO))
-
-
-def latency(platform: str, workload: str, backend: str) -> tuple[float, str]:
-    actual = actual_backend(workload, backend)
-    if workload == "fireflownet":
-        return optical_latency(platform, actual)
-    if workload in ("yolov8n", "yolov8m"):
-        return yolo_latency(platform, workload, actual)
-    if workload == "dynconv_pose":
-        return pose_latency(platform, backend)
-    raise KeyError(workload)
-
-
-def active_ratio_trace(workload: str) -> tuple[dict[str, float], str]:
-    """Return per-sequence model-level active ratios for a fixed mask policy."""
-    if workload == "fireflownet":
-        path = (
-            LOGS
-            / "optical_flow"
-            / "wiseconv"
-            / OPTICAL_WORK_RUN[ACTIVE_RATIO_PLATFORM]
-            / "summary.json"
+def active_ratio_trace(workload: str):
+    """Return per-sequence active ratios and the source path."""
+    path = (
+        LOGS / "work" / workload / ACTIVE_RATIO_PLATFORM / DTYPE
+        / f"{RUN_PREFIX[workload]}-wiseconv" / "summary.json"
+    )
+    ratios: dict[str, float] = {}
+    if path.is_file():
+        sequences = load_json(path).get("sequences", {})
+        for name, seq in sequences.items():
+            if workload == "fireflownet" and "exact_flops_reduction" in seq:
+                ratios[name] = 1.0 - float(seq["exact_flops_reduction"])
+            elif workload == "dynconv_pose" and "conditional_mac_ratio" in seq:
+                ratios[name] = float(seq["conditional_mac_ratio"])
+            elif workload in ("yolov8n", "yolov8m") and "exact_flops_ratio" in seq:
+                ratios[name] = float(seq["exact_flops_ratio"])
+    if ratios:
+        return ratios, str(path.relative_to(REPO))
+    # Fallback: the effective-throughput replay carries the same masks.
+    et = LOGS / "effective_throughput" / ACTIVE_RATIO_PLATFORM / "summary.json"
+    if et.is_file():
+        work = (load_json(et).get("workloads", {}).get(workload, {}) or {}).get(
+            "work", {}
         )
-        sequences = load_json(path)["sequences"]
-        ratios = {
-            name: 1.0 - float(sequence["work"]["exact_flops_reduction"])
-            for name, sequence in sequences.items()
-        }
-    elif workload in ("yolov8n", "yolov8m"):
-        path = (
-            LOGS
-            / "yolov8_mot16"
-            / YOLO_RUN[ACTIVE_RATIO_PLATFORM][workload]
-            / "summary.json"
-        )
-        sequences = load_json(path)["backends"]["wiseconv"]
-        ratios = {}
-        for name, sequence in sequences.items():
-            if name == "aggregate_accuracy":
-                continue
-            work = sequence.get("work") or {}
-            if "exact_flops_ratio" in work:
-                ratios[name] = float(work["exact_flops_ratio"])
-        if len(ratios) != len(
-            [name for name in sequences if name != "aggregate_accuracy"]
-        ):
-            # Some older multi-backend YOLOv8m runs intentionally omitted work
-            # counters.  The isolated Stream-K work-only replay carries the
-            # same masks and is the canonical replacement for this read-only
-            # ratio lookup; no latency or accuracy pass is rerun here.
-            work_only = (
-                LOGS
-                / "effective_throughput"
-                / "3080"
-                / f"3080-streamk-v10-{workload}-work-only"
-                / "summary.json"
-            )
-            replay = load_json(work_only)["sequences"]
-            ratios = {
-                name: float((entry.get("work") or entry)["exact_flops_ratio"])
-                for name, entry in replay.items()
-            }
-            path = work_only
-    elif workload == "dynconv_pose":
-        path = (
-            LOGS
-            / "dynconv_pose"
-            / POSE_RUN[ACTIVE_RATIO_PLATFORM]
-            / "summary.json"
-        )
-        ratio = float(
-            load_json(path)["backends"]["wiseconv"]["work"][
-                "conditional_mac_ratio"
-            ]
-        )
-        ratios = {"MPII-validation": ratio}
-    else:
-        raise KeyError(workload)
-
-    if not ratios or any(not 0.0 < ratio <= 1.0 for ratio in ratios.values()):
-        raise ValueError(f"invalid active ratios in {path}")
-    return ratios, str(path.relative_to(REPO))
+        required = work.get("E_required_positions")
+        dense = work.get("D_dense_positions")
+        if required and dense:
+            return {"_model": float(required) / float(dense)}, str(
+                et.relative_to(REPO))
+    raise ValueError(f"no active-ratio source for {workload}")
 
 
-def proportional_reference(platform: str, workload: str) -> tuple[float, str]:
-    """Scale dense latency by active ratio before matching bar aggregation."""
+def _sequence_latencies(platform: str, workload: str, backend: str) -> dict:
+    path = run_path("latency", platform, workload, backend)
+    return load_json(path)["sequences"]
+
+
+def proportional_reference(platform: str, workload: str):
     ratios, ratio_source = active_ratio_trace(workload)
-    if workload == "fireflownet":
-        dense_path = (
-            LOGS
-            / "optical_flow"
-            / "dense"
-            / OPTICAL_RUN[platform]
-            / "summary.json"
-        )
-        sequences = load_json(dense_path)["sequences"]
-        if set(sequences) != set(ratios):
-            raise ValueError(f"sequence mismatch between {dense_path} and {ratio_source}")
+    sequences = _sequence_latencies(platform, workload, "dense")
+    names = set(sequences)
+    if set(ratios) == {"_model"}:
+        shared = next(iter(ratios.values()))
         values = [
-            float(sequence["latency"]["round_mean_gpu_ms"]["mean"])
-            * ratios[name]
-            for name, sequence in sequences.items()
+            float(seq["all_frames_gpu_ms"]["mean"]) * shared
+            for seq in sequences.values()
         ]
-    elif workload in ("yolov8n", "yolov8m"):
-        dense_path = (
-            LOGS
-            / "yolov8_mot16"
-            / YOLO_RUN[platform][workload]
-            / "summary.json"
-        )
-        sequences = load_json(dense_path)["backends"]["dense"]
-        sequence_names = {
-            name for name in sequences if name != "aggregate_accuracy"
-        }
-        if sequence_names != set(ratios):
-            raise ValueError(f"sequence mismatch between {dense_path} and {ratio_source}")
-        values = [
-            float(sequences[name]["latency"]["all_frames_gpu_ms"]["mean"])
-            * ratios[name]
-            for name in sequence_names
-        ]
-    elif workload == "dynconv_pose":
-        dense_path = LOGS / "dynconv_pose" / POSE_RUN[platform] / "summary.json"
-        dense_latency = float(
-            load_json(dense_path)["backends"]["dense"]["latency"]["mean"]
-        )
-        values = [dense_latency * next(iter(ratios.values()))]
     else:
-        raise KeyError(workload)
-
+        missing = names - set(ratios)
+        if missing:
+            raise ValueError(f"ratio coverage mismatch for {workload}: {missing}")
+        values = [
+            float(seq["all_frames_gpu_ms"]["mean"]) * ratios[name]
+            for name, seq in sequences.items()
+        ]
     reference = statistics.fmean(values)
     if reference <= 0.0:
         raise ValueError(f"invalid proportional reference for {platform}/{workload}")
-    source = f"{dense_path.relative_to(REPO)} + {ratio_source}"
-    return reference, source
+    return reference, f"{run_path('latency', platform, workload, 'dense')} + {ratio_source}"
 
 
-def optical_accuracy(backend: str) -> tuple[float, str]:
-    """Aggregate AEE over every valid ground-truth timestamp."""
-    run = OPTICAL_RUN["3080"]
-    path = LOGS / "optical_flow" / backend / run / "summary.json"
-    summary = load_json(path)
-    weighted_sum = 0.0
-    sample_count = 0
-    for sequence in summary["sequences"].values():
-        accuracy = sequence.get("accuracy") or {}
-        aee = accuracy.get("aee")
+def _optical_accuracy(backend: str):
+    path = run_path("accuracy", "3080", "fireflownet", backend)
+    if not path.is_file():
+        return None, ""
+    weighted = 0.0
+    count = 0
+    for seq in load_json(path)["sequences"].values():
+        aee = seq.get("aee")
         if isinstance(aee, dict):
             aee = aee.get("mean")
-        count = accuracy.get("valid_aee_frames")
-        if not isinstance(aee, (int, float)) or not isinstance(count, int) or count <= 0:
-            raise ValueError(f"invalid optical-flow accuracy in {path}")
-        weighted_sum += float(aee) * count
-        sample_count += count
-    if sample_count <= 0:
-        raise ValueError(f"empty optical-flow accuracy in {path}")
-    return weighted_sum / sample_count, str(path.relative_to(REPO))
+        frames = seq.get("valid_aee_frames")
+        if isinstance(aee, (int, float)) and isinstance(frames, int) and frames > 0:
+            weighted += float(aee) * frames
+            count += frames
+    if count <= 0:
+        return None, ""
+    return weighted / count, str(path.relative_to(REPO))
 
 
-def yolo_accuracy(workload: str, backend: str) -> tuple[float, str]:
-    """Read COCO-style AP50:95 against the fixed teacher detections."""
-    path = LOGS / "yolov8_mot16" / YOLO_RUN["3080"][workload] / "summary.json"
-    summary = load_json(path)
-    aggregate = summary["backends"][backend].get("aggregate_accuracy") or {}
-    value = aggregate.get("pseudo_map50_95")
-    if not isinstance(value, (int, float)) or not 0.0 <= value <= 1.0:
-        raise ValueError(f"invalid detection accuracy for {backend} in {path}")
-    return 100.0 * float(value), str(path.relative_to(REPO))
+def _yolo_accuracy(workload: str, backend: str):
+    path = run_path("accuracy", "3080", workload, backend)
+    if not path.is_file():
+        return None, ""
+    sequences = load_json(path)["sequences"]
+    values = [
+        float(seq["pseudo_map50_95"])
+        for seq in sequences.values()
+        if "pseudo_map50_95" in seq
+    ]
+    if not values:
+        return None, ""
+    return 100.0 * statistics.fmean(values), str(path.relative_to(REPO))
 
 
-def pose_accuracy(backend: str) -> tuple[float, str]:
-    """Read model-level PCKh from the formal pose run."""
-    path = LOGS / "dynconv_pose" / POSE_RUN["3080"] / "summary.json"
-    summary = load_json(path)
-    actual = actual_backend("dynconv_pose", backend)
-    accuracy = summary["backends"][actual].get("accuracy") or {}
-    value = accuracy.get("pckh")
-    if not isinstance(value, (int, float)) or not 0.0 <= value <= 100.0:
-        raise ValueError(f"invalid pose accuracy for {actual} in {path}")
-    return float(value), str(path.relative_to(REPO))
+def _pose_accuracy(backend: str):
+    path = run_path("accuracy", "3080", "dynconv_pose", backend)
+    if not path.is_file():
+        return None, ""
+    sequences = load_json(path)["sequences"]
+    values = [float(seq["pckh"]) for seq in sequences.values() if "pckh" in seq]
+    if not values:
+        return None, ""
+    return statistics.fmean(values), str(path.relative_to(REPO))
 
 
-def accuracy_rows() -> list[dict[str, str]]:
-    """Return one platform-independent task-quality value per backend."""
+def accuracy_rows() -> list[dict]:
     rows = []
     for workload, workload_label in WORKLOADS:
         for backend, backend_label in BACKENDS:
             if workload == "fireflownet":
-                value, source = optical_accuracy(backend)
+                value, source = _optical_accuracy(backend)
                 metric, direction = "AEE", "lower"
             elif workload in ("yolov8n", "yolov8m"):
-                value, source = yolo_accuracy(workload, backend)
+                value, source = _yolo_accuracy(workload, backend)
                 metric, direction = "AP50:95 (%)", "higher"
             elif workload == "dynconv_pose":
-                value, source = pose_accuracy(backend)
+                value, source = _pose_accuracy(backend)
                 metric, direction = "PCKh (%)", "higher"
             else:
                 raise KeyError(workload)
-            rows.append(
-                {
-                    "workload": workload,
-                    "workload_label": workload_label,
-                    "backend": backend,
-                    "backend_label": backend_label,
-                    "metric": metric,
-                    "direction": direction,
-                    "value": f"{value:.9f}",
-                    "source": source,
-                }
-            )
-    if len(rows) != len(WORKLOADS) * len(BACKENDS):
-        raise AssertionError(len(rows))
+            rows.append({
+                "workload": workload,
+                "workload_label": workload_label,
+                "backend": backend,
+                "backend_label": backend_label,
+                "metric": metric,
+                "direction": direction,
+                "value": "" if value is None else f"{value:.9f}",
+                "source": source,
+            })
     return rows
 
 
-def load_power_tools():
-    path = REPO / "benchmarks" / "summarize_power_intervals.py"
-    spec = importlib.util.spec_from_file_location("wiseconv_power_tools", path)
-    if spec is None or spec.loader is None:
-        raise ImportError(path)
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
-
-
-def xavier_latency_sources(workload: str) -> list[tuple[str | None, Path]]:
-    if workload == "fireflownet":
-        run = OPTICAL_RUN["xavier-nx"]
-        return [
-            (
-                actual_backend(workload, backend),
-                LOGS
-                / "optical_flow"
-                / actual_backend(workload, backend)
-                / run
-                / "sequences.jsonl",
-            )
-            for backend, _ in BACKENDS
-        ]
-    if workload in ("yolov8n", "yolov8m"):
-        return [
-            (
-                None,
-                LOGS
-                / "yolov8_mot16"
-                / YOLO_RUN["xavier-nx"][workload]
-                / "sequences.jsonl",
-            )
-        ]
-    if workload == "dynconv_pose":
-        run = LOGS / "dynconv_pose" / POSE_RUN["xavier-nx"]
-        return [
-            (None, run / f"{actual_backend(workload, backend)}.jsonl")
-            for backend, _ in BACKENDS
-        ]
-    raise KeyError(workload)
-
-
-def energy_summaries() -> tuple[dict[tuple[str, str, str], float], dict]:
-    values: dict[tuple[str, str, str], float] = {}
-    sources: dict[tuple[str, str], str] = {}
-
-    agx_root = LOGS / "nx_state" / "agx-orin-30w-locked-energy-v4"
-    for workload, filename in AGX_ENERGY.items():
-        path = agx_root / filename
-        summary = load_json(path)
-        for backend, _ in BACKENDS:
-            actual = actual_backend(workload, backend)
-            entry = summary["backends"][actual]
-            value = entry.get("gpu_time_normalized_joules_per_timed_frame")
-            if not isinstance(value, (int, float)) or value <= 0:
-                raise ValueError(f"missing normalized energy for {actual} in {path}")
-            values[("agx-orin", workload, backend)] = float(value)
-        sources[("agx-orin", workload)] = str(path.relative_to(REPO))
-
-    tools = load_power_tools()
-    xavier_root = LOGS / "nx_state" / "xavier-nx-20w-locked"
-    for workload, stem in XAVIER_ENERGY.items():
-        legacy_path = xavier_root / f"{stem}.per_backend_energy.json"
-        power_path = xavier_root / f"{stem}.power.jsonl"
-        legacy = load_json(legacy_path)
-        intervals = tools.attach_gpu_times(
-            legacy["intervals"], xavier_latency_sources(workload)
-        )
-        summary = tools.summarize(
-            tools.read_jsonl(power_path), intervals, "VDD_IN"
-        )
-        expected = {actual_backend(workload, backend) for backend, _ in BACKENDS}
-        if set(summary["backends"]) != expected:
-            raise ValueError(f"unexpected Xavier backends in {legacy_path}")
-        expected_intervals = 3 if workload == "dynconv_pose" else 9
-        for backend, _ in BACKENDS:
-            actual = actual_backend(workload, backend)
-            entry = summary["backends"][actual]
-            if entry["interval_count"] != expected_intervals:
-                raise ValueError(f"unexpected interval count for {actual} in {legacy_path}")
-            value = entry["gpu_time_normalized_joules_per_timed_frame"]
-            values[("xavier-nx", workload, backend)] = float(value)
-        sources[("xavier-nx", workload)] = (
-            f"{legacy_path.relative_to(REPO)} + CUDA-event latency JSONL"
-        )
-
-    return values, sources
-
-
 def main() -> None:
-    energies, energy_sources = energy_summaries()
     model_active_ratios = {}
     active_ratio_sources = {}
     for workload, _ in WORKLOADS:
-        sequence_ratios, source = active_ratio_trace(workload)
-        model_active_ratios[workload] = statistics.fmean(sequence_ratios.values())
+        ratios, source = active_ratio_trace(workload)
+        model_active_ratios[workload] = statistics.fmean(ratios.values())
         active_ratio_sources[workload] = source
 
     rows = []
     for platform, platform_label, status in PLATFORMS:
         for workload, workload_label in WORKLOADS:
-            reference_ms = None
-            reference_source = ""
-            if status == "measured":
+            reference_ms = reference_source = ""
+            if run_path("latency", platform, workload, "dense").is_file():
                 reference_ms, reference_source = proportional_reference(
                     platform, workload
                 )
             for backend, backend_label in BACKENDS:
-                latency_ms = None
-                latency_source = ""
-                if status == "measured":
-                    latency_ms, latency_source = latency(platform, workload, backend)
-                energy_j = energies.get((platform, workload, backend))
-                rows.append(
-                    {
-                        "platform": platform,
-                        "platform_label": platform_label,
-                        "platform_status": status,
-                        "workload": workload,
-                        "workload_label": workload_label,
-                        "model_active_ratio": f"{model_active_ratios[workload]:.9f}",
-                        "backend": backend,
-                        "backend_label": backend_label,
-                        "latency_ms": "" if latency_ms is None else f"{latency_ms:.9f}",
-                        "ideal_latency_ms": (
-                            "" if reference_ms is None else f"{reference_ms:.9f}"
-                        ),
-                        "energy_j_per_frame": "" if energy_j is None else f"{energy_j:.9f}",
-                        "latency_source": latency_source,
-                        "ideal_source": reference_source,
-                        "active_ratio_source": active_ratio_sources[workload],
-                        "energy_source": energy_sources.get((platform, workload), ""),
-                    }
-                )
+                latency_ms, latency_source = latency(platform, workload, backend)
+                energy_j = energy(platform, workload, backend)
+                rows.append({
+                    "platform": platform,
+                    "platform_label": platform_label,
+                    "platform_status": status,
+                    "workload": workload,
+                    "workload_label": workload_label,
+                    "model_active_ratio": f"{model_active_ratios[workload]:.9f}",
+                    "backend": backend,
+                    "backend_label": backend_label,
+                    "latency_ms": "" if latency_ms is None else f"{latency_ms:.9f}",
+                    "ideal_latency_ms": (
+                        "" if reference_ms == "" else f"{reference_ms:.9f}"
+                    ),
+                    "energy_j_per_frame": "" if energy_j is None else f"{energy_j:.9f}",
+                    "latency_source": latency_source,
+                    "ideal_source": reference_source,
+                    "active_ratio_source": active_ratio_sources[workload],
+                    "energy_source": latency_source if energy_j is not None else "",
+                })
 
     expected_rows = len(PLATFORMS) * len(WORKLOADS) * len(BACKENDS)
     if len(rows) != expected_rows:
         raise AssertionError((len(rows), expected_rows))
 
     with OUT_CSV.open("w", newline="", encoding="utf-8") as output:
-        writer = csv.DictWriter(
-            output, fieldnames=list(rows[0]), lineterminator="\n"
-        )
+        writer = csv.DictWriter(output, fieldnames=list(rows[0]), lineterminator="\n")
         writer.writeheader()
         writer.writerows(rows)
 
     task_quality = accuracy_rows()
     with OUT_ACCURACY_CSV.open("w", newline="", encoding="utf-8") as output:
         writer = csv.DictWriter(
-            output, fieldnames=list(task_quality[0]), lineterminator="\n"
-        )
+            output, fieldnames=list(task_quality[0]), lineterminator="\n")
         writer.writeheader()
         writer.writerows(task_quality)
 
@@ -582,11 +303,10 @@ def main() -> None:
     referenced = sum(bool(row["ideal_latency_ms"]) for row in rows)
     powered = sum(bool(row["energy_j_per_frame"]) for row in rows)
     print(f"wrote {OUT_CSV}")
-    print(
-        f"latency cells: {measured}; proportional-reference cells: "
-        f"{referenced}; energy cells: {powered}"
-    )
-    print(f"wrote {OUT_ACCURACY_CSV}; accuracy cells: {len(task_quality)}")
+    print(f"latency cells: {measured}; proportional-reference cells: "
+          f"{referenced}; energy cells: {powered}")
+    print(f"wrote {OUT_ACCURACY_CSV}; accuracy cells: "
+          f"{sum(bool(r['value']) for r in task_quality)}/{len(task_quality)}")
 
 
 if __name__ == "__main__":

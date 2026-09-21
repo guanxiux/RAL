@@ -1,0 +1,18 @@
+\begin{table}[htb]
+  \centering
+  \caption{Peak GPU memory (MiB) on RTX~3080.}
+  \label{tab:memory}
+  \footnotesize
+  \setlength{\tabcolsep}{4pt}
+  \renewcommand{\arraystretch}{1.08}
+  \begin{tabular}{@{}lrrrr@{}}
+    \hline
+    \textbf{Workload} & \textbf{Dense} & \textbf{Tile skip} & \textbf{Gather-scatter} & \textbf{\sysname} \\
+    \hline
+    FireFlowNet & 130.0 & 292.0 & 182.0 & 290.0 \\
+    YOLOv8n & 110.0 & 302.0 & 272.0 & 308.0 \\
+    YOLOv8m & 304.0 & 972.0 & 954.0 & 898.0 \\
+    DynConv & 80.0 & 104.0 & 28.0 & 164.0 \\
+    \hline
+  \end{tabular}
+\end{table}

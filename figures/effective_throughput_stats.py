@@ -17,11 +17,11 @@ OUT_CSV = HERE / "effective_throughput.csv"
 DEVICES = {
     "rtx3080": {
         "label": "RTX 3080",
-        "source": LOGS / "3080-streamk-v10-summary" / "summary.json",
+        "source": LOGS / "3080" / "summary.json",
     },
     "agx_orin": {
         "label": "AGX Orin",
-        "source": LOGS / "agx-orin-v5" / "summary.json",
+        "source": LOGS / "agx-orin" / "summary.json",
     },
 }
 WORKLOADS = ("fireflownet", "yolov8n", "yolov8m", "dynconv_pose")

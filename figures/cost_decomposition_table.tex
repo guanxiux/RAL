@@ -1,8 +1,8 @@
-\begin{table}[htb]
+\begin{table}[!t]
   \centering
   \caption{Full-model YOLOv8n latency decomposition on RTX~3080 and
-  AGX Orin. Entries are milliseconds, with shares of total latency in
-  parentheses.}
+  AGX Orin. Stage fractions are estimated from a random 100-frame
+  profiling window and scaled to the formal full-trace latency.}
   \Description{A table compares Dense, Tile skipping, Gather-scatter,
   and WISEConv on RTX 3080 and AGX Orin, decomposing full-model latency
   into construction, convolution, elementwise, and other work.}
@@ -15,19 +15,15 @@
       & \textbf{System} & \textbf{Tot.} & \textbf{Cons.} &
       \textbf{Conv.} & \textbf{Elem.} & \textbf{Other} \\
     \hline
-    \multirow{4}{*}{\rotatebox[origin=c]{90}{\strut RTX~3080}} & Dense & 2.79 & \textemdash{} & 2.55(91.4\%) & 0.14(5.0\%) & 0.10(3.6\%) \\
-    & Tile skipping & 3.38 & \textemdash{} & 3.05(90.3\%) & 0.16(4.6\%) & 0.17(5.1\%) \\
-    & Gather & 11.34 & \textemdash{} & 0.79(7.0\%) & 0.09(0.8\%) & 10.46(92.2\%) \\
-    & \textbf{WISEConv} & 1.49 & 0.10(7.0\%) & 1.10(74.0\%) & 0.12(8.1\%) & 0.16(10.8\%) \\
-    \hline
-    \multirow{4}{*}{\rotatebox[origin=c]{90}{\strut AGX~Orin}} & Dense & 25.09 & \textemdash{} & 22.61(90.1\%) & 1.66(6.6\%) & 0.82(3.3\%) \\
-    & Tile skipping & 25.10 & \textemdash{} & 21.59(86.0\%) & 1.70(6.8\%) & 1.81(7.2\%) \\
-    & Gather & 39.87 & \textemdash{} & 9.14(22.9\%) & 0.94(2.4\%) & 29.79(74.7\%) \\
-    & \textbf{WISEConv} & 17.07 & 0.37(2.1\%) & 13.41(78.6\%) & 1.15(6.7\%) & 2.14(12.6\%) \\
+    \multirow{4}{*}{\rotatebox[origin=c]{90}{\strut RTX~3080}} & Dense & \textemdash{} & \textemdash{} & \textemdash{} & \textemdash{} & \textemdash{} \\
+    & Tile skipping & \textemdash{} & \textemdash{} & \textemdash{} & \textemdash{} & \textemdash{} \\
+    & Gather & \textemdash{} & \textemdash{} & \textemdash{} & \textemdash{} & \textemdash{} \\
+    & \textbf{WISEConv} & 1.73 & 0.13(7.3\%) & 1.06(61.1\%) & 0.37(21.6\%) & 0.17(10.0\%) \\
     \hline
   \end{tabular}
   \par\vspace{5pt}
-  \noindent\parbox{\columnwidth}{\footnotesize\textit{Notes.} Cons.,
+  \noindent\parbox{\columnwidth}{\footnotesize\textit{Notes.} Entries
+  are milliseconds; percentages are shares of each row's total. Cons.,
   Conv., and Elem. denote worklist construction, convolution, and
   elementwise operators. Stage fractions from steady-state profiling are
   scaled to full-trace CUDA-event latency.}

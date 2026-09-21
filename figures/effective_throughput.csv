@@ -1,33 +1,33 @@
 device,device_label,workload,workload_label,system,system_label,frames,latency_ms,useful_compute_ratio,raw_throughput_vs_dense,effective_throughput_vs_dense,wasted_throughput_vs_dense,source
-rtx3080,RTX 3080,fireflownet,FireFlowNet,dense,Dense,196816,1.04335811467,0.263029964076,1,0.263029964076,0.736970035924,logs/effective_throughput/3080-streamk-v10-summary/summary.json
-rtx3080,RTX 3080,fireflownet,FireFlowNet,tile_skip,Tile skipping,196816,0.605519470136,0.701374019958,0.615827680196,0.453221508068,0.162606172128,logs/effective_throughput/3080-streamk-v10-summary/summary.json
-rtx3080,RTX 3080,fireflownet,FireFlowNet,gather_scatter,Gather-scatter,196816,2.05185401488,1,0.133749499443,0.133749499443,0,logs/effective_throughput/3080-streamk-v10-summary/summary.json
-rtx3080,RTX 3080,fireflownet,FireFlowNet,wiseconv,WISEConv,196816,0.39817621847,0.989334988387,0.69141180827,0.689228624638,0.00218318363144,logs/effective_throughput/3080-streamk-v10-summary/summary.json
-rtx3080,RTX 3080,yolov8n,YOLOv8n,dense,Dense,2572,2.78909559529,0.487011060944,1,0.487011060944,0.512988939056,logs/effective_throughput/3080-streamk-v10-summary/summary.json
-rtx3080,RTX 3080,yolov8n,YOLOv8n,tile_skip,Tile skipping,2572,3.51652836018,0.730254194538,0.524029668864,0.386267439307,0.137762229557,logs/effective_throughput/3080-streamk-v10-summary/summary.json
-rtx3080,RTX 3080,yolov8n,YOLOv8n,gather_scatter,Gather-scatter,2572,11.9688130862,1,0.113488312931,0.113488312931,0,logs/effective_throughput/3080-streamk-v10-summary/summary.json
-rtx3080,RTX 3080,yolov8n,YOLOv8n,wiseconv,WISEConv,2572,1.63103061839,0.952937159154,0.871957050447,0.832798838737,0.0391582117095,logs/effective_throughput/3080-streamk-v10-summary/summary.json
-rtx3080,RTX 3080,yolov8m,YOLOv8m,dense,Dense,2572,10.1778402432,0.504310192613,1,0.504310192613,0.495689807387,logs/effective_throughput/3080-streamk-v10-summary/summary.json
-rtx3080,RTX 3080,yolov8m,YOLOv8m,tile_skip,Tile skipping,2572,15.4807705161,0.730100024682,0.451184327926,0.33155898591,0.119625342016,logs/effective_throughput/3080-streamk-v10-summary/summary.json
-rtx3080,RTX 3080,yolov8m,YOLOv8m,gather_scatter,Gather-scatter,2572,16.565888967,1,0.309840817094,0.309840817094,0,logs/effective_throughput/3080-streamk-v10-summary/summary.json
-rtx3080,RTX 3080,yolov8m,YOLOv8m,wiseconv,WISEConv,2572,6.49643826182,0.954529119889,0.826440860814,0.790092719511,0.0363481413027,logs/effective_throughput/3080-streamk-v10-summary/summary.json
-rtx3080,RTX 3080,dynconv_pose,DynConv,dense,Dense,2958,5.98650168846,0.15560376893,1,0.15560376893,0.84439623107,logs/effective_throughput/3080-streamk-v10-summary/summary.json
-rtx3080,RTX 3080,dynconv_pose,DynConv,tile_skip,Tile skipping,2958,6.91690464425,0.489017470338,0.274531461359,0.134673278488,0.139858182871,logs/effective_throughput/3080-streamk-v10-summary/summary.json
-rtx3080,RTX 3080,dynconv_pose,DynConv,gather_scatter,Gather-scatter,2958,57.1336886741,1,0.0163042549334,0.0163042549334,0,logs/effective_throughput/3080-streamk-v10-summary/summary.json
-rtx3080,RTX 3080,dynconv_pose,DynConv,wiseconv,WISEConv,2958,3.36249642214,0.900635313463,0.306669197527,0.277032926875,0.0296362706525,logs/effective_throughput/3080-streamk-v10-summary/summary.json
-agx_orin,AGX Orin,fireflownet,FireFlowNet,dense,Dense,196816,12.4659483862,0.263029945517,1,0.263029945517,0.736970054483,logs/effective_throughput/agx-orin-v5/summary.json
-agx_orin,AGX Orin,fireflownet,FireFlowNet,tile_skip,Tile skipping,196816,8.54891887054,0.701373176397,0.521156368144,0.383547647897,0.137608720248,logs/effective_throughput/agx-orin-v5/summary.json
-agx_orin,AGX Orin,fireflownet,FireFlowNet,gather_scatter,Gather-scatter,196816,14.496563514,1,0.226185862717,0.226185862717,0,logs/effective_throughput/agx-orin-v5/summary.json
-agx_orin,AGX Orin,fireflownet,FireFlowNet,wiseconv,WISEConv,196816,5.19601835695,0.989285769435,0.633050923632,0.631044291918,0.00200663171396,logs/effective_throughput/agx-orin-v5/summary.json
-agx_orin,AGX Orin,yolov8n,YOLOv8n,dense,Dense,2572,25.0948085318,0.487217569462,1,0.487217569462,0.512782430538,logs/effective_throughput/agx-orin-v5/summary.json
-agx_orin,AGX Orin,yolov8n,YOLOv8n,tile_skip,Tile skipping,2572,24.9922687784,0.730669077919,0.663414262638,0.489216554422,0.174197708216,logs/effective_throughput/agx-orin-v5/summary.json
-agx_orin,AGX Orin,yolov8n,YOLOv8n,gather_scatter,Gather-scatter,2572,40.2390624247,1,0.303849813644,0.303849813644,0,logs/effective_throughput/agx-orin-v5/summary.json
-agx_orin,AGX Orin,yolov8n,YOLOv8n,wiseconv,WISEConv,2572,17.0793297855,0.928069672118,0.769068837895,0.715873033221,0.0531958046747,logs/effective_throughput/agx-orin-v5/summary.json
-agx_orin,AGX Orin,yolov8m,YOLOv8m,dense,Dense,2572,143.199248767,0.505122807491,1,0.505122807491,0.494877192509,logs/effective_throughput/agx-orin-v5/summary.json
-agx_orin,AGX Orin,yolov8m,YOLOv8m,tile_skip,Tile skipping,2572,142.990773673,0.731358536051,0.687264122102,0.505859257277,0.181404864824,logs/effective_throughput/agx-orin-v5/summary.json
-agx_orin,AGX Orin,yolov8m,YOLOv8m,gather_scatter,Gather-scatter,2572,132.934295387,1,0.544127505679,0.544127505679,0,logs/effective_throughput/agx-orin-v5/summary.json
-agx_orin,AGX Orin,yolov8m,YOLOv8m,wiseconv,WISEConv,2572,91.3857026304,0.946160576214,0.834926046179,0.791515570663,0.043410475516,logs/effective_throughput/agx-orin-v5/summary.json
-agx_orin,AGX Orin,dynconv_pose,DynConv,dense,Dense,2958,61.7198444033,0.15560938963,1,0.15560938963,0.84439061037,logs/effective_throughput/agx-orin-v5/summary.json
-agx_orin,AGX Orin,dynconv_pose,DynConv,tile_skip,Tile skipping,2958,36.6398153845,0.489037168029,0.53432112753,0.262124337006,0.272196790525,logs/effective_throughput/agx-orin-v5/summary.json
-agx_orin,AGX Orin,dynconv_pose,DynConv,gather_scatter,Gather-scatter,2958,193.517093336,1,0.0496296588074,0.0496296588074,0,logs/effective_throughput/agx-orin-v5/summary.json
-agx_orin,AGX Orin,dynconv_pose,DynConv,wiseconv,WISEConv,2958,22.4942197084,0.723676682933,0.586233991523,0.42696245703,0.159271534494,logs/effective_throughput/agx-orin-v5/summary.json
+rtx3080,RTX 3080,fireflownet,FireFlowNet,dense,Dense,196816,1.04304003716,0.252599512879,1,0.252599512879,0.747400487121,logs/effective_throughput/3080/summary.json
+rtx3080,RTX 3080,fireflownet,FireFlowNet,tile_skip,Tile skipping,196816,0.61910400788,0.69762888898,0.602131411079,0.420064267331,0.182067143748,logs/effective_throughput/3080/summary.json
+rtx3080,RTX 3080,fireflownet,FireFlowNet,gather_scatter,Gather-scatter,196816,1.99346137047,1,0.137812670686,0.137812670686,0,logs/effective_throughput/3080/summary.json
+rtx3080,RTX 3080,fireflownet,FireFlowNet,wiseconv,WISEConv,196816,0.386656006177,0.998402627752,0.711801815543,0.710664803077,0.00113701246614,logs/effective_throughput/3080/summary.json
+rtx3080,RTX 3080,yolov8n,YOLOv8n,dense,Dense,2572,2.82316803932,0.451572943463,1,0.451572943463,0.548427056537,logs/effective_throughput/3080/summary.json
+rtx3080,RTX 3080,yolov8n,YOLOv8n,tile_skip,Tile skipping,2572,3.53348263105,0.973343865587,0.354716308616,0.345260943015,0.00945536560083,logs/effective_throughput/3080/summary.json
+rtx3080,RTX 3080,yolov8n,YOLOv8n,gather_scatter,Gather-scatter,2572,12.46423467,1,0.110298775024,0.110298775024,0,logs/effective_throughput/3080/summary.json
+rtx3080,RTX 3080,yolov8n,YOLOv8n,wiseconv,WISEConv,2572,1.72987735271,0.982696725313,0.81632967131,0.802204494772,0.0141251765382,logs/effective_throughput/3080/summary.json
+rtx3080,RTX 3080,yolov8m,YOLOv8m,dense,Dense,2572,10.1471573512,0.57524527384,1,0.57524527384,0.42475472616,logs/effective_throughput/3080/summary.json
+rtx3080,RTX 3080,yolov8m,YOLOv8m,tile_skip,Tile skipping,2572,15.5818239848,0.949920722375,0.315516318499,0.29971548919,0.0158008293093,logs/effective_throughput/3080/summary.json
+rtx3080,RTX 3080,yolov8m,YOLOv8m,gather_scatter,Gather-scatter,2572,17.1675252914,1,0.298101658689,0.298101658689,0,logs/effective_throughput/3080/summary.json
+rtx3080,RTX 3080,yolov8m,YOLOv8m,wiseconv,WISEConv,2572,6.82683738073,0.983133276311,0.769633003905,0.756651816686,0.0129811872184,logs/effective_throughput/3080/summary.json
+rtx3080,RTX 3080,dynconv_pose,DynConv,dense,Dense,2958,9.02451229095,0.145873479126,1,0.145873479126,0.854126520874,logs/effective_throughput/3080/summary.json
+rtx3080,RTX 3080,dynconv_pose,DynConv,tile_skip,Tile skipping,2958,6.91814422607,0.447927040877,0.413775650544,0.185341302735,0.228434347809,logs/effective_throughput/3080/summary.json
+rtx3080,RTX 3080,dynconv_pose,DynConv,gather_scatter,Gather-scatter,2958,57.4102401733,1,0.024459903168,0.024459903168,0,logs/effective_throughput/3080/summary.json
+rtx3080,RTX 3080,dynconv_pose,DynConv,wiseconv,WISEConv,2958,3.56556797028,0.911530428406,0.416177926959,0.379358844055,0.0368190829049,logs/effective_throughput/3080/summary.json
+agx_orin,AGX Orin,fireflownet,FireFlowNet,dense,Dense,196816,7.41518942515,0.213482132153,1,0.213482132153,0.786517867847,logs/effective_throughput/agx-orin/summary.json
+agx_orin,AGX Orin,fireflownet,FireFlowNet,tile_skip,Tile skipping,196816,4.89888000488,0.589594506793,0.540977576979,0.318957407684,0.222020169294,logs/effective_throughput/agx-orin/summary.json
+agx_orin,AGX Orin,fireflownet,FireFlowNet,gather_scatter,Gather-scatter,196816,9.2424530983,1,0.211028032075,0.211028032075,0,logs/effective_throughput/agx-orin/summary.json
+agx_orin,AGX Orin,fireflownet,FireFlowNet,wiseconv,WISEConv,196816,3.04016002019,0.843335540335,0.64359739669,0.542768558295,0.100828838394,logs/effective_throughput/agx-orin/summary.json
+agx_orin,AGX Orin,yolov8n,YOLOv8n,dense,Dense,2572,15.449247996,0.452147105704,1,0.452147105704,0.547852894296,logs/effective_throughput/agx-orin/summary.json
+agx_orin,AGX Orin,yolov8n,YOLOv8n,tile_skip,Tile skipping,2572,16.500629425,0.972424588033,0.415856698023,0.404389278256,0.011467419767,logs/effective_throughput/agx-orin/summary.json
+agx_orin,AGX Orin,yolov8n,YOLOv8n,gather_scatter,Gather-scatter,2572,35.9101702372,1,0.209611809704,0.209611809704,0,logs/effective_throughput/agx-orin/summary.json
+agx_orin,AGX Orin,yolov8n,YOLOv8n,wiseconv,WISEConv,2572,11.1175893148,0.979656767957,0.703282137324,0.688975105613,0.0143070317113,logs/effective_throughput/agx-orin/summary.json
+agx_orin,AGX Orin,yolov8m,YOLOv8m,dense,Dense,2572,80.2617289225,0.577059929388,1,0.577059929388,0.422940070612,logs/effective_throughput/agx-orin/summary.json
+agx_orin,AGX Orin,yolov8m,YOLOv8m,tile_skip,Tile skipping,2572,85.4486707052,0.948945069851,0.456554938626,0.433245558125,0.0233093805005,logs/effective_throughput/agx-orin/summary.json
+agx_orin,AGX Orin,yolov8m,YOLOv8m,gather_scatter,Gather-scatter,2572,87.6325124105,1,0.462659678009,0.462659678009,0,logs/effective_throughput/agx-orin/summary.json
+agx_orin,AGX Orin,yolov8m,YOLOv8m,wiseconv,WISEConv,2572,51.3246409098,0.981645023292,0.81458389961,0.799632231106,0.0149516685041,logs/effective_throughput/agx-orin/summary.json
+agx_orin,AGX Orin,dynconv_pose,DynConv,dense,Dense,2958,46.713470459,0.145878324928,1,0.145878324928,0.854121675072,logs/effective_throughput/agx-orin/summary.json
+agx_orin,AGX Orin,dynconv_pose,DynConv,tile_skip,Tile skipping,2958,26.8506555557,0.447943972424,0.551857599774,0.247201285455,0.304656314319,logs/effective_throughput/agx-orin/summary.json
+agx_orin,AGX Orin,dynconv_pose,DynConv,gather_scatter,Gather-scatter,2958,204.096542358,1,0.0356157685094,0.0356157685094,0,logs/effective_throughput/agx-orin/summary.json
+agx_orin,AGX Orin,dynconv_pose,DynConv,wiseconv,WISEConv,2958,15.7147359848,0.908486790518,0.502006928877,0.456066663633,0.0459402652439,logs/effective_throughput/agx-orin/summary.json

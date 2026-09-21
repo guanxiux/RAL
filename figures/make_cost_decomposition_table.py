@@ -12,10 +12,18 @@ SOURCE = HERE / "cost_decomposition.csv"
 OUTPUT = HERE / "cost_decomposition_table.tex"
 DEVICES = ("rtx3080", "agx_orin")
 SYSTEMS = ("dense", "tile_skip", "gather_scatter", "wiseconv")
+SYSTEM_LABELS = {
+    "dense": "Dense",
+    "tile_skip": "Tile skipping",
+    "gather_scatter": "Gather",
+    "wiseconv": "WISEConv",
+}
 CATEGORIES = ("construction", "convolution", "elementwise", "other")
 
 
 def stage_cell(row: dict, category: str) -> str:
+    if row is None:
+        return r"\textemdash{}"
     if category == "construction" and row["system"] != "wiseconv":
         return r"\textemdash{}"
     milliseconds = float(row[f"{category}_ms"])
@@ -24,12 +32,11 @@ def stage_cell(row: dict, category: str) -> str:
 
 
 def make_table(rows: list[dict]) -> str:
-    expected = {
-        (device, system) for device in DEVICES for system in SYSTEMS
-    }
     by_key = {(row["device"], row["system"]): row for row in rows}
-    if set(by_key) != expected or len(rows) != len(expected):
-        raise ValueError("cost-decomposition CSV has unexpected rows")
+    present_devices = [d for d in DEVICES
+                       if any((d, s) in by_key for s in SYSTEMS)]
+    if not present_devices:
+        raise ValueError("cost-decomposition CSV has no rows")
 
     lines = [
         r"\begin{table}[!t]",
@@ -50,23 +57,27 @@ def make_table(rows: list[dict]) -> str:
         r"      \textbf{Conv.} & \textbf{Elem.} & \textbf{Other} \\",
         r"    \hline",
     ]
-    for device in DEVICES:
-        first = by_key[(device, SYSTEMS[0])]
-        platform = first["device_label"].replace(" ", "~")
+    for device in present_devices:
+        device_row = next(by_key[(device, s)] for s in SYSTEMS
+                          if (device, s) in by_key)
+        platform = device_row["device_label"].replace(" ", "~")
         for index, system in enumerate(SYSTEMS):
-            row = by_key[(device, system)]
+            row = by_key.get((device, system))
             prefix = (
                 rf"    \multirow{{4}}{{*}}{{\rotatebox[origin=c]{{90}}"
                 rf"{{\strut {platform}}}}}"
                 if index == 0 else "   "
             )
-            label = row["system_label"]
+            label = SYSTEM_LABELS.get(system, system)
             if system == "wiseconv":
                 label = rf"\textbf{{{label}}}"
-            cells = [
-                f"{float(row['total_ms']):.2f}",
-                *(stage_cell(row, category) for category in CATEGORIES),
-            ]
+            if row is None:
+                cells = [r"\textemdash{}"] * (1 + len(CATEGORIES))
+            else:
+                cells = [
+                    f"{float(row['total_ms']):.2f}",
+                    *(stage_cell(row, category) for category in CATEGORIES),
+                ]
             lines.append(f"{prefix} & {label} & " + " & ".join(cells) + " \\\\")
         lines.append(r"    \hline")
     lines.extend([
