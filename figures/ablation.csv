@@ -1,15 +1,15 @@
 device,device_label,variant,variant_label,eta_percent,construction_ms,convolution_ms,total_ms,source
-rtx3080,RTX 3080,atomic_append,Atomic append,98.2410870576,,,1.71997869015,ablation_and_sensitivity/yolov8n/3080/fp32/atomic_append/summary.json
-rtx3080,RTX 3080,global_order,Global order,98.2580775755,,,2.04697597027,ablation_and_sensitivity/yolov8n/3080/fp32/global_order/summary.json
-rtx3080,RTX 3080,no_reuse,No reuse,99.6825970778,,,1.742506663,ablation_and_sensitivity/yolov8n/3080/fp32/no_reuse/summary.json
-rtx3080,RTX 3080,dp_only,DP only,98.2580775755,,,1.72782933712,ablation_and_sensitivity/yolov8n/3080/fp32/dp_only/summary.json
-rtx3080,RTX 3080,no_hybrid,No Hybrid,98.2580775755,,,1.72748800119,ablation_and_sensitivity/yolov8n/3080/fp32/no_hybrid/summary.json
-rtx3080,RTX 3080,sync_exact_selector,Sync exact selector,98.2580775755,,,7.03030943871,ablation_and_sensitivity/yolov8n/3080/fp32/sync_exact/summary.json
-rtx3080,RTX 3080,ours,Ours,98.1868365312,0.126847596695,1.05641557338,1.70922666788,latency/yolov8n/3080/fp32/yolov8n-full-r3-wiseconv/summary.json
-agx_orin,AGX Orin,atomic_append,Atomic append,97.9141779466,,,10.3472533226,ablation_and_sensitivity/yolov8n/agx-orin/fp32/atomic_append/summary.json
-agx_orin,AGX Orin,global_order,Global order,97.9143278706,,,11.2037013372,ablation_and_sensitivity/yolov8n/agx-orin/fp32/global_order/summary.json
-agx_orin,AGX Orin,no_reuse,No reuse,99.3243358241,,,10.3815894127,ablation_and_sensitivity/yolov8n/agx-orin/fp32/no_reuse/summary.json
-agx_orin,AGX Orin,dp_only,DP only,97.9141779466,,,10.3596480687,ablation_and_sensitivity/yolov8n/agx-orin/fp32/dp_only/summary.json
-agx_orin,AGX Orin,no_hybrid,No Hybrid,97.9141779466,,,10.3757761319,ablation_and_sensitivity/yolov8n/agx-orin/fp32/no_hybrid/summary.json
-agx_orin,AGX Orin,sync_exact_selector,Sync exact selector,97.9143278706,,,23.4369869232,ablation_and_sensitivity/yolov8n/agx-orin/fp32/sync_exact/summary.json
-agx_orin,AGX Orin,ours,Ours,97.9569672001,,,11.1175893148,latency/yolov8n/agx-orin/fp32/yolov8n-full-r3-wiseconv/summary.json
+rtx3080,RTX 3080,atomic_append,Atomic append,98.2579939241,0.427114583333,0.941489583333,1.9795502865,logs/latency_cost_decomposition/yolov8n/3080/fp32/ablation-atomic_append/summary.json
+rtx3080,RTX 3080,global_order,Global order,98.2579601602,0.538104166667,0.94125,1.98818800604,logs/latency_cost_decomposition/yolov8n/3080/fp32/ablation-global_order/summary.json
+rtx3080,RTX 3080,no_reuse,No reuse,99.682535881,0.190958333333,0.930395833333,1.75785575041,logs/latency_cost_decomposition/yolov8n/3080/fp32/ablation-no_reuse/summary.json
+rtx3080,RTX 3080,dp_only,DP only,98.2580775755,0.1180625,1.00788541667,1.73207337878,logs/latency_cost_decomposition/yolov8n/3080/fp32/ablation-dp_only/summary.json
+rtx3080,RTX 3080,no_hybrid,No hybrid,98.25791614,0.118489583333,0.96009375,1.68617436701,logs/latency_cost_decomposition/yolov8n/3080/fp32/ablation-no_hybrid/summary.json
+rtx3080,RTX 3080,sync_exact_selector,Readback & launch,98.2578850543,0.1184375,0.934916666667,7.60567018812,logs/latency_cost_decomposition/yolov8n/3080/fp32/ablation-sync_exact/summary.json
+rtx3080,RTX 3080,ours,Ours,98.2578442623,0.118041666667,0.93540625,1.66270904213,logs/latency_cost_decomposition/yolov8n/3080/fp32/ablation-ours/summary.json
+agx_orin,AGX Orin,atomic_append,Atomic append,97.9319465593,1.46143664583,6.21135853125,11.1176105482,logs/latency_cost_decomposition/yolov8n/agx-orin/fp32/ablation-atomic_append/summary.json
+agx_orin,AGX Orin,global_order,Global order,97.9317685822,1.23432248958,6.21584835417,11.0411361286,logs/latency_cost_decomposition/yolov8n/agx-orin/fp32/ablation-global_order/summary.json
+agx_orin,AGX Orin,no_reuse,No reuse,99.3426307163,0.917348854167,6.16693239583,10.3293320105,logs/latency_cost_decomposition/yolov8n/agx-orin/fp32/ablation-no_reuse/summary.json
+agx_orin,AGX Orin,dp_only,DP only,97.9319383253,0.524970375,6.47792373958,10.3786809824,logs/latency_cost_decomposition/yolov8n/agx-orin/fp32/ablation-dp_only/summary.json
+agx_orin,AGX Orin,no_hybrid,No hybrid,97.9320215453,0.52290696875,6.33348057292,10.2507938997,logs/latency_cost_decomposition/yolov8n/agx-orin/fp32/ablation-no_hybrid/summary.json
+agx_orin,AGX Orin,sync_exact_selector,Readback & launch,97.9318566343,0.522835208333,6.19690377083,24.3306231878,logs/latency_cost_decomposition/yolov8n/agx-orin/fp32/ablation-sync_exact/summary.json
+agx_orin,AGX Orin,ours,Ours,97.931932997,0.52371325,6.19807610417,10.2216503403,logs/latency_cost_decomposition/yolov8n/agx-orin/fp32/ablation-ours/summary.json

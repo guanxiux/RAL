@@ -1,37 +1,52 @@
 \begin{table}[!t]
   \centering
-  \caption{YOLOv8n component ablation on RTX~3080; AGX Orin is
-  reserved for the multi-platform refresh. Times are milliseconds.}
+  \caption{YOLOv8n component ablation on RTX~3080 and AGX~Orin.
+  \textit{Const.} and \textit{Comp.} group the variants that replace one
+  construction-stage and compute-stage mechanism, respectively; all other
+  settings---weights, inputs, upstream masks, and deployed tile
+  configuration---are held fixed. Cons. and Conv. are the construction- and
+  compute-stage GPU kernel time (ms) profiled in a single eager pass;
+  Tot. is the full-model end-to-end latency (ms), which also includes
+  non-kernel time and therefore need not equal Cons.$+$Conv.}
   \Description{A table compares seven WISEConv design variants on RTX
-  3080 and reserves the corresponding AGX Orin columns. Each platform
-  reports useful-compute ratio, construction time, convolution time,
-  and full-model latency when available.}
+  3080 and AGX Orin, grouped into construction-stage (Const.) and
+  compute-stage (Comp.) variants. Each platform reports construction,
+  convolution, and total latency in milliseconds.}
   \label{tab:ablation}
-  \fontsize{7.0}{7.8}\selectfont
-  \setlength{\tabcolsep}{0.7pt}
+  \footnotesize
+  \setlength{\tabcolsep}{1.6pt}
   \renewcommand{\arraystretch}{1.06}
-  \begin{tabular*}{\columnwidth}{@{\extracolsep{\fill}}l c r r r c r r r@{}}
+  \begin{tabular*}{\columnwidth}{@{\extracolsep{\fill}}c c c c c c c c@{}}
     \hline
-    \multirow{2}{*}{\textbf{Variant}} &
-    \multicolumn{4}{c}{\textbf{RTX 3080}} &
-    \multicolumn{4}{c}{\textbf{AGX Orin}} \\
-    \cline{2-5}\cline{6-9}
-    & $\boldsymbol{\eta}$ & \textbf{Cons.} & \textbf{Conv.} & \textbf{Total}
-    & $\boldsymbol{\eta}$ & \textbf{Cons.} & \textbf{Conv.} & \textbf{Total} \\
+    & \multirow{2}{*}{\textbf{Variant}} &
+    \multicolumn{3}{c}{\textbf{RTX 3080}} &
+    \multicolumn{3}{c}{\textbf{AGX Orin}} \\
+    \cline{3-5}\cline{6-8}
+    & & \textbf{Cons.} & \textbf{Conv.} & \textbf{Tot.}
+    & \textbf{Cons.} & \textbf{Conv.} & \textbf{Tot.} \\
     \hline
-    Atomic append & 98.2\% & \textemdash{} & \textemdash{} & 1.720 & 97.9\% & \textemdash{} & \textemdash{} & 10.347 \\
-    Global order & 98.3\% & \textemdash{} & \textemdash{} & 2.047 & 97.9\% & \textemdash{} & \textemdash{} & 11.204 \\
-    No reuse & 99.7\% & \textemdash{} & \textemdash{} & 1.743 & 99.3\% & \textemdash{} & \textemdash{} & 10.382 \\
-    DP only & 98.3\% & \textemdash{} & \textemdash{} & 1.728 & 97.9\% & \textemdash{} & \textemdash{} & 10.360 \\
-    No Hybrid & 98.3\% & \textemdash{} & \textemdash{} & 1.727 & 97.9\% & \textemdash{} & \textemdash{} & 10.376 \\
-    Sync exact selector & 98.3\% & \textemdash{} & \textemdash{} & 7.030 & 97.9\% & \textemdash{} & \textemdash{} & 23.437 \\
-    \textbf{Ours} & 98.2\% & 0.127 & 1.056 & 1.709 & 98.0\% & \textemdash{} & \textemdash{} & 11.118 \\
+    \multirow{3}{*}{\rotatebox[origin=c]{90}{\strut Const.}} & Atomic append & 0.43 & 0.94 & 1.98 & 1.46 & 6.21 & 11.12 \\
+     & Global order & 0.54 & 0.94 & 1.99 & 1.23 & 6.22 & 11.04 \\
+     & No reuse & 0.19 & 0.93 & 1.76 & 0.92 & 6.17 & 10.33 \\
+    \hline
+    \multirow{3}{*}{\rotatebox[origin=c]{90}{\strut Comp.}} & DP only & 0.12 & 1.01 & 1.73 & 0.52 & 6.48 & 10.38 \\
+     & No hybrid & 0.12 & 0.96 & 1.69 & 0.52 & 6.33 & 10.25 \\
+     & Readback \& launch & 0.12 & 0.93 & 7.61 & 0.52 & 6.20 & 24.33 \\
+    \hline
+     & \textbf{Ours} & 0.12 & 0.94 & 1.66 & 0.52 & 6.20 & 10.22 \\
     \hline
   \end{tabular*}
   \par\vspace{5pt}
-  \noindent\parbox{\columnwidth}{\scriptsize\textit{Notes.}
-  $\eta$ is the full-model useful-compute ratio. Cons. and Conv. are
-  construction- and convolution-stage latency; dashes indicate that
-  variant-level stage attribution was not collected. AGX Orin entries
-  are intentionally blank pending the multi-platform refresh.}
+  \noindent\parbox{\columnwidth}{\footnotesize\textit{Variants.}
+  \textit{Atomic append}: one global atomic per coordinate instead of
+  per-segment reservation.
+  \textit{Global order}: two-pass stable compaction for full
+  dense-traversal order.
+  \textit{No reuse}: rebuild worklist at every layer.
+  \textit{DP only}: force data-parallel decomposition, disable
+  Stream-$K$ adaptation.
+  \textit{No hybrid}: select between data-parallel and full Stream-$K$
+  only, disabling the hybrid DP-prefix\,+\,Stream-$K$-tail combination.
+  \textit{Readback \& launch}: synchronize worklist length to host and
+  relaunch per operator.}
 \end{table}

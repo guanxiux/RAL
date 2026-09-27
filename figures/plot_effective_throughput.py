@@ -66,7 +66,7 @@ WORKLOAD_LABELS = {
 # The 192 pt canvas is 80% of the measured 240 pt acmart column width and is
 # included at that physical size. Both panels are deliberately shallow.
 FIG_W, FIG_H = 3.334, 1.85
-FS_TICK, FS_AXIS, FS_WORKLOAD, FS_PANEL, FS_LEG = 6.1, 6.9, 6.4, 6.7, 5.8
+FS_TICK, FS_AXIS, FS_WORKLOAD, FS_PANEL, FS_LEG = 6.1, 7.2, 6.9, 7.0, 7.2
 WASTED_COLOR = "#e3e3e3"
 WASTED_HATCH = "...."
 

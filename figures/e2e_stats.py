@@ -37,7 +37,9 @@ PLATFORMS = [
     ("a100", "NVIDIA A100", "measured"),
     ("4090", "RTX 4090", "measured"),
     ("3080", "RTX 3080", "measured"),
-    ("agx-orin", "Jetson AGX Orin", "measured"),
+    ("4070-laptop", "RTX 4070 Laptop", "measured"),
+    ("agx-orin", "AGX Orin", "measured"),
+    ("xavier-nx", "Xavier NX", "measured"),
 ]
 
 WORKLOADS = [

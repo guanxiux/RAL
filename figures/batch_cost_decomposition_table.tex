@@ -18,20 +18,20 @@
       & \textbf{System} & \textbf{Tot.} & \textbf{Cons.} &
     \textbf{Conv.} & \textbf{Elem.} & \textbf{Other} \\
     \hline
-    \multirow{4}{*}{\rotatebox[origin=c]{90}{Batch size=1}} & Dense & 2.79 & \textemdash{} & 2.33(83.4\%) & 0.14(5.1\%) & 0.32(11.4\%) \\
-    & Tile skipping & 3.45 & \textemdash{} & 2.69(77.9\%) & 0.25(7.3\%) & 0.51(14.8\%) \\
-    & Gather & 12.51 & \textemdash{} & 8.73(69.8\%) & 1.11(8.9\%) & 2.35(18.8\%) \\
-    & \textbf{WISEConv} & 1.69 & 0.08(4.9\%) & 1.02(60.6\%) & 0.19(11.1\%) & 0.40(23.4\%) \\
+    \multirow{4}{*}{\rotatebox[origin=c]{90}{Batch size=1}} & Dense & 2.82 & \textemdash{} & 2.32(82.0\%) & 0.39(13.8\%) & 0.12(4.2\%) \\
+    & Tile skipping & 3.52 & \textemdash{} & 2.89(82.1\%) & 0.31(8.9\%) & 0.31(9.0\%) \\
+    & Gather & 12.60 & \textemdash{} & 3.82(30.3\%) & 1.30(10.3\%) & 7.48(59.4\%) \\
+    & \textbf{WISEConv} & 1.66 & 0.12(7.5\%) & 0.99(59.5\%) & 0.33(19.9\%) & 0.22(13.1\%) \\
     \hline
-    \multirow{4}{*}{\rotatebox[origin=c]{90}{Batch size=4}} & Dense & 1.82 & \textemdash{} & 1.41(77.5\%) & 0.16(9.0\%) & 0.25(13.6\%) \\
-    & Tile skipping & 1.66 & \textemdash{} & 1.13(67.9\%) & 0.20(12.2\%) & 0.33(19.9\%) \\
-    & Gather & 5.97 & \textemdash{} & 3.98(66.7\%) & 0.68(11.4\%) & 1.23(20.6\%) \\
-    & \textbf{WISEConv} & 1.00 & 0.03(2.7\%) & 0.53(52.9\%) & 0.16(15.9\%) & 0.29(28.5\%) \\
+    \multirow{4}{*}{\rotatebox[origin=c]{90}{Batch size=4}} & Dense & 1.82 & \textemdash{} & 1.38(75.4\%) & 0.31(17.0\%) & 0.14(7.6\%) \\
+    & Tile skipping & 1.69 & \textemdash{} & 1.17(69.2\%) & 0.27(15.7\%) & 0.26(15.1\%) \\
+    & Gather & 6.44 & \textemdash{} & 1.92(29.8\%) & 0.78(12.1\%) & 3.74(58.1\%) \\
+    & \textbf{WISEConv} & 1.02 & 0.03(3.1\%) & 0.58(56.6\%) & 0.23(22.8\%) & 0.18(17.6\%) \\
     \hline
-    \multirow{4}{*}{\rotatebox[origin=c]{90}{Batch size=8}} & Dense & 1.68 & \textemdash{} & 1.31(78.1\%) & 0.17(10.0\%) & 0.20(11.9\%) \\
-    & Tile skipping & 1.41 & \textemdash{} & 0.93(66.3\%) & 0.20(14.5\%) & 0.27(19.1\%) \\
-    & Gather & 3.68 & \textemdash{} & 2.65(71.9\%) & 0.40(11.0\%) & 0.60(16.3\%) \\
-    & \textbf{WISEConv} & 0.88 & 0.02(1.8\%) & 0.48(54.3\%) & 0.16(17.7\%) & 0.23(26.2\%) \\
+    \multirow{4}{*}{\rotatebox[origin=c]{90}{Batch size=8}} & Dense & 1.69 & \textemdash{} & 1.20(70.9\%) & 0.33(19.5\%) & 0.16(9.6\%) \\
+    & Tile skipping & 1.43 & \textemdash{} & 0.92(64.0\%) & 0.26(18.3\%) & 0.25(17.7\%) \\
+    & Gather & 4.06 & \textemdash{} & 1.14(28.0\%) & 0.51(12.6\%) & 2.41(59.4\%) \\
+    & \textbf{WISEConv} & 0.90 & 0.02(1.7\%) & 0.49(54.3\%) & 0.22(24.0\%) & 0.18(19.9\%) \\
     \hline
   \end{tabular}
 \end{table}

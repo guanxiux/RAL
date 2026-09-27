@@ -165,15 +165,9 @@ def load_config(
         raise ValueError(f"unexpected stored rounds for {system}/B{batch_size}")
     for measured, expected in zip(round_ms_per_frame, stored_rounds, strict=True):
         close(float(measured), expected)
-    robust_ms_per_frame = float(statistics.median(round_ms_per_frame))
-    robust_throughput = float(
-        statistics.median(1000.0 / round_ms_per_frame)
-    )
-    close(robust_ms_per_frame, float(stored["robust_mean_gpu_ms_per_frame"]))
-    close(
-        robust_throughput,
-        float(stored["robust_throughput_frames_per_second"]),
-    )
+    mean_ms_per_frame = float(statistics.fmean(round_ms_per_frame))
+    mean_throughput = 1000.0 / mean_ms_per_frame
+    close(mean_ms_per_frame, float(statistics.fmean(stored_rounds)))
 
     tracker = [
         group
@@ -196,9 +190,9 @@ def load_config(
             "rounds": 3,
             "timed_batches_per_round": expected_batches,
             "timed_frames_per_round": timed_frames,
-            "robust_batch_gpu_ms": robust_ms_per_frame * batch_size,
-            "robust_amortized_gpu_ms_per_frame": robust_ms_per_frame,
-            "robust_throughput_frames_per_second": robust_throughput,
+            "mean_batch_gpu_ms": mean_ms_per_frame * batch_size,
+            "mean_amortized_gpu_ms_per_frame": mean_ms_per_frame,
+            "mean_throughput_frames_per_second": mean_throughput,
             "cuda_graph": str(graph_count > 0).lower(),
             "cuda_graph_count": graph_count,
             "max_activity_bucket_fallbacks": max_fallbacks,
@@ -238,18 +232,18 @@ def main() -> None:
     }
     for system in SYSTEMS:
         base = float(
-            by_key[(system, 1)]["robust_amortized_gpu_ms_per_frame"]
+            by_key[(system, 1)]["mean_amortized_gpu_ms_per_frame"]
         )
         for batch_size in BATCH_SIZES:
             row = by_key[(system, batch_size)]
-            latency = float(row["robust_amortized_gpu_ms_per_frame"])
+            latency = float(row["mean_amortized_gpu_ms_per_frame"])
             row["per_frame_speedup_vs_batch1"] = base / latency
 
     for batch_size in BATCH_SIZES:
         competitors = {
             system: float(
                 by_key[(system, batch_size)][
-                    "robust_amortized_gpu_ms_per_frame"
+                    "mean_amortized_gpu_ms_per_frame"
                 ]
             )
             for system in SYSTEMS
@@ -257,7 +251,7 @@ def main() -> None:
         }
         fastest = min(competitors, key=competitors.get)
         wise = by_key[("wiseconv", batch_size)]
-        wise_latency = float(wise["robust_amortized_gpu_ms_per_frame"])
+        wise_latency = float(wise["mean_amortized_gpu_ms_per_frame"])
         wise["fastest_competing_system"] = fastest
         wise["speedup_vs_fastest_competing"] = (
             competitors[fastest] / wise_latency
@@ -290,9 +284,9 @@ def main() -> None:
         print(
             f"{str(row['system_label']):18s} "
             f"{int(row['batch_size']):1d} "
-            f"{float(row['robust_batch_gpu_ms']):10.4f} "
-            f"{float(row['robust_amortized_gpu_ms_per_frame']):10.4f} "
-            f"{float(row['robust_throughput_frames_per_second']):10.1f} "
+            f"{float(row['mean_batch_gpu_ms']):10.4f} "
+            f"{float(row['mean_amortized_gpu_ms_per_frame']):10.4f} "
+            f"{float(row['mean_throughput_frames_per_second']):10.1f} "
             f"{float(row['per_frame_speedup_vs_batch1']):8.3f}x"
         )
     print(f"wrote {OUT_CSV}")

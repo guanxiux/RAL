@@ -1,215 +1,235 @@
 #!/usr/bin/env python3
-"""FP32 vs FP16 tensor-core sensitivity, e2e latency style."""
+"""FP32 (SIMT) vs FP16 (tensor core) full-model latency, Dense vs WISEConv.
+
+This figure is drawn with the *same* plotting machinery as the end-to-end
+latency figure (`plot_e2e.py`): identical fonts, rcParams, bar styling,
+axis styling, panel geometry and legend.  Values are read from the unified
+`logs/latency` tree so the figure tracks the deployment runs.
+"""
 
 from __future__ import annotations
-import math, os, glob
+
+import json
+import statistics
+import sys
 from pathlib import Path
 
 import matplotlib
+
 matplotlib.use("Agg")
-import matplotlib.font_manager as fm
 import matplotlib.pyplot as plt
 from matplotlib.patches import Rectangle
-from matplotlib.ticker import FuncFormatter
-
-from bar_patterns import add_bar, legend_handles
+from matplotlib.ticker import FuncFormatter, MaxNLocator
 
 HERE = Path(__file__).resolve().parent
+sys.path.insert(0, str(HERE))
 
-for directory in (
-    "/usr/share/texmf/fonts/opentype/public/tex-gyre",
-    "/usr/share/fonts/opentype/public/tex-gyre",
-    "/usr/local/texlive",
-):
-    for path in glob.glob(
-        os.path.join(directory, "**", "texgyretermes-*.otf"), recursive=True
-    ):
-        fm.fontManager.addfont(path)
+import plot_e2e as e2e  # installs fonts + rcParams, exposes shared helpers
+from bar_patterns import add_bar, legend_handles
 
-plt.rcParams.update({
-    "font.family": "serif",
-    "font.serif": ["TeX Gyre Termes", "Nimbus Roman", "DejaVu Serif"],
-    "mathtext.fontset": "custom",
-    "mathtext.rm": "TeX Gyre Termes",
-    "mathtext.it": "TeX Gyre Termes:italic",
-    "mathtext.bf": "TeX Gyre Termes:bold",
-    "pdf.fonttype": 42, "ps.fonttype": 42,
-    "axes.linewidth": 0.65, "hatch.linewidth": 0.36,
-})
-
-FIG_W, FIG_H = 3.334, 2.10
-FS_TICK = 6.1; FS_AXIS = 7.2; FS_PANEL = 7.0
-FS_LEG = 7.2; FS_WORKLOAD = 6.9; FS_DTYPE = 6.2
+# Reuse the end-to-end figure's typography and styling verbatim.
+FS_TICK = e2e.FS_TICK
+FS_AXIS = e2e.FS_AXIS
+FS_PANEL = e2e.FS_PANEL
+FS_LEG = e2e.FS_LEG
+FS_WORKLOAD = e2e.FS_WORKLOAD
+FS_DTYPE = 6.2
 
 BACKENDS = ["dense", "wiseconv"]
 LABELS = {"dense": "Dense", "wiseconv": "WISEConv"}
 
-# (Dense, WISEConv) in ms
-DATA = {
-    "RTX 3080": {
-        "FireFlowNet": {"FP32": (1.043, 0.399), "FP16": (0.347, 0.243)},
-        "YOLOv8n":     {"FP32": (2.789, 1.582), "FP16": (1.212, 1.067)},
-        "YOLOv8m":     {"FP32": (10.178, 5.967), "FP16": (3.532, 3.070)},
-        "DynConv":     {"FP32": (5.986, 3.197), "FP16": (3.366, 2.459)},
-    },
-    "AGX Orin": {
-        "FireFlowNet": {"FP32": (12.466, 5.390), "FP16": (4.310, 2.775)},
-        "YOLOv8n":     {"FP32": (24.670, 16.738), "FP16": (8.194, 6.378)},
-        "YOLOv8m":     {"FP32": (142.973, 90.565), "FP16": (29.616, 16.863)},
-        "DynConv":     {"FP32": (61.720, 22.494), "FP16": (22.045, 15.553)},
-    },
+DEVICES = {"RTX 3080": "3080", "AGX Orin": "agx-orin"}
+WORKLOADS = ["fireflownet", "yolov8n", "yolov8m", "dynconv_pose"]
+WORKLOAD_LABELS = {
+    "fireflownet": "FireFlowNet",
+    "yolov8n": "YOLOv8n",
+    "yolov8m": "YOLOv8m",
+    "dynconv_pose": "DynConv",
 }
-PLATFORMS = ["RTX 3080", "AGX Orin"]
-WORKLOADS = ["FireFlowNet", "YOLOv8n", "YOLOv8m", "DynConv"]
 DTYPES = ["FP32", "FP16"]
+RUN_TEMPLATES = {
+    "fireflownet": {"FP32": "full-r3-{}", "FP16": "fp16-full-r3-{}"},
+    "yolov8n": {"FP32": "yolov8n-full-r3-{}", "FP16": "yolov8n-fp16-full-r3-{}"},
+    "yolov8m": {"FP32": "yolov8m-full-r3-{}", "FP16": "yolov8m-fp16-full-r3-{}"},
+    "dynconv_pose": {"FP32": "full-s0125-r3-{}", "FP16": "fp16-full-s0125-r3-{}"},
+}
+
+FIG_W, FIG_H = 3.334, 2.30
+LOGS = HERE.parents[1] / "logs"
 
 
-def natural_ticks(max_value):
-    desired = max_value * 1.02
-    exp = math.floor(math.log10(desired))
-    best = None
-    for pw in range(exp - 2, exp + 2):
-        s = 10.0 ** pw
-        for m in (1, 2, 2.5, 5):
-            step = m * s
-            n = math.ceil(desired / step - 1e-12)
-            if 2 <= n <= 6:
-                top = n * step
-                score = ((top - desired) / desired, abs(n - 4))
-                if best is None or score < best[0]:
-                    best = (score, step, n)
-    if best is None:
-        return [0, desired], 1
-    _, step, n = best
-    ticks = [i * step for i in range(n + 1)]
-    if math.isclose(step, round(step), abs_tol=1e-10): dec = 0
-    elif math.isclose(step*10, round(step*10), abs_tol=1e-10): dec = 1
-    else: dec = 2
-    return ticks, dec
+def _latency(device_dir: str, workload: str, dtype: str, backend: str) -> float:
+    run = RUN_TEMPLATES[workload][dtype].format(backend)
+    path = (
+        LOGS / "latency" / workload / device_dir / dtype.lower() / run
+        / "summary.json"
+    )
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    values = [float(seq["all_frames_gpu_ms"]["mean"])
+              for seq in payload["sequences"].values()]
+    return statistics.fmean(values)
 
 
-def main():
+def load_data():
+    data = {}
+    for label, device_dir in DEVICES.items():
+        data[label] = {}
+        for workload in WORKLOADS:
+            data[label][workload] = {
+                dtype: (
+                    _latency(device_dir, workload, dtype, "dense"),
+                    _latency(device_dir, workload, dtype, "wiseconv"),
+                )
+                for dtype in DTYPES
+            }
+    return data
+
+
+DATA = load_data()
+
+# Four bars per workload panel: [Dense, WISEConv] x [FP32, FP16].
+BAR_W = 0.48
+BAR_X = [0.00, 0.48, 1.40, 1.88]
+GROUP_CENTERS = [0.24, 1.64]
+PANEL_XLIM = (-0.52, 2.40)
+
+
+def style_axis(ax) -> None:
+    """Identical axis treatment to plot_e2e.draw_latency_figure."""
+    ax.set_xlim(*PANEL_XLIM)
+    ax.set_xticks(GROUP_CENTERS)
+    ax.set_xticklabels(DTYPES, fontsize=FS_DTYPE)
+    ax.tick_params(axis="x", length=0, pad=4.0)
+    ax.yaxis.set_major_locator(MaxNLocator(nbins=3, min_n_ticks=2))
+    ax.tick_params(axis="y", labelsize=FS_TICK, pad=1.0, length=2.0, width=0.6)
+    ax.spines["top"].set_visible(False)
+    ax.spines["right"].set_visible(False)
+    ax.set_axisbelow(True)
+    ax.yaxis.grid(True, color="#bcbcbc", alpha=0.28, linewidth=0.35)
+
+
+def draw_panel(fig, rect, values):
+    ax = fig.add_axes(rect)
+    for backend_index, backend in enumerate(BACKENDS):
+        for dtype_index, dtype in enumerate(DTYPES):
+            slot = dtype_index * 2 + backend_index
+            dense_v, wise_v = values[dtype]
+            value = dense_v if backend == "dense" else wise_v
+            add_bar(ax, BAR_X[slot], value, BAR_W, backend, linewidth=0.65)
+    style_axis(ax)
+    top = max(max(values[dtype]) for dtype in DTYPES)
+    ticks, decimals = e2e.natural_ticks(top)
+    ax.set_ylim(0, ticks[-1])
+    ax.set_yticks(ticks)
+    ax.yaxis.set_major_formatter(
+        FuncFormatter(lambda value, _: f"{value:.{decimals}f}")
+    )
+
+
+def main() -> None:
     fig = plt.figure(figsize=(FIG_W, FIG_H))
 
-    # Layout: 2 rows (platforms), each row = platform_label + box with 4 workloads
-    margin_left = 0.01
-    margin_right = 0.01
-    margin_top = 0.20
-    margin_bottom = 0.02
-    row_gap = 0.10
-    platform_label_w = 0.28
-    y_label_gutter = 0.28
-    panel_right_pad = 0.03
-    workload_gap = 0.08
+    # Geometry mirrors plot_e2e.draw_latency_figure, reduced to a single column
+    # of platforms and two rows (RTX 3080, AGX Orin).
+    margin_left, margin_right = 0.03, 0.03
+    margin_top, margin_bottom = 0.28, 0.34
+    panel_gap_y = 0.22
+    platform_label_width = 0.15
+    panel_unit_width = FIG_W - margin_left - margin_right
+    panel_box_width = panel_unit_width - platform_label_width
+    y_label_gutter, panel_right_pad = 0.30, 0.03
+    axes_width = panel_box_width - y_label_gutter - panel_right_pad
+    workload_gap = 0.13
+    workload_width = (axes_width - 3 * workload_gap) / 4
+    panel_height = (
+        FIG_H - margin_top - margin_bottom - (len(DEVICES) - 1) * panel_gap_y
+    ) / len(DEVICES)
+    panel_letters = "ab"
 
-    n_rows = len(PLATFORMS)
-    n_workloads = len(WORKLOADS)
-    row_height = (FIG_H - margin_top - margin_bottom - (n_rows - 1) * row_gap) / n_rows
-    box_width = FIG_W - margin_left - platform_label_w - margin_right
-    axes_total_w = box_width - y_label_gutter - panel_right_pad
-    single_w = (axes_total_w - (n_workloads - 1) * workload_gap) / n_workloads
+    for panel_index, (label, _device_dir) in enumerate(DEVICES.items()):
+        row_top = FIG_H - margin_top - panel_index * (panel_height + panel_gap_y)
+        y_origin = row_top - panel_height
+        panel_unit_left = margin_left
+        panel_box_left = panel_unit_left + platform_label_width
+        axes_left = panel_box_left + y_label_gutter
+        box_left_fraction = panel_box_left / FIG_W
+        y_fraction = y_origin / FIG_H
+        panel_box_width_fraction = panel_box_width / FIG_W
+        panel_height_fraction = panel_height / FIG_H
 
-    bar_w = 0.15
-    bar_gap = 0.02
-    group_gap = 0.30
+        fig.text(
+            (panel_unit_left + 0.42 * platform_label_width) / FIG_W,
+            (y_origin + 0.5 * panel_height) / FIG_H,
+            f"({panel_letters[panel_index]}) {label}",
+            ha="center",
+            va="center",
+            rotation=90,
+            fontsize=FS_PANEL,
+            fontweight="bold",
+        )
+        fig.text(
+            (panel_box_left + 0.055) / FIG_W,
+            (y_origin + 0.5 * panel_height) / FIG_H,
+            "Latency (ms)",
+            ha="center",
+            va="center",
+            rotation=90,
+            fontsize=FS_AXIS,
+        )
 
-    for p_idx, platform in enumerate(PLATFORMS):
-        row_top = FIG_H - margin_top - p_idx * (row_height + row_gap)
-        row_bottom = row_top - row_height
-        box_left = margin_left + platform_label_w
+        for workload_index, workload in enumerate(WORKLOADS):
+            left = (
+                axes_left + workload_index * (workload_width + workload_gap)
+            ) / FIG_W
+            rect = [
+                left,
+                y_fraction,
+                workload_width / FIG_W,
+                panel_height_fraction,
+            ]
+            draw_panel(fig, rect, DATA[label][workload])
+            if panel_index == len(DEVICES) - 1:
+                # Only the bottom row carries workload names, as in the e2e
+                # figure where columns are shared across platform rows.
+                fig.text(
+                    left + 0.5 * workload_width / FIG_W,
+                    (y_origin - 0.15) / FIG_H,
+                    WORKLOAD_LABELS[workload],
+                    ha="center",
+                    va="top",
+                    fontsize=FS_WORKLOAD,
+                )
 
-        # Box bounds in figure fraction
-        bx = box_left / FIG_W
-        by = row_bottom / FIG_H
-        bw = box_width / FIG_W
-        bh = row_height / FIG_H
-
-        # Outer box
+        pad_y = 0.05
         border = Rectangle(
-            (bx, by), bw, bh,
+            (box_left_fraction, y_fraction - pad_y / FIG_H),
+            panel_box_width_fraction,
+            panel_height_fraction + 2 * pad_y / FIG_H,
             transform=fig.transFigure,
-            linewidth=0.5, edgecolor="#2b2b2b",
-            facecolor="none", clip_on=False, zorder=0,
+            linewidth=0.5,
+            edgecolor="#2b2b2b",
+            facecolor="none",
+            clip_on=False,
+            zorder=0,
         )
         fig.patches.append(border)
 
-        # Platform label
-        fig.text(
-            (margin_left + platform_label_w * 0.45) / FIG_W,
-            by + bh / 2,
-            f"({chr(97 + p_idx)}) {platform}",
-            ha="center", va="center",
-            rotation=90, fontsize=FS_PANEL,
-        )
-
-        # Y label
-        fig.text(
-            (box_left + 0.06) / FIG_W,
-            by + bh / 2,
-            "Latency (ms)",
-            ha="center", va="center",
-            rotation=90, fontsize=FS_AXIS,
-        )
-
-        axes_left_base = box_left + y_label_gutter
-        axes_bottom = row_bottom + 0.32
-        axes_height = row_height - 0.36
-
-        for w_idx, workload in enumerate(WORKLOADS):
-            ax_left = axes_left_base + w_idx * (single_w + workload_gap)
-            rect = [ax_left / FIG_W, axes_bottom / FIG_H,
-                    single_w / FIG_W, axes_height / FIG_H]
-            ax = fig.add_axes(rect)
-
-            within = bar_w + bar_gap
-            gc0 = bar_w / 2 + within / 2
-            gc1 = gc0 + within + group_gap
-            group_centers = [gc0, gc1]
-            all_vals = []
-            for d_idx, dtype in enumerate(DTYPES):
-                dense_v, wise_v = DATA[platform][workload][dtype]
-                all_vals.extend([dense_v, wise_v])
-                gc = group_centers[d_idx]
-                for b_idx, backend in enumerate(BACKENDS):
-                    val = [dense_v, wise_v][b_idx]
-                    x = gc + (b_idx - 0.5) * within
-                    add_bar(ax, x, val, bar_w, backend, linewidth=0.65)
-
-            ticks, dec = natural_ticks(max(all_vals))
-            ax.set_ylim(0, ticks[-1])
-            ax.set_yticks(ticks)
-            ax.yaxis.set_major_formatter(
-                FuncFormatter(lambda v, _, d=dec: f"{v:.{d}f}")
-            )
-            ax.set_xlim(0, gc1 + within / 2 + bar_w / 2 + 0.02)
-            ax.set_xticks(group_centers)
-            ax.set_xticklabels(DTYPES, fontsize=FS_DTYPE)
-            ax.tick_params(axis="x", length=0, pad=4)
-            ax.tick_params(axis="y", labelsize=FS_TICK, pad=1.0,
-                           length=2.0, width=0.6)
-            ax.spines["top"].set_visible(False)
-            ax.spines["right"].set_visible(False)
-            ax.set_axisbelow(True)
-            ax.yaxis.grid(True, color="#bcbcbc", alpha=0.28, linewidth=0.35)
-
-            # Workload label below (under FP32/FP16 labels)
-            fig.text(
-                (ax_left + single_w / 2) / FIG_W,
-                (axes_bottom - 0.12) / FIG_H,
-                workload,
-                ha="center", va="top",
-                fontsize=FS_WORKLOAD,
-            )
-
-    # Legend
     handles = legend_handles(BACKENDS)
-    labels = [LABELS[b] for b in BACKENDS]
-    fig.legend(
-        handles=handles, labels=labels,
-        fontsize=FS_LEG, ncol=len(BACKENDS), frameon=False,
-        loc="upper center", bbox_to_anchor=(0.55, 1.01),
-        handlelength=1.2, columnspacing=1.1, handletextpad=0.4,
+    legend = fig.legend(
+        handles=handles,
+        labels=[LABELS[backend] for backend in BACKENDS],
+        loc="upper center",
+        bbox_to_anchor=(0.5, 0.995),
+        ncol=len(BACKENDS),
+        frameon=False,
+        fontsize=FS_LEG,
+        handlelength=1.35,
+        handletextpad=0.4,
+        columnspacing=1.0,
     )
+    for text in legend.get_texts():
+        if text.get_text() == "WISEConv":
+            text.set_fontweight("bold")
 
     out = HERE / "dtype_sensitivity.pdf"
     fig.savefig(out)

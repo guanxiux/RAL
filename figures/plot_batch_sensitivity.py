@@ -96,7 +96,7 @@ def main() -> None:
         center = group_centers[batch_size]
         for system_index, system in enumerate(SYSTEMS):
             row = rows[(system, batch_size)]
-            throughput = float(row["robust_throughput_frames_per_second"])
+            throughput = float(row["mean_throughput_frames_per_second"])
             if throughput <= 0.0:
                 raise ValueError(f"non-positive throughput for {system}/B{batch_size}")
             x = center + (system_index - midpoint) * within_step

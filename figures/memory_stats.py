@@ -3,8 +3,9 @@
 
 Reads ``logs/peak_memory/<workload>/<device>/<dtype>/<run>/summary.json`` for
 every workload/system cell and emits ``memory.csv``.  The reported value is the
-maximum device footprint (``peak_reserved_mb``), i.e. the memory the deployed
-path actually reserves on the device, not the live-allocation high-water mark.
+peak live allocation (``peak_allocated_mb``), i.e. the high-water mark of tensors
+actually alive on the device, rather than the allocator-reserved pool (which is
+quantized to 2~MiB segments).
 DynConv's gather-scatter backend is stored under the ``dynconv`` cell key;
 every other workload uses ``gather_scatter``.
 """
@@ -47,11 +48,11 @@ def cell_value(cells: dict, key: str) -> float | None:
     if key == "gather_scatter":
         for alias in GATHER_ALIASES:
             if alias in cells:
-                return float(cells[alias]["peak_reserved_mb"])
+                return float(cells[alias]["peak_allocated_mb"])
         return None
     if key not in cells:
         return None
-    return float(cells[key]["peak_reserved_mb"])
+    return float(cells[key]["peak_allocated_mb"])
 
 
 def main() -> None:

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generate the paired-device YOLOv8n ablation LaTeX table."""
+"""Generate the paired-device YOLOv8n ablation stage-decomposition table."""
 
 from __future__ import annotations
 
@@ -11,35 +11,22 @@ HERE = Path(__file__).resolve().parent
 SOURCE = HERE / "ablation.csv"
 OUTPUT = HERE / "ablation_table.tex"
 DEVICES = ("rtx3080", "agx_orin")
-VARIANTS = (
-    "atomic_append",
-    "global_order",
-    "no_reuse",
-    "dp_only",
-    "no_hybrid",
-    "sync_exact_selector",
-    "ours",
+GROUPS = (
+    ("Const.", ("atomic_append", "global_order", "no_reuse")),
+    ("Comp.", ("dp_only", "no_hybrid", "sync_exact_selector")),
 )
+VARIANTS = tuple(variant for _, keys in GROUPS for variant in keys) + ("ours",)
 
 
 def cell(row: dict, field: str) -> str:
     value = row.get(field, "")
     if value in (None, ""):
         return r"\textemdash{}"
-    return f"{float(value):.3f}"
-
-
-def eta_cell(row: dict) -> str:
-    value = row.get("eta_percent", "")
-    if value in (None, ""):
-        return r"\textemdash{}"
-    return f"{float(value):.1f}\%"
+    return f"{float(value):.2f}"
 
 
 def make_table(rows: list[dict]) -> str:
-    expected = {
-        (device, variant) for device in DEVICES for variant in VARIANTS
-    }
+    expected = {(device, variant) for device in DEVICES for variant in VARIANTS}
     by_key = {(row["device"], row["variant"]): row for row in rows}
     if set(by_key) != expected or len(rows) != len(expected):
         raise ValueError("ablation CSV has unexpected rows")
@@ -47,50 +34,76 @@ def make_table(rows: list[dict]) -> str:
     lines = [
         r"\begin{table}[!t]",
         r"  \centering",
-        r"  \caption{YOLOv8n component ablation on RTX~3080; AGX Orin is",
-        r"  reserved for the multi-platform refresh. Times are milliseconds.}",
+        r"  \caption{YOLOv8n component ablation on RTX~3080 and AGX~Orin.",
+        r"  \textit{Const.} and \textit{Comp.} group the variants that replace one",
+        r"  construction-stage and compute-stage mechanism, respectively; all other",
+        r"  settings---weights, inputs, upstream masks, and deployed tile",
+        r"  configuration---are held fixed. Cons. and Conv. are the construction- and",
+        r"  compute-stage GPU kernel time (ms) profiled in a single eager pass;",
+        r"  Tot. is the full-model end-to-end latency (ms), which also includes",
+        r"  non-kernel time and therefore need not equal Cons.$+$Conv.}",
         r"  \Description{A table compares seven WISEConv design variants on RTX",
-        r"  3080 and reserves the corresponding AGX Orin columns. Each platform",
-        r"  reports useful-compute ratio, construction time, convolution time,",
-        r"  and full-model latency when available.}",
+        r"  3080 and AGX Orin, grouped into construction-stage (Const.) and",
+        r"  compute-stage (Comp.) variants. Each platform reports construction,",
+        r"  convolution, and total latency in milliseconds.}",
         r"  \label{tab:ablation}",
-        r"  \fontsize{7.0}{7.8}\selectfont",
-        r"  \setlength{\tabcolsep}{0.7pt}",
+        r"  \footnotesize",
+        r"  \setlength{\tabcolsep}{1.6pt}",
         r"  \renewcommand{\arraystretch}{1.06}",
-        r"  \begin{tabular*}{\columnwidth}{@{\extracolsep{\fill}}l c r r r c r r r@{}}",
+        r"  \begin{tabular*}{\columnwidth}{@{\extracolsep{\fill}}c c c c c c c c@{}}",
         r"    \hline",
-        r"    \multirow{2}{*}{\textbf{Variant}} &",
-        r"    \multicolumn{4}{c}{\textbf{RTX 3080}} &",
-        r"    \multicolumn{4}{c}{\textbf{AGX Orin}} \\",
-        r"    \cline{2-5}\cline{6-9}",
-        r"    & $\boldsymbol{\eta}$ & \textbf{Cons.} & \textbf{Conv.} & \textbf{Total}",
-        r"    & $\boldsymbol{\eta}$ & \textbf{Cons.} & \textbf{Conv.} & \textbf{Total} \\",
+        r"    & \multirow{2}{*}{\textbf{Variant}} &",
+        r"    \multicolumn{3}{c}{\textbf{RTX 3080}} &",
+        r"    \multicolumn{3}{c}{\textbf{AGX Orin}} \\",
+        r"    \cline{3-5}\cline{6-8}",
+        r"    & & \textbf{Cons.} & \textbf{Conv.} & \textbf{Tot.}",
+        r"    & \textbf{Cons.} & \textbf{Conv.} & \textbf{Tot.} \\",
         r"    \hline",
     ]
-    for variant in VARIANTS:
+
+    def emit(variant: str, bold: bool = False, lead: str = "") -> None:
         left = by_key[(DEVICES[0], variant)]
-        label = left["variant_label"]
-        if variant == "ours":
+        label = left["variant_label"].replace("&", r"\&")
+        if bold:
             label = rf"\textbf{{{label}}}"
         cells = []
         for device in DEVICES:
             row = by_key[(device, variant)]
             cells.extend([
-                eta_cell(row),
                 cell(row, "construction_ms"),
                 cell(row, "convolution_ms"),
                 cell(row, "total_ms"),
             ])
-        lines.append(f"    {label} & " + " & ".join(cells) + " \\\\")
+        lines.append(f"    {lead} & {label} & " + " & ".join(cells) + r" \\")
+
+    for group_index, (group, keys) in enumerate(GROUPS):
+        if group_index:
+            lines.append(r"    \hline")
+        for index, variant in enumerate(keys):
+            lead = (
+                rf"\multirow{{3}}{{*}}{{\rotatebox[origin=c]{{90}}"
+                rf"{{\strut {group}}}}}"
+                if index == 0 else ""
+            )
+            emit(variant, lead=lead)
+    lines.append(r"    \hline")
+    emit("ours", bold=True)
     lines.extend([
         r"    \hline",
         r"  \end{tabular*}",
         r"  \par\vspace{5pt}",
-        r"  \noindent\parbox{\columnwidth}{\scriptsize\textit{Notes.}",
-        r"  $\eta$ is the full-model useful-compute ratio. Cons. and Conv. are",
-        r"  construction- and convolution-stage latency; dashes indicate that",
-        r"  variant-level stage attribution was not collected. AGX Orin entries",
-        r"  are intentionally blank pending the multi-platform refresh.}",
+        r"  \noindent\parbox{\columnwidth}{\footnotesize\textit{Variants.}",
+        r"  \textit{Atomic append}: one global atomic per coordinate instead of",
+        r"  per-segment reservation.",
+        r"  \textit{Global order}: two-pass stable compaction for full",
+        r"  dense-traversal order.",
+        r"  \textit{No reuse}: rebuild worklist at every layer.",
+        r"  \textit{DP only}: force data-parallel decomposition, disable",
+        r"  Stream-$K$ adaptation.",
+        r"  \textit{No hybrid}: select between data-parallel and full Stream-$K$",
+        r"  only, disabling the hybrid DP-prefix\,+\,Stream-$K$-tail combination.",
+        r"  \textit{Readback \& launch}: synchronize worklist length to host and",
+        r"  relaunch per operator.}",
         r"\end{table}",
         "",
     ])

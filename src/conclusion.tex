@@ -3,15 +3,11 @@
 
 We presented \sysname, a masked-convolution runtime that replaces the dense
 tiled pipeline's contiguous coordinate stream with an active-output worklist,
-computing only positions an upstream mask marks active while retaining the dense
-tensor layout and the regular per-position reduction. Construction completes in
-a single mask-space pass and is reused across compatible operators; consumption
-preserves tile-local ordering, bounds work with a device-resident worklist
-length, and adapts its decomposition to input activity without host
-synchronization. Our ablation isolates how these mechanisms control
-construction cost, worklist ordering, and synchronization overhead, while
-showing that their individual latency impact depends on device utilization.
-Together they secure both useful-compute ratio and throughput,
-converting upstream mask sparsity into end-to-end latency and energy reduction.
-\sysname thus makes activity-driven scheduling a practical path to proportional
-latency reduction on deployed perception platforms.
+computing almost exclusively the positions an upstream mask requires while
+retaining the dense tensor layout and the regular per-position reduction. The
+construction and consumption stages are co-designed to secure both
+useful-compute ratio and throughput; our ablation confirms that disabling any
+single mechanism degrades one axis without improving the other. The resulting
+higher effective throughput lets \sysname convert upstream mask sparsity into
+proportional latency and energy reduction for the latency-critical vision
+tasks where masked convolution applies.

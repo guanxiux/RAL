@@ -111,7 +111,7 @@ and required work.
   sparse paths use the same masks and produce nearly identical AEE.
   (b)~Raw throughput $T$ and effective throughput $T_{\mathrm{eff}}$, each
   normalized to dense raw throughput. The dense useful-compute ratio equals
-  the active ratio set by the Ev-Conv mask policy ($\alpha\approx26.3\%$).}
+  the active ratio set by the Ev-Conv mask policy ($\alpha\approx25.3\%$).}
   \Description{Two grouped bar charts compare Dense, DeltaCNN tile skipping,
   and MMCV gather-scatter for FireFlowNet on RTX 3080. The first contrasts
   full-model latency and average endpoint error and marks the proportional
@@ -179,18 +179,18 @@ Figure~\ref{fig:gap} traces this on RTX~3080 for
 FireFlowNet~\cite{fireflownet} under the Ev-Conv~\cite{evconv} mask policy.
 Event cameras expose microsecond-scale changes, and Ev-Conv evaluates optical
 flow on event-window inputs updated at 1~kHz.
-The policy marks 73.7\% of the
+The policy marks 74.7\% of the
 convolution work unnecessary, and
 the sparse paths discard it without reducing accuracy. Scaling dense latency by
-the fraction of convolution work that remains gives a 0.274\,ms ideal
+the fraction of convolution work that remains gives a 0.263\,ms ideal
 proportional-scaling reference (Fig.~\ref{fig:gap}a, dashed). Neither path
-approaches it: tile skipping (DeltaCNN~\cite{deltacnn}) reaches 0.606\,ms, still
-2.21$\times$ the reference, and gather-scatter (MMCV~\cite{mmcv}) runs at
-2.052\,ms, almost twice the latency of dense convolution itself. The gap traces
+approaches it: tile skipping (DeltaCNN~\cite{deltacnn}) reaches 0.605\,ms, still
+2.30$\times$ the reference, and gather-scatter (MMCV~\cite{mmcv}) runs at
+1.979\,ms, 1.90$\times$ the latency of dense convolution itself. The gap traces
 to low effective throughput on both paths. Tile skipping holds throughput at
-61.6\% of dense but at a useful-compute ratio of only 70.1\%; gather-scatter
+62.4\% of dense but at a useful-compute ratio of only 69.8\%; gather-scatter
 lifts the useful-compute ratio to one, yet extraction and data movement collapse
-its throughput to 13.4\% of dense (Fig.~\ref{fig:gap}b). Neither path efficiently
+its throughput to 13.3\% of dense (Fig.~\ref{fig:gap}b). Neither path efficiently
 converts the GPU's capability into effective
 throughput.
 
