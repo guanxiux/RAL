@@ -5,8 +5,8 @@
 % 本章职责（CLAUDE.md）：架构层 insight 的分析模型与可证伪预测；不出现 WISEConv 的设计组件，每个 Insight 后用一句话指向
 % 它引出的设计需求。数字：已测的直接写；待测的写成预期值并用 \tbd{} 标红，实验在旁边的注释里（"实验："开头）。
 % 所有 figure 目前是占位框；caption 按目标图写。
-% 措辞："rewrites CUTLASS's gather implicit-GEMM convolution" 依据用户 2026-10-31（kernel 由 CUTLASS gather GEMM 改写）；
-%   wise2 源码不链接 CUTLASS。FP32 是同一结构的 SIMT kernel（CUTLASS 的 gather 卷积是 TF32），不说 FP32 改写自 CUTLASS。
+% 措辞："follows the structure of CUTLASS's gather implicit-GEMM convolution"（用户 2026-10-31 定）；wise2 源码不链接
+%   CUTLASS，不说"rewrites / derived from"。FP32 是同一结构的 SIMT kernel（CUTLASS 的 gather 卷积是 TF32）。
 % ---------------------------------------------------------------------------
 
 \providecommand{\tbd}[1]{\textcolor{red}{#1}}
@@ -31,8 +31,8 @@ costs relative to the computation it enables (\S\ref{sec:char:construct}).
 
 \paragraph{Methodology.}
 \textbf{Compute stage.} We study the compute kernel of \sysname
-(\S\ref{sec:design:compute}), which rewrites CUTLASS's gather implicit-GEMM
-convolution~\cite{cutlass} for worklists and adds nothing else to it: the
+(\S\ref{sec:design:compute}), which follows the structure of CUTLASS's gather
+implicit-GEMM convolution~\cite{cutlass} and adds nothing else to it: the
 gather indices become worklist entries, and a grid of $\lceil n_W / B_M
 \rceil$ tiles loads $B_M$ worklist rows per tile and reduces over the $k^2$
 taps and $C_{in}$ channels exactly as the dense kernel does. A persistent grid
