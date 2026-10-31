@@ -5,6 +5,8 @@
 % 本章职责（CLAUDE.md）：架构层 insight 的分析模型与可证伪预测；不出现 WISEConv 的设计组件，每个 Insight 后用一句话指向
 % 它引出的设计需求。数字：已测的直接写；待测的写成预期值并用 \tbd{} 标红，实验在旁边的注释里（"实验："开头）。
 % 所有 figure 目前是占位框；caption 按目标图写。
+% 措辞："rewrites CUTLASS's gather implicit-GEMM convolution" 依据用户 2026-10-31（kernel 由 CUTLASS gather GEMM 改写）；
+%   wise2 源码不链接 CUTLASS。FP32 是同一结构的 SIMT kernel（CUTLASS 的 gather 卷积是 TF32），不说 FP32 改写自 CUTLASS。
 % ---------------------------------------------------------------------------
 
 \providecommand{\tbd}[1]{\textcolor{red}{#1}}
@@ -28,13 +30,14 @@ worklist matters (\S\ref{sec:char:order}); for the construction stage, what it
 costs relative to the computation it enables (\S\ref{sec:char:construct}).
 
 \paragraph{Methodology.}
-\textbf{Compute stage.} We implement the worklist GEMM following CUTLASS's
-gather implicit-GEMM convolution, with gather indices replaced by worklist
-entries: $\lceil n_W / B_M \rceil$ tiles, each loading $B_M$ worklist rows and
-reducing over the $k^2$ taps and $C_{in}$ channels exactly as the dense kernel
-does. A persistent grid reads $n_W$ on the device, so no length reaches the
-host. We instantiate the kernel over the configuration space a dense autotuner
-searches: tile shape $(B_M, B_N, B_K)$, warp layout, pipeline depth, and
+\textbf{Compute stage.} We study the compute kernel of \sysname
+(\S\ref{sec:design:compute}), which rewrites CUTLASS's gather implicit-GEMM
+convolution~\cite{cutlass} for worklists and adds nothing else to it: the
+gather indices become worklist entries, and a grid of $\lceil n_W / B_M
+\rceil$ tiles loads $B_M$ worklist rows per tile and reduces over the $k^2$
+taps and $C_{in}$ channels exactly as the dense kernel does. A persistent grid
+reads $n_W$ on the device, so no length reaches the host. We instantiate it
+over the configuration space a dense autotuner searches: tile shape $(B_M, B_N, B_K)$, warp layout, pipeline depth, and
 split-K within a CTA or across CTAs; FP16 uses \texttt{mma.sync} tensor cores
 and FP32 a SIMT kernel of the same structure. Each configuration is timed in
 isolation inside CUDA graphs on worklists that are given, not constructed.
