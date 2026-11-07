@@ -55,10 +55,13 @@ and Jetson AGX Orin (16~SMs) at locked clocks.
 % ===========================================================================
 \subsection{Proportionality and the Configuration It Requires}
 \label{sec:char:affine}
-% 论证链（用户 2026-10-31 定）：理想 proportional → 逐长度最优配置近似仿射 → 配置必须随工作量变（在整个 α 范围上）→
-% 运行时逐长度选择的收益小，机制要么每层成本更大、要么只拿到一部分 → 按层的 activity 分布 calibrate 的单一配置拿到同一条线
-% （一层实际访问的范围窄）→ 原因：两个 regime + wave 台阶 → 边界：分布漂移需要重新 calibrate。
-
+% 论证链（2026-11-07 与用户重定，取代 2026-10-31 版；outline 见 docs/characterization_outline.md）：
+%   Insight 1 可行性：配置跟随 n_W 时逐长度最优配置对 α 仿射、边际成本同 dense（本节只到这里）；
+%   Insight 2 斜率（§char:reduction）、Insight 3 order（§char:order）、Insight 4 bound = 每层固定成本（截距 + construction）；
+%   Insight 5 跟随 n_W 不免费（新 subsection，约束候选数与选择方式）。
+% TODO(rewrite)：本节下方 "Selecting per length gains little"、"One calibrated configuration per layer reaches the same
+%   line"、"Why one configuration suffices"、"The distribution, not the frame" 四段与 Insight 1 框是旧立场（单一 calibrated
+%   配置就够），与 updatable 主线相反，待按新链重写；截距表移到 Insight 4，机制成本图改作 Insight 5 主图（去掉 lagged graph）。
 \begin{figure}[t]
   \centering
   \figbox{3.6cm}{Fig.\ char-affine: (a) normalized latency vs.\ $\alpha$ (log), 3080 / AGX, FP32 / FP16:

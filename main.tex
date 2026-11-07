@@ -33,6 +33,7 @@
 \usepackage{pifont}
 
 \newcommand{\newrev}[1]{\textcolor{red}{#1}}
+\newcommand{\tbd}[1]{\textcolor{red}{#1}}
 
 \newcommand{\sysname}{\mbox{WISEConv}\xspace}
 
@@ -43,34 +44,25 @@
 \author{Anonymous Authors}
 
 \begin{abstract}
-% ORIG (RAL/robotics framing):
-% Onboard robotic perception must sustain high update rates under tight compute
-% and power budgets. Masking policies from event increments, temporal frame
-% differences, and learned gates expose where computation is unnecessary, yet
-% existing masked-convolution paths do not convert this sparsity into proportional
-% latency reduction.
-Masked convolution promises to reduce vision-model inference latency by
-computing almost exclusively the positions an upstream policy marks active, yet existing paths
-sacrifice either throughput or useful-compute ratio and fail to translate
-sparsity into proportional latency reduction. We present \sysname, a
-masked-convolution runtime built on the observation that output coordinates
-form the interface between position selection and the regular reduction datapath in the
-dense tiled pipeline. \sysname replaces the dense tiled pipeline's contiguous coordinate
-source with an active-output worklist, restricting computation to almost
-exclusively active
-positions while retaining dense tensor layouts and the regular reduction
-datapath.
-To keep worklist construction cheap and sustain throughput as the number of
-active outputs changes per frame, \sysname fuses mask propagation
-with tile-local compaction, reuses coordinate metadata across compatible
-operators, and adapts its compute decomposition without host synchronization,
-securing both a high useful-compute ratio and high throughput.
-We evaluate \sysname on
-four perception models across six GPU platforms: four discrete GPUs and two
-Jetson platforms. \sysname achieves a 1.58$\times$ geometric-mean speedup over
-the fastest competing path per model-platform pair,
-reducing full-model latency by 25.0--52.8\%. On the Jetson platforms, it also
-reduces per-frame board energy by 29.9--67.8\% relative to dense execution.
+% v15 (ISCA framing, 2026-11-07)
+Masked convolution promises to reduce inference latency by computing only
+positions an upstream policy marks active, yet existing paths sacrifice either
+throughput or useful-compute ratio, failing to translate sparsity into
+proportional latency reduction. We find that redirecting a dense tiled
+pipeline to compute only scattered active positions largely preserves per-tile
+throughput: irregularity is confined to only row-level indirection outside the
+reduction loop, leaving channel-contiguous access and weight-tile reuse
+identical to dense execution. Based on this finding, we present \sysname,
+which drives the dense tiled pipeline with an active-output worklist to
+achieve both high useful-compute ratio and high throughput. To handle a
+construction cost that does not shrink with sparsity, \sysname builds the
+worklist in a single mask-space pass and reuses it across compatible operators.
+To adapt tile configurations as the workload size shifts per frame on the
+device, \sysname introduces on-device tile switching that trades off each
+candidate's gain against its selection cost. Across
+six GPUs and four workloads, \sysname achieves a XX$\times$
+geometric-mean latency reduction over the fastest baseline per
+workload-platform pair, reducing energy by XX--XX\% on embedded GPUs.
 \end{abstract}
 
 \keywords{Sparse convolution, dynamic spatial sparsity, GPU runtime, deep learning
