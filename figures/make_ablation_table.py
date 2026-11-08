@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generate the paired-device YOLOv8n ablation stage-decomposition table."""
+"""Generate the wise2 ablation table (YOLOv8m batch 1, RTX 3080, FP16) from ablation.csv (ablation_stats.py)."""
 
 from __future__ import annotations
 
@@ -10,82 +10,54 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 SOURCE = HERE / "ablation.csv"
 OUTPUT = HERE / "ablation_table.tex"
-DEVICES = ("rtx3080", "agx_orin")
-GROUPS = (
-    ("Const.", ("atomic_append", "global_order", "no_reuse")),
-    ("Comp.", ("dp_only", "no_hybrid", "sync_exact_selector")),
-)
-VARIANTS = tuple(variant for _, keys in GROUPS for variant in keys) + ("ours",)
+GROUPS = (("Cons.", ("no_reuse",)), ("Comp.", ("shuffled", "readback", "full_grid")),
+          ("Sel.", ("dense_tile", "speedup_tile", "latency_tile", "kmax", "oracle")))
 
 
 def cell(row: dict, field: str) -> str:
     value = row.get(field, "")
-    if value in (None, ""):
-        return r"\textemdash{}"
-    return f"{float(value):.2f}"
+    return r"\textemdash{}" if value in (None, "") else f"{float(value):.2f}"
 
 
 def make_table(rows: list[dict]) -> str:
-    expected = {(device, variant) for device in DEVICES for variant in VARIANTS}
-    by_key = {(row["device"], row["variant"]): row for row in rows}
-    if set(by_key) != expected or len(rows) != len(expected):
+    by = {row["variant"]: row for row in rows}
+    expected = {k for _, keys in GROUPS for k in keys} | {"ours"}
+    if set(by) != expected:
         raise ValueError("ablation CSV has unexpected rows")
-
     lines = [
         r"\begin{table}[!t]",
         r"  \centering",
-        r"  \caption{YOLOv8n component ablation on RTX~3080 and AGX~Orin.",
-        r"  \textit{Const.} and \textit{Comp.} group the variants that replace one",
-        r"  construction-stage and compute-stage mechanism, respectively; all other",
-        r"  settings---weights, inputs, upstream masks, and deployed tile",
-        r"  configuration---are held fixed. Cons. and Conv. are the construction- and",
-        r"  compute-stage GPU kernel time (ms) profiled in a single eager pass;",
-        r"  Tot. is the full-model end-to-end latency (ms), which also includes",
-        r"  non-kernel time and therefore need not equal Cons.$+$Conv.}",
-        r"  \Description{A table compares seven WISEConv design variants on RTX",
-        r"  3080 and AGX Orin, grouped into construction-stage (Const.) and",
-        r"  compute-stage (Comp.) variants. Each platform reports construction,",
-        r"  convolution, and total latency in milliseconds.}",
+        r"  \caption{Co-design ablation on YOLOv8m (batch 1, RTX~3080, FP16). Each variant replaces one",
+        r"  mechanism and keeps the weights, inputs, upstream masks and every other component. Cons. and",
+        r"  Conv. are the construction- and compute-stage GPU kernel time (ms); Tot. is the full-model latency",
+        r"  (ms, aligned to the whole-video end-to-end latency of Ours); $\times$ is relative to Ours unless noted.}",
+        r"  \Description{A table compares WISEConv design variants on RTX 3080 in FP16, grouped into",
+        r"  construction-stage, compute-stage and tile-selection variants, reporting construction, convolution",
+        r"  and total latency in milliseconds and the ratio to the full design.}",
         r"  \label{tab:ablation}",
         r"  \footnotesize",
-        r"  \setlength{\tabcolsep}{1.6pt}",
+        r"  \setlength{\tabcolsep}{2.2pt}",
         r"  \renewcommand{\arraystretch}{1.06}",
-        r"  \begin{tabular*}{\columnwidth}{@{\extracolsep{\fill}}c c c c c c c c@{}}",
+        r"  \begin{tabular*}{\columnwidth}{@{\extracolsep{\fill}}c l c c c c@{}}",
         r"    \hline",
-        r"    & \multirow{2}{*}{\textbf{Variant}} &",
-        r"    \multicolumn{3}{c}{\textbf{RTX 3080}} &",
-        r"    \multicolumn{3}{c}{\textbf{AGX Orin}} \\",
-        r"    \cline{3-5}\cline{6-8}",
-        r"    & & \textbf{Cons.} & \textbf{Conv.} & \textbf{Tot.}",
-        r"    & \textbf{Cons.} & \textbf{Conv.} & \textbf{Tot.} \\",
+        r"    & \textbf{Variant} & \textbf{Cons.} & \textbf{Conv.} & \textbf{Tot.} & \textbf{$\times$} \\",
         r"    \hline",
     ]
 
-    def emit(variant: str, bold: bool = False, lead: str = "") -> None:
-        left = by_key[(DEVICES[0], variant)]
-        label = left["variant_label"].replace("&", r"\&")
-        if bold:
-            label = rf"\textbf{{{label}}}"
-        cells = []
-        for device in DEVICES:
-            row = by_key[(device, variant)]
-            cells.extend([
-                cell(row, "construction_ms"),
-                cell(row, "convolution_ms"),
-                cell(row, "total_ms"),
-            ])
-        lines.append(f"    {lead} & {label} & " + " & ".join(cells) + r" \\")
+    def emit(key: str, lead: str = "", bold: bool = False) -> None:
+        row = by[key]
+        label = rf"\textbf{{{row['variant_label']}}}" if bold else row["variant_label"]
+        ratio = f"{float(row['ratio']):.2f}" + (r"$^{\dagger}$" if row["reference"] != "ours" else "")
+        lines.append(f"    {lead} & {label} & {cell(row, 'construction_ms')} & {cell(row, 'convolution_ms')} & "
+                     f"{cell(row, 'total_ms')} & {ratio} \\\\")
 
-    for group_index, (group, keys) in enumerate(GROUPS):
-        if group_index:
+    for gi, (group, keys) in enumerate(GROUPS):
+        if gi:
             lines.append(r"    \hline")
-        for index, variant in enumerate(keys):
-            lead = (
-                rf"\multirow{{3}}{{*}}{{\rotatebox[origin=c]{{90}}"
-                rf"{{\strut {group}}}}}"
-                if index == 0 else ""
-            )
-            emit(variant, lead=lead)
+        for i, key in enumerate(keys):
+            lead = (rf"\multirow{{{len(keys)}}}{{*}}{{\rotatebox[origin=c]{{90}}{{\strut {group}}}}}"
+                    if i == 0 and len(keys) > 1 else (group if i == 0 else ""))
+            emit(key, lead)
     lines.append(r"    \hline")
     emit("ours", bold=True)
     lines.extend([
@@ -93,17 +65,18 @@ def make_table(rows: list[dict]) -> str:
         r"  \end{tabular*}",
         r"  \par\vspace{5pt}",
         r"  \noindent\parbox{\columnwidth}{\footnotesize\textit{Variants.}",
-        r"  \textit{Atomic append}: one global atomic per coordinate instead of",
-        r"  per-segment reservation.",
-        r"  \textit{Global order}: two-pass stable compaction for full",
-        r"  dense-traversal order.",
-        r"  \textit{No reuse}: rebuild worklist at every layer.",
-        r"  \textit{DP only}: force data-parallel decomposition, disable",
-        r"  Stream-$K$ adaptation.",
-        r"  \textit{No hybrid}: select between data-parallel and full Stream-$K$",
-        r"  only, disabling the hybrid DP-prefix\,+\,Stream-$K$-tail combination.",
-        r"  \textit{Readback \& launch}: synchronize worklist length to host and",
-        r"  relaunch per operator.}",
+        r"  \textit{No reuse}: rebuild the worklist at every layer.",
+        r"  \textit{Shuffled order}: permute each worklist on the device before the compute stage (permutation",
+        r"  not counted; convolution time).",
+        r"  \textit{Readback \& launch}: read $n_W$ back to the host per layer and launch the exact grid.",
+        r"  \textit{Full-layer grid}: launch the dense layer's grid; CTAs beyond the worklist exit.",
+        r"  \textit{Dense-tuned / Best single / Latency-optimal tile}: Ours' candidate structure (the same",
+        r"  layers, candidate counts and thresholds), every candidate the tile fastest at $\alpha{=}1$, with the",
+        r"  best expected speedup, or with the lowest expected latency (uniform $n_W$).",
+        r"  \textit{Cost-unaware $K_{\max}$}: up to four candidates at every layer, ignoring their cost.",
+        r"  \textit{Zero-cost oracle}: those candidates, each frame on a graph captured for its own $n_W$, with",
+        r"  no selection mechanism.",
+        r"  $^{\dagger}$Relative to the best single tile without the selection mechanism.}",
         r"\end{table}",
         "",
     ])

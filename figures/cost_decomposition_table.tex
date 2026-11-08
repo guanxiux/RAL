@@ -1,33 +1,32 @@
 \begin{table}[!t]
   \centering
-  \caption{Full-model YOLOv8n latency decomposition on RTX~3080 and
-  AGX~Orin.}
-  \Description{A table compares Dense, Tile skipping, Gather-scatter,
-  and WISEConv on RTX 3080 and AGX Orin, decomposing full-model latency
-  into construction, convolution, elementwise, and other work.}
+  \caption{Full-model YOLOv8m latency decomposition (batch 1, RTX~3080).}
+  \Description{A table decomposes the full-model latency of Dense, Tile skipping, Gather-scatter and
+  WISEConv in FP32, and of Dense and WISEConv in FP16, into construction, convolution, gather and
+  scatter, other GPU work, and GPU idle time.}
   \label{tab:cost-decomposition}
   \footnotesize
-  \setlength{\tabcolsep}{2.35pt}
+  \setlength{\tabcolsep}{1.5pt}
   \renewcommand{\arraystretch}{1.13}
-  \begin{tabular}{@{}c c c c c c c@{}}
+  \begin{tabular*}{\columnwidth}{@{\extracolsep{\fill}}c l c c c c c c@{}}
     \hline
-      & \textbf{System} & \textbf{Tot.} & \textbf{Cons.} &
-      \textbf{Conv.} & \textbf{Elem.} & \textbf{Other} \\
+      & \textbf{System} & \textbf{Tot.} & \textbf{Cons.} & \textbf{Conv.} & \textbf{G/S} &
+      \textbf{Other} & \textbf{Idle} \\
     \hline
-    \multirow{4}{*}{\rotatebox[origin=c]{90}{\strut RTX~3080}} & Dense & 2.82 & \textemdash{} & 2.32(82.0\%) & 0.39(13.8\%) & 0.12(4.2\%) \\
-    & Tile skipping & 3.52 & \textemdash{} & 2.89(82.1\%) & 0.31(8.9\%) & 0.31(9.0\%) \\
-    & Gather & 12.60 & \textemdash{} & 3.82(30.3\%) & 1.30(10.3\%) & 7.48(59.4\%) \\
-    & \textbf{WISEConv} & 1.66 & 0.12(7.5\%) & 0.99(59.5\%) & 0.33(19.9\%) & 0.22(13.1\%) \\
+    \multirow{4}{*}{\rotatebox[origin=c]{90}{\strut FP32}} & Dense & 10.76 & \textemdash{} & 9.68\,(90) & \textemdash{} & 1.08\,(10) & \textemdash{} \\
+     & Tile skipping & 12.51 & \textemdash{} & 11.70\,(94) & \textemdash{} & 0.81\,(6) & \textemdash{} \\
+     & Gather-scatter & 12.74 & 0.37\,(3) & 1.68\,(13) & 1.58\,(12) & 0.84\,(7) & 8.26\,(65) \\
+     & \textbf{WISEConv} & 3.00 & 0.17\,(6) & 2.27\,(76) & \textemdash{} & 0.56\,(19) & \textemdash{} \\
     \hline
-    \multirow{4}{*}{\rotatebox[origin=c]{90}{\strut AGX~Orin}} & Dense & 15.45 & \textemdash{} & 11.91(77.1\%) & 2.49(16.1\%) & 1.05(6.8\%) \\
-    & Tile skipping & 16.39 & \textemdash{} & 12.20(74.5\%) & 1.91(11.7\%) & 2.27(13.9\%) \\
-    & Gather & 36.09 & \textemdash{} & 10.25(28.4\%) & 3.82(10.6\%) & 22.01(61.0\%) \\
-    & \textbf{WISEConv} & 10.22 & 0.51(5.0\%) & 6.06(59.3\%) & 2.10(20.6\%) & 1.54(15.1\%) \\
+    \multirow{2}{*}{\rotatebox[origin=c]{90}{\strut FP16}} & Dense & 3.80 & \textemdash{} & 2.69\,(71) & \textemdash{} & 1.11\,(29) & \textemdash{} \\
+     & \textbf{WISEConv} & 1.44 & 0.15\,(10) & 0.88\,(61) & \textemdash{} & 0.42\,(29) & \textemdash{} \\
     \hline
-  \end{tabular}
+  \end{tabular*}
   \par\vspace{5pt}
-  \noindent\parbox{\columnwidth}{\footnotesize\textit{Notes.} Entries
-  are milliseconds; percentages are shares of each row's total. Cons. is the
-  WISEConv worklist construction, which the baselines do not have; Other is
-  extraction, scatter, mask, and setup work.}
+  \noindent\parbox{\columnwidth}{\footnotesize\textit{Notes.} Entries are milliseconds per frame;
+  parenthesized numbers are percentages of each row's total, the whole-video end-to-end latency. Stages are the
+  kernels' shares of the GPU busy time (nsys); Cons. is the worklist construction (gather-scatter's mask
+  compaction), G/S gather-scatter's feature extraction and scatter, Other the remaining operators;
+  Idle is the GPU idle time within the frame (host synchronization). The baselines have no FP16
+  implementation.}
 \end{table}

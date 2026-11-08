@@ -1,52 +1,47 @@
 \begin{table}[!t]
   \centering
-  \caption{YOLOv8n component ablation on RTX~3080 and AGX~Orin.
-  \textit{Const.} and \textit{Comp.} group the variants that replace one
-  construction-stage and compute-stage mechanism, respectively; all other
-  settings---weights, inputs, upstream masks, and deployed tile
-  configuration---are held fixed. Cons. and Conv. are the construction- and
-  compute-stage GPU kernel time (ms) profiled in a single eager pass;
-  Tot. is the full-model end-to-end latency (ms), which also includes
-  non-kernel time and therefore need not equal Cons.$+$Conv.}
-  \Description{A table compares seven WISEConv design variants on RTX
-  3080 and AGX Orin, grouped into construction-stage (Const.) and
-  compute-stage (Comp.) variants. Each platform reports construction,
-  convolution, and total latency in milliseconds.}
+  \caption{Co-design ablation on YOLOv8m (batch 1, RTX~3080, FP16). Each variant replaces one
+  mechanism and keeps the weights, inputs, upstream masks and every other component. Cons. and
+  Conv. are the construction- and compute-stage GPU kernel time (ms); Tot. is the full-model latency
+  (ms, aligned to the whole-video end-to-end latency of Ours); $\times$ is relative to Ours unless noted.}
+  \Description{A table compares WISEConv design variants on RTX 3080 in FP16, grouped into
+  construction-stage, compute-stage and tile-selection variants, reporting construction, convolution
+  and total latency in milliseconds and the ratio to the full design.}
   \label{tab:ablation}
   \footnotesize
-  \setlength{\tabcolsep}{1.6pt}
+  \setlength{\tabcolsep}{2.2pt}
   \renewcommand{\arraystretch}{1.06}
-  \begin{tabular*}{\columnwidth}{@{\extracolsep{\fill}}c c c c c c c c@{}}
+  \begin{tabular*}{\columnwidth}{@{\extracolsep{\fill}}c l c c c c@{}}
     \hline
-    & \multirow{2}{*}{\textbf{Variant}} &
-    \multicolumn{3}{c}{\textbf{RTX 3080}} &
-    \multicolumn{3}{c}{\textbf{AGX Orin}} \\
-    \cline{3-5}\cline{6-8}
-    & & \textbf{Cons.} & \textbf{Conv.} & \textbf{Tot.}
-    & \textbf{Cons.} & \textbf{Conv.} & \textbf{Tot.} \\
+    & \textbf{Variant} & \textbf{Cons.} & \textbf{Conv.} & \textbf{Tot.} & \textbf{$\times$} \\
     \hline
-    \multirow{3}{*}{\rotatebox[origin=c]{90}{\strut Const.}} & Atomic append & 0.43 & 0.94 & 1.98 & 1.46 & 6.21 & 11.12 \\
-     & Global order & 0.54 & 0.94 & 1.99 & 1.23 & 6.22 & 11.04 \\
-     & No reuse & 0.19 & 0.93 & 1.76 & 0.92 & 6.17 & 10.33 \\
+    Cons. & No reuse & 0.30 & 0.86 & 1.59 & 1.10 \\
     \hline
-    \multirow{3}{*}{\rotatebox[origin=c]{90}{\strut Comp.}} & DP only & 0.12 & 1.01 & 1.73 & 0.52 & 6.48 & 10.38 \\
-     & No hybrid & 0.12 & 0.96 & 1.69 & 0.52 & 6.33 & 10.25 \\
-     & Readback \& launch & 0.12 & 0.93 & 7.61 & 0.52 & 6.20 & 24.33 \\
+    \multirow{3}{*}{\rotatebox[origin=c]{90}{\strut Comp.}} & Shuffled order & 0.15 & 0.92 & \textemdash{} & 1.04$^{\dagger}$ \\
+     & Readback \& launch & \textemdash{} & \textemdash{} & 9.40 & 6.51 \\
+     & Full-layer grid & 0.15 & 1.06 & 1.63 & 1.13$^{\dagger}$ \\
     \hline
-     & \textbf{Ours} & 0.12 & 0.94 & 1.66 & 0.52 & 6.20 & 10.22 \\
+    \multirow{5}{*}{\rotatebox[origin=c]{90}{\strut Sel.}} & Dense-tuned tile & 0.16 & 1.89 & 2.47 & 1.71 \\
+     & Best single tile & 0.16 & 0.88 & 1.47 & 1.02 \\
+     & Latency-optimal tile & 0.16 & 1.00 & 1.59 & 1.10 \\
+     & Cost-unaware $K_{\max}$ & 0.22 & 0.85 & 1.55 & 1.07 \\
+     & Zero-cost oracle & \textemdash{} & \textemdash{} & 1.32 & 0.92 \\
+    \hline
+     & \textbf{Ours} & 0.16 & 0.86 & 1.44 & 1.00 \\
     \hline
   \end{tabular*}
   \par\vspace{5pt}
   \noindent\parbox{\columnwidth}{\footnotesize\textit{Variants.}
-  \textit{Atomic append}: one global atomic per coordinate instead of
-  per-segment reservation.
-  \textit{Global order}: two-pass stable compaction for full
-  dense-traversal order.
-  \textit{No reuse}: rebuild worklist at every layer.
-  \textit{DP only}: force data-parallel decomposition, disable
-  Stream-$K$ adaptation.
-  \textit{No hybrid}: select between data-parallel and full Stream-$K$
-  only, disabling the hybrid DP-prefix\,+\,Stream-$K$-tail combination.
-  \textit{Readback \& launch}: synchronize worklist length to host and
-  relaunch per operator.}
+  \textit{No reuse}: rebuild the worklist at every layer.
+  \textit{Shuffled order}: permute each worklist on the device before the compute stage (permutation
+  not counted; convolution time).
+  \textit{Readback \& launch}: read $n_W$ back to the host per layer and launch the exact grid.
+  \textit{Full-layer grid}: launch the dense layer's grid; CTAs beyond the worklist exit.
+  \textit{Dense-tuned / Best single / Latency-optimal tile}: Ours' candidate structure (the same
+  layers, candidate counts and thresholds), every candidate the tile fastest at $\alpha{=}1$, with the
+  best expected speedup, or with the lowest expected latency (uniform $n_W$).
+  \textit{Cost-unaware $K_{\max}$}: up to four candidates at every layer, ignoring their cost.
+  \textit{Zero-cost oracle}: those candidates, each frame on a graph captured for its own $n_W$, with
+  no selection mechanism.
+  $^{\dagger}$Relative to the best single tile without the selection mechanism.}
 \end{table}

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generate the two-platform cost-decomposition LaTeX table."""
+"""Generate the wise2 latency-decomposition table (YOLOv8m batch 1, RTX 3080) from cost_decomposition.csv."""
 
 from __future__ import annotations
 
@@ -10,82 +10,53 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 SOURCE = HERE / "cost_decomposition.csv"
 OUTPUT = HERE / "cost_decomposition_table.tex"
-DEVICES = ("rtx3080", "agx_orin")
-SYSTEMS = ("dense", "tile_skip", "gather_scatter", "wiseconv")
-SYSTEM_LABELS = {
-    "dense": "Dense",
-    "tile_skip": "Tile skipping",
-    "gather_scatter": "Gather",
-    "wiseconv": "WISEConv",
-}
-CATEGORIES = ("construction", "convolution", "elementwise", "other")
+FIELDS = ("construction_ms", "convolution_ms", "gather_ms", "other_ms", "idle_ms")
 
 
-def stage_cell(row: dict, category: str) -> str:
-    if row is None:
+def cell(row: dict, field: str) -> str:
+    v = float(row[field])
+    if v < 0.005:
         return r"\textemdash{}"
-    if category == "construction" and row["system"] != "wiseconv":
-        return r"\textemdash{}"
-    milliseconds = float(row[f"{category}_ms"])
-    percent = float(row[f"{category}_percent"])
-    return rf"{milliseconds:.2f}({percent:.1f}\%)"
+    return f"{v:.2f}\\,({100 * v / float(row['total_ms']):.0f})"
 
 
 def make_table(rows: list[dict]) -> str:
-    by_key = {(row["device"], row["system"]): row for row in rows}
-    present_devices = [d for d in DEVICES
-                       if any((d, s) in by_key for s in SYSTEMS)]
-    if not present_devices:
-        raise ValueError("cost-decomposition CSV has no rows")
-
     lines = [
         r"\begin{table}[!t]",
         r"  \centering",
-        r"  \caption{Full-model YOLOv8n latency decomposition on RTX~3080 and",
-        r"  AGX~Orin.}",
-        r"  \Description{A table compares Dense, Tile skipping, Gather-scatter,",
-        r"  and WISEConv on RTX 3080 and AGX Orin, decomposing full-model latency",
-        r"  into construction, convolution, elementwise, and other work.}",
+        r"  \caption{Full-model YOLOv8m latency decomposition (batch 1, RTX~3080).}",
+        r"  \Description{A table decomposes the full-model latency of Dense, Tile skipping, Gather-scatter and",
+        r"  WISEConv in FP32, and of Dense and WISEConv in FP16, into construction, convolution, gather and",
+        r"  scatter, other GPU work, and GPU idle time.}",
         r"  \label{tab:cost-decomposition}",
         r"  \footnotesize",
-        r"  \setlength{\tabcolsep}{2.35pt}",
+        r"  \setlength{\tabcolsep}{1.5pt}",
         r"  \renewcommand{\arraystretch}{1.13}",
-        r"  \begin{tabular}{@{}c c c c c c c@{}}",
+        r"  \begin{tabular*}{\columnwidth}{@{\extracolsep{\fill}}c l c c c c c c@{}}",
         r"    \hline",
-        r"      & \textbf{System} & \textbf{Tot.} & \textbf{Cons.} &",
-        r"      \textbf{Conv.} & \textbf{Elem.} & \textbf{Other} \\",
+        r"      & \textbf{System} & \textbf{Tot.} & \textbf{Cons.} & \textbf{Conv.} & \textbf{G/S} &",
+        r"      \textbf{Other} & \textbf{Idle} \\",
         r"    \hline",
     ]
-    for device in present_devices:
-        device_row = next(by_key[(device, s)] for s in SYSTEMS
-                          if (device, s) in by_key)
-        platform = device_row["device_label"].replace(" ", "~")
-        for index, system in enumerate(SYSTEMS):
-            row = by_key.get((device, system))
-            prefix = (
-                rf"    \multirow{{4}}{{*}}{{\rotatebox[origin=c]{{90}}"
-                rf"{{\strut {platform}}}}}"
-                if index == 0 else "   "
-            )
-            label = SYSTEM_LABELS.get(system, system)
-            if system == "wiseconv":
-                label = rf"\textbf{{{label}}}"
-            if row is None:
-                cells = [r"\textemdash{}"] * (1 + len(CATEGORIES))
-            else:
-                cells = [
-                    f"{float(row['total_ms']):.2f}",
-                    *(stage_cell(row, category) for category in CATEGORIES),
-                ]
-            lines.append(f"{prefix} & {label} & " + " & ".join(cells) + " \\\\")
-        lines.append(r"    \hline")
+    for di, dtype in enumerate(("fp32", "fp16")):
+        group = [r for r in rows if r["dtype"] == dtype]
+        if di:
+            lines.append(r"    \hline")
+        for i, row in enumerate(group):
+            lead = rf"\multirow{{{len(group)}}}{{*}}{{\rotatebox[origin=c]{{90}}{{\strut {dtype.upper()}}}}}" if i == 0 else ""
+            name = rf"\textbf{{{row['system_label']}}}" if row["system"] == "wiseconv" else row["system_label"]
+            lines.append(f"    {lead} & {name} & {float(row['total_ms']):.2f} & " +
+                         " & ".join(cell(row, f) for f in FIELDS) + r" \\")
     lines.extend([
-        r"  \end{tabular}",
+        r"    \hline",
+        r"  \end{tabular*}",
         r"  \par\vspace{5pt}",
-        r"  \noindent\parbox{\columnwidth}{\footnotesize\textit{Notes.} Entries",
-        r"  are milliseconds; percentages are shares of each row's total. Cons. is the",
-        r"  WISEConv worklist construction, which the baselines do not have; Other is",
-        r"  extraction, scatter, mask, and setup work.}",
+        r"  \noindent\parbox{\columnwidth}{\footnotesize\textit{Notes.} Entries are milliseconds per frame;",
+        r"  parenthesized numbers are percentages of each row's total, the whole-video end-to-end latency. Stages are the",
+        r"  kernels' shares of the GPU busy time (nsys); Cons. is the worklist construction (gather-scatter's mask",
+        r"  compaction), G/S gather-scatter's feature extraction and scatter, Other the remaining operators;",
+        r"  Idle is the GPU idle time within the frame (host synchronization). The baselines have no FP16",
+        r"  implementation.}",
         r"\end{table}",
         "",
     ])

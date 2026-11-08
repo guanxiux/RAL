@@ -1,136 +1,74 @@
 #!/usr/bin/env python3
-"""Build the paper-facing YOLOv8n ablation data from the unified logs.
+"""Build the paper-facing ablation data (wise2, YOLOv8m batch 1, RTX 3080, FP16) from the collected logs.
 
-The ablation is reported as a stage decomposition.  Construction and
-convolution milliseconds come from the cost-decomposition harness run under each
-variant's own environment::
-
-    latency_cost_decomposition/<model>/<device>/<dtype>/ablation-<variant>/
-
-and are the **raw profiled per-frame GPU kernel times** of each category
-(``raw_categories_ms``), produced with ``--kernel-total`` in a single profiling
-mode (eager, because ``Readback & launch`` host-synchronizes and cannot be
-CUDA-graph captured) so the categories are comparable across variants instead
-of being apportioned by ``share * E2E`` (which mixed eager profiling with a
-graph E2E and let construction cost leak into the convolution column).
-``total_ms`` is the variant's full-model latency from the staged
-``ablation_and_sensitivity`` summary, and ``eta_percent`` is its useful-compute
-ratio.  The variant environment is set by the caller when the decomposition
-runs are produced (see ``benchmarks/ablation``).
+Sources (logs/wise2_eval/<device>/wildtrack640_yolov8m_select/, written by experiments/wise2/report/collect.py):
+  ablation_upd/lat_<dtype>.json     CUDA-event latency of every variant (e2e_breakdown.py, 8 clips x 250 frames)
+  ablation_upd/stage_<dtype>.json   per-stage kernel time of the same variants under nsys
+  ablation_upd/oracle_<dtype>.json  the zero-cost oracle (oracle_bench.py)
+  e2e_full/<dtype>_updatable.json   Ours' whole-video E2E latency (mean of C3 / C6)
+Every time is aligned to the E2E: multiplied by Ours' E2E / clip latency (ratios within the table unchanged).
+The oracle's latency is C2's minus the oracle's saving over C2 in its own protocol (the saving is conv time only).
+A1's permutation is not counted: its row reports the convolution time only, against C2's single-tile plan.
 """
-
 from __future__ import annotations
 
 import csv
 import json
 from pathlib import Path
 
+import numpy as np
 
+# ---- CONFIG
 HERE = Path(__file__).resolve().parent
 REPO = HERE.parents[1]
+EV = REPO / "logs/wise2_eval"
+DEVICE = "rtx_3080_sm86"
+TASK = "wildtrack640_yolov8m_select"
+DTYPE = "fp16"
 OUT_CSV = HERE / "ablation.csv"
-LOGS = REPO / "logs"
-MODEL = "yolov8n"
-DTYPE = "fp32"
-
-DEVICES = ("rtx3080", "agx_orin")
-DEVICE_DIRS = {"rtx3080": "3080", "agx_orin": "agx-orin"}
-DEVICE_LABELS = {"rtx3080": "RTX 3080", "agx_orin": "AGX Orin"}
-VARIANTS = (
-    "atomic_append",
-    "global_order",
-    "no_reuse",
-    "dp_only",
-    "no_hybrid",
-    "sync_exact_selector",
-    "ours",
-)
-VARIANT_LABELS = {
-    "atomic_append": "Atomic append",
-    "global_order": "Global order",
-    "no_reuse": "No reuse",
-    "dp_only": "DP only",
-    "no_hybrid": "No hybrid",
-    "sync_exact_selector": "Readback & launch",
-    "ours": "Ours",
-}
-# Directory suffix of the staged variant run and its decomposition run.
-VARIANT_DIRS = {v: v for v in VARIANTS}
-VARIANT_DIRS["sync_exact_selector"] = "sync_exact"
-
-
-def load_json(path: Path) -> dict:
-    with path.open(encoding="utf-8") as source:
-        value = json.load(source)
-    if not isinstance(value, dict):
-        raise ValueError(f"expected JSON object: {path}")
-    return value
-
-
-def relative(path: Path) -> str:
-    return str(path.resolve().relative_to(REPO))
-
-
-def build_rows() -> list[dict]:
-    rows = []
-    for device in DEVICES:
-        for variant in VARIANTS:
-            variant_dir = VARIANT_DIRS[variant]
-            cost_path = (
-                LOGS / "latency_cost_decomposition" / MODEL / DEVICE_DIRS[device]
-                / DTYPE / f"ablation-{variant_dir}" / "summary.json"
-            )
-            if not cost_path.is_file():
-                raise FileNotFoundError(cost_path)
-            cost = load_json(cost_path)
-            # Self-consistent kernel decomposition: construction/convolution are
-            # raw profiled per-frame kernel times, not shares scaled to an E2E
-            # measured in a different execution mode.  Fall back to the legacy
-            # scaled categories for old summaries.
-            categories = cost.get("raw_categories_ms")
-            if categories is None:
-                # Legacy scaled summary: recover raw kernel time from the
-                # profiled total and the category shares.
-                profiled = float(cost["profiled_kernel_total_ms"])
-                frames = float(cost["frames"])
-                categories = {
-                    name: share * profiled / frames
-                    for name, share in cost["categories_share"].items()
-                }
-            staged = (
-                LOGS / "ablation_and_sensitivity" / MODEL / DEVICE_DIRS[device]
-                / DTYPE / variant_dir / "summary.json"
-            )
-            staged_summary = load_json(staged) if staged.is_file() else {}
-            eta = staged_summary.get("eta")
-            total = staged_summary.get("total_ms")
-            if total is None:
-                total = cost["formal_latency_ms"]
-            rows.append({
-                "device": device,
-                "device_label": DEVICE_LABELS[device],
-                "variant": variant,
-                "variant_label": VARIANT_LABELS[variant],
-                "eta_percent": "" if eta is None else f"{100.0 * eta:.12g}",
-                "construction_ms": f"{float(categories['construction']):.12g}",
-                "convolution_ms": f"{float(categories['convolution']):.12g}",
-                "total_ms": f"{float(total):.12g}",
-                "source": relative(cost_path),
-            })
-    return rows
+# (key, group, label, latency tag, stage tag, reference tag of the ratio)
+VARIANTS = [
+    ("no_reuse", "construction", "No reuse", "A3_noreuse", "A3_noreuse", "ours"),
+    ("shuffled", "compute", "Shuffled order", None, "A1_shuffle_C2", "C2_speedup"),
+    ("readback", "compute", "Readback \\& launch", "B1_readback", None, "ours"),
+    ("full_grid", "compute", "Full-layer grid", "B2_fixedgrid", "B2_fixedgrid", "C2_speedup"),
+    ("dense_tile", "selection", "Dense-tuned tile", "C1m_anchor", "C1m_anchor", "ours"),
+    ("speedup_tile", "selection", "Best single tile", "C2m_speedup", "C2m_speedup", "ours"),
+    ("latency_tile", "selection", "Latency-optimal tile", "C3m_latency", "C3m_latency", "ours"),
+    ("kmax", "selection", "Cost-unaware $K_{\\max}$", "D1_kmax", "D1_kmax", "ours"),
+    ("oracle", "selection", "Zero-cost oracle", "oracle", None, "ours"),
+    ("ours", "", "Ours", "ours", "ours", "ours"),
+]
 
 
 def main() -> None:
-    rows = build_rows()
-    temporary = OUT_CSV.with_suffix(OUT_CSV.suffix + ".tmp")
-    with temporary.open("w", newline="", encoding="utf-8") as destination:
-        writer = csv.DictWriter(
-            destination, fieldnames=list(rows[0]), lineterminator="\n"
-        )
-        writer.writeheader()
-        writer.writerows(rows)
-    temporary.replace(OUT_CSV)
-    print(f"wrote {OUT_CSV}")
+    d = EV / DEVICE / TASK
+    lat = json.loads((d / f"ablation_upd/lat_{DTYPE}.json").read_text())["backends"]
+    stage = json.loads((d / f"ablation_upd/stage_{DTYPE}.json").read_text())["backends"]
+    oracle = json.loads((d / f"ablation_upd/oracle_{DTYPE}.json").read_text())
+    e2e = json.loads((d / f"e2e_full/{DTYPE}_updatable.json").read_text())["backends"]["wiseconv"]["latency_ms"]
+    e2e_ours = float(np.mean([e2e["C3"]["mean"], e2e["C6"]["mean"]]))
+    clip = {k: v["latency_ms"] for k, v in lat.items()}
+    clip["oracle"] = clip["C2_speedup"] - (oracle["ref_ms"] - oracle["oracle_ms"])
+    f = e2e_ours / clip["ours"]
+    rows = []
+    for key, group, label, lt, st, ref in VARIANTS:
+        s = stage.get(st, {}).get("stage_us_per_frame", {}) if st else {}
+        cons = f * s["construction"] / 1e3 if s else None
+        conv = f * s["conv"] / 1e3 if s else None
+        if key == "shuffled":  # convolution time against C2's single-tile plan
+            total, ratio = None, s["conv"] / stage[ref]["stage_us_per_frame"]["conv"]
+        else:
+            total, ratio = f * clip[lt], clip[lt] / clip[ref]
+        rows.append(dict(variant=key, group=group, variant_label=label, construction_ms=cons, convolution_ms=conv,
+                         total_ms=total, ratio=ratio, reference=ref, dtype=DTYPE, device=DEVICE,
+                         alignment=f, source=str((d / "ablation_upd").relative_to(REPO))))
+    assert abs(rows[-1]["total_ms"] - e2e_ours) < 1e-9  # Ours equals its whole-video E2E latency
+    with OUT_CSV.open("w", newline="", encoding="utf-8") as out:
+        w = csv.DictWriter(out, fieldnames=list(rows[0]))
+        w.writeheader()
+        w.writerows(rows)
+    print(f"wrote {OUT_CSV} ({len(rows)} rows, alignment {f:.3f})")
 
 
 if __name__ == "__main__":

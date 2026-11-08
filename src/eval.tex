@@ -218,6 +218,9 @@ tile skipping's 44.8\% on the same workload.
 
 \input{figures/cost_decomposition_table}
 
+% TODO(user): Table~\ref{tab:cost-decomposition} now reports wise2 YOLOv8m batch 1 on RTX~3080 (FP32 four paths,
+% FP16 Dense / WISEConv; whole-video aligned; figures/cost_decomposition_stats.py); this paragraph still describes the
+% first-generation YOLOv8n table (RTX~3080 + AGX~Orin) and needs rewriting.
 \paragraph{Latency cost decomposition.}
 We decompose full-model YOLOv8n latency by execution stage on RTX~3080 and AGX
 Orin (Table~\ref{tab:cost-decomposition}). On RTX~3080, \sysname reduces the
@@ -263,6 +266,9 @@ stay in the gathered compact representation~\cite{dynconv}.
 
 \input{figures/ablation_table}
 
+% TODO(user): Table~\ref{tab:ablation} now reports the wise2 ablation (YOLOv8m batch 1, RTX~3080, FP16;
+% construction / compute / tile-selection variants incl. cost-unaware K_max and the zero-cost oracle;
+% figures/ablation_stats.py); the paragraphs below still describe the first-generation YOLOv8n variants.
 Table~\ref{tab:ablation} isolates each co-designed component by disabling it
 while holding all others fixed on YOLOv8n; the stage decomposition separates
 the effect on construction and convolution.
