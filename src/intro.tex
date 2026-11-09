@@ -1,20 +1,6 @@
 \section{Introduction}
 \label{sec:intro}
 
-% ORIG (RAL/robotics framing):
-% \IEEEPARstart{C}{onvolutional} networks support a broad range of onboard
-% robotic perception workloads, from high-rate motion and geometry estimation to
-% detection and pose estimation~\cite{fastdepth,nanoflownet,bisenet,densefusion}.
-% Their outputs feed online navigation, planning, and manipulation, so inference
-% latency limits how often downstream components can incorporate new
-% observations~\cite{contactgraspnet}. Meeting this latency demand is difficult
-% on board-level processors with constrained compute and power, because dense
-% convolution recomputes every spatial position on every invocation. Prior
-% systems compute only the active region of each frame, marked by a mask derived
-% from event-camera increments, temporal frame differences, or learned spatial
-% gates~\cite{evconv,asyncsparse,deltacnn,dgnet,dynconv}. Whatever the source, the
-% mask poses the same operator-level problem: compute the convolution only at the
-% active positions of a dense 2D feature grid.
 Dense convolution dominates per-frame inference latency in many
 latency-critical vision tasks~\cite{nanoflownet,fastdepth,perclatency}, yet
 on a given input much of that computation is spatially redundant. A
@@ -32,96 +18,87 @@ Dense GPU convolution obtains high \emph{throughput} (operations per second)
 from coordinate-driven, tiled execution. Each tile enumerates a contiguous
 block of output coordinates; those coordinates fix each output position's
 receptive field and write location, while the reduction over channels and
-kernel offsets follows a regular datapath with predictable memory access.
+kernel offsets follows a regular datapath with coalesced loads and
+weight-tile reuse.
 In masked convolution, reducing latency proportionally requires
 sustaining this throughput while achieving a high \emph{useful-compute ratio}
 (the fraction of issued operations that produce needed outputs), but the
 per-frame position selection imposed by the mask conflicts with the contiguous
-coordinate assumption that sustains this throughput, placing the two
-requirements in tension.
+coordinate assumption that sustains throughput, placing these two
+axes in tension.
 
-Existing systems follow one of two execution paths, retaining tiled execution
-for high throughput or eliminating wasted work for a high useful-compute ratio,
-but not both.
-\emph{Tile skipping}~\cite{sbnet,skipconv,evconv,deltacnn} retains the dense
-pipeline and suppresses a tile only when all its outputs are inactive, so a
-single active position triggers computation for the entire tile.
-\emph{Gather-scatter}~\cite{sai,dgnet,dynconv} instead extracts exactly the
+Existing systems sacrifice one axis for the other.
+\emph{Gather-scatter}~\cite{sai,dgnet,dynconv} extracts exactly the
 active positions into a packed representation, computes, and
-scatters the results back, incurring extraction, irregular access, and
-writeback overhead that damages throughput.
+scatters the results back, but is bottlenecked by the memory traffic of
+materializing their receptive fields.
+\emph{Tile skipping}~\cite{sbnet,skipconv,evconv,deltacnn} suppresses tiles that are entirely inactive and retains the dense
+pipeline, but wastes computation on partially active tiles.
+On an RTX~3080 running YOLOv8m~\cite{yolov8} at batch~4 under temporal
+difference masks~\cite{deltacnn}, 82.2\% of convolution work is unnecessary.
+Gather-scatter sustains only 43.7\% of the dense pipeline's throughput,
+reducing latency by just 59.3\%; tile skipping reaches higher throughput but
+wastes 32.6\% of issued operations, reducing latency by 54.3\%, slower
+than gather-scatter despite its throughput advantage
+(\S\ref{sec:bg:gap}).
 
-Neither path converts sparsity into proportional latency reduction
-(\S\ref{sec:bg:gap}). In our evaluation, under a temporal difference mask
-policy~\cite{deltacnn}, 52.2\% of YOLOv8n~\cite{yolov8}'s convolution work is
-unnecessary, yet tile skipping~\cite{deltacnn} incurs 24.5\% higher latency
-than dense with a useful-compute ratio of only 66.7\%; gather-scatter~\cite{mmcv} lifts
-the useful-compute ratio to near one but at 4.5$\times$ the latency of dense.
-Even on the sparser FireFlowNet~\cite{fireflownet} under event-camera
-increments~\cite{evconv}, where 74.7\% of work is unnecessary and tile skipping
-does cut latency by 42.0\%, it still wastes 30.2\% of its issued operations;
-gather-scatter sustains only 21.3\% of tile skipping's throughput, at
-1.9$\times$ the latency of dense.
+We find that redirecting a dense tiled pipeline to compute only scattered
+active positions achieves both a high useful-compute ratio and the throughput
+of dense execution. We collect these
+positions into a worklist and charaterize (\S\ref{sec:char}) the resulting tiled execution on a
+desktop and an embedded GPU, identifying why: the irregularity is confined to
+one indirection per tile in the prologue, outside the reduction loop that
+drives coalesced channel loads and weight-tile reuse, so per-tile throughput
+matches dense execution. When the tile configuration follows the
+worklist length, convolution time is affine in the active ratio with a slope matching
+the dense marginal cost; the residual gap is an intercept of 9.0--25.8\% of
+dense time per layer, dominated by launch latency and constant-cache misses,
+not by throughput loss.
 
-Our key insight is that output coordinates form the interface between position selection and the reduction datapath in tiled execution. Replacing the contiguous coordinate source with an active-output worklist changes only which positions are scheduled, while preserving the dense tensor layouts and regular reduction datapath that sustain throughput. The worklist interface makes it possible to compute almost exclusively required outputs without abandoning the dense pipeline's throughput potential.
-% Our key insight is that output coordinates form the interface between
-% position selection and the reduction datapath in tiled execution;
-% replacing the contiguous coordinate source with an active-output worklist
-% therefore preserves dense tensor layouts and the regular reduction datapath of tiled execution while computing almost exclusively active outputs, opening a path to combine a
-% high useful-compute ratio with the dense pipeline's throughput potential.
+While this finding establishes that worklist-driven tiled execution can
+sustain both axes, closing the gap end to end requires solving two further
+challenges.
+First, \emph{worklist construction cost}: deriving the worklist from the
+mask requires scanning the whole grid and costs time independent of the active count, so construction's share of
+latency grows as activity falls and accumulates when every layer rebuilds.
+Second, \emph{worklist consumption efficiency}: the affine property holds for
+a given number of active positions under a matching tile configuration, but
+in deployment this number is visible only on the device after construction and
+shifts across frames and layers. Reading it back to the host stalls the
+per-frame path; adapting on the device avoids the stall but incurs a
+non-negligible cost per decision point (\S\ref{sec:char}).
 
-Realizing this potential requires solving two challenges.
-% : the worklist must be cheap to build and fast to consume.
-First,
-\emph{worklist construction cost}: construction scans the mask, so its cost scales with the layer's spatial grid, not
-with the active count or channel widths, while the compute it enables shrinks with
-both. Construction's share of latency therefore grows as activity falls and
-channels thin,
-and accumulates across operators when every layer rebuilds.
-Second, \emph{worklist consumption efficiency}: the worklist's order and length both
-affect its consumption throughput.
-An unordered worklist scatters the input neighborhoods that adjacent work
-touches, lowering locality; its length falls below the dense grid and shifts with
-layer and input, so a naive fixed decomposition cannot keep the GPU full, and because the length
-is device-resident, any host-side decision that depends on it costs a
-synchronization on the per-frame path. Both effects sharpen
-as activity falls.
-
-We present \sysname (\textbf{W}orklist-dr\textbf{I}ven ma\textbf{S}k\textbf{E}d
-% ORIG word "runtime": an execution model
-\textbf{Conv}o\-lu\-tion), a masked-convolution runtime that fuses
-position-level selectivity into the dense tiled pipeline, enabling both a high
-useful-compute ratio and high throughput by co-designing worklist construction
-and consumption.
-To reduce worklist construction cost, a
-single mask-space pass fuses output-mask propagation with per-tile compaction,
-operating on only mask and coordinate metadata; compatible operators reuse valid
-metadata instead of reconstructing it.
-
-To sustain worklist consumption efficiency, construction emits contiguous per-tile segments ordered by the dense
-tile traversal, giving the compute stage tile-local structure without global sorting.
-Because the worklist changes the number of output-coordinate rows while each row's tensor layout and reduction datapath remain unchanged, \sysname launches a persistent grid that
-serves any worklist length, with idle thread blocks absorbing reduction work from
-undersubscribed tiles. The kernel reads the device-resident worklist length and
-indexes a precomputed table and decomposes the workload accordingly, sustaining GPU
-utilization across varying worklist lengths without host synchronization.
+Based on these findings, we present \sysname
+(\textbf{W}orklist-dr\textbf{I}ven ma\textbf{S}k\textbf{E}d
+\textbf{Conv}o\-lu\-tion), which drives the dense tiled pipeline with an
+active-output worklist to achieve both a high useful-compute ratio and high
+throughput by co-designing worklist construction and consumption.
+To reduce construction cost, a single mask-space pass fuses output-mask
+propagation with per-tile compaction, operating on only mask and coordinate
+metadata; compatible operators reuse the worklist instead of
+reconstructing it.
+To sustain consumption efficiency, a persistent compute grid consumes the
+worklist without host synchronization, and a cost-aware selection mechanism
+adapts the tile configuration per frame, adding a candidate to a layer only
+where its expected gain exceeds the selection overhead.
 
 This paper makes the following contributions:
 \begin{itemize}
-  \item We characterize existing masked-convolution execution paths along
-        two axes, useful-compute ratio and throughput, exposing why
-        they do not translate upstream sparsity into proportional
-        latency reduction.
+  \item We characterize worklist-driven tiled execution, 
+        identifying why computing scattered active positions preserves
+        dense-level throughput and where the remaining gap comes from.
+        These findings motivate and constrain the design
+        (\S\ref{sec:char}).
 
-  \item We design \sysname, which fuses position-level selectivity into the
-        dense tiled convolution pipeline and co-designs worklist construction and consumption
-        to secure both axes jointly.
+  \item We present \sysname, which co-designs worklist construction,
+        worklist-driven tiled compute, and cost-aware tile selection to
+        jointly sustain high useful-compute ratio and high throughput
+        (\S\ref{sec:design}).
 
-  \item We evaluate \sysname on four perception models across six GPU platforms:
-        four discrete GPUs and two Jetson platforms. \sysname is the
-        fastest path in all 24 workload-platform pairs, achieving a
-        1.58$\times$ geometric-mean speedup over the fastest evaluated
-        competing path in each pair (25.0--52.8\% lower full-model latency) and
-        reducing per-frame board energy by 29.9--67.8\% relative to dense
-        execution on the Jetson platforms.
+  % FP32 geomean ~2.5x, FP16 geomean ~2.4x (approximate, from TABLES.md)
+  \item We evaluate \sysname on four workloads across six GPUs. \sysname
+        achieves a \tbd{2.5}$\times$ (FP32) and \tbd{2.4}$\times$ (FP16)
+        geometric-mean speedup over the fastest baseline per
+        pair, reducing energy by \tbd{XX}--\tbd{XX}\% on embedded GPUs
+        (\S\ref{sec:eval}).
 \end{itemize}

@@ -1,14 +1,6 @@
 \section{Characterizing Worklist-Driven Convolution}
 \label{sec:char}
 
-% ---------------------------------------------------------------------------
-% 本章职责（CLAUDE.md）：架构层 insight 的分析模型与可证伪预测；不出现 WISEConv 的设计组件，每个 Insight 后用一句话指向
-% 它引出的设计需求。数字：已测的直接写；待测的写成预期值并用 \tbd{} 标红，实验在旁边的注释里（"实验："开头）。
-% 所有 figure 目前是占位框；caption 按目标图写。
-% 措辞："follows the structure of CUTLASS's gather implicit-GEMM convolution"（用户 2026-10-31 定）；wise2 源码不链接
-%   CUTLASS，不说"rewrites / derived from"。FP32 是同一结构的 SIMT kernel（CUTLASS 的 gather 卷积是 TF32）。
-% ---------------------------------------------------------------------------
-
 \providecommand{\tbd}[1]{\textcolor{red}{#1}}
 \providecommand{\insight}[2]{%
   \par\smallskip\noindent\fbox{\parbox{\dimexpr\columnwidth-2\fboxsep-2\fboxrule\relax}{%
@@ -16,392 +8,206 @@
 \providecommand{\figbox}[2]{%
   \fbox{\parbox[c][#1][c]{\dimexpr\columnwidth-2\fboxsep-2\fboxrule\relax}{\centering\small\sffamily #2}}}
 
-The sparsity-to-latency gap (\S\ref{sec:bg:gap}) leaves open whether a
-worklist-driven convolution closes it and what it takes. Every such operator
-has two stages: a construction stage that turns the mask into a worklist, and a
-compute stage that runs the dense implicit GEMM with its row coordinates read
-from the worklist instead of enumerated. We characterize the two stages
-separately, so that each finding belongs to the execution model rather than to
-a particular implementation of it. For the compute stage we ask how close its
-latency comes to proportional and what that requires of the kernel
-configuration (\S\ref{sec:char:affine}), why irregular rows leave the per-tile
-throughput intact (\S\ref{sec:char:reduction}), and how much the order of the
-worklist matters (\S\ref{sec:char:order}); for the construction stage, what it
-costs relative to the computation it enables (\S\ref{sec:char:construct}).
-
-\paragraph{Methodology.}
-\textbf{Compute stage.} We study the compute kernel of \sysname
-(\S\ref{sec:design:compute}), which follows the structure of CUTLASS's gather
-implicit-GEMM convolution~\cite{cutlass} and adds nothing else to it: the
-gather indices become worklist entries, and a grid of $\lceil n_W / B_M
-\rceil$ tiles loads $B_M$ worklist rows per tile and reduces over the $k^2$
-taps and $C_{in}$ channels exactly as the dense kernel does. A persistent grid
-reads $n_W$ on the device, so no length reaches the host. We instantiate it
-over the configuration space a dense autotuner searches: tile shape $(B_M, B_N, B_K)$, warp layout, pipeline depth, and
-split-K within a CTA or across CTAs; FP16 uses \texttt{mma.sync} tensor cores
-and FP32 a SIMT kernel of the same structure. Each configuration is timed in
-isolation inside CUDA graphs on worklists that are given, not constructed.
-\textbf{Construction stage.} We time the mask-to-worklist pass of each layer on
-its own (\S\ref{sec:char:construct}). \textbf{Reference.} Dense latency
-$t_{\mathrm{dense}}$ is the faster of the same kernel on the full grid and
-cuDNN's non-Winograd algorithms; Winograd changes the arithmetic, and a
-masked layer cannot use it. \textbf{Workloads.} The convolution layers of
-YOLOv8n and YOLOv8m on WildTrack, FireFlowNet on MVSEC, and DynConv on MPII
-(Table~\ref{tab:models}), driven by synthetic worklists of a given active ratio
-or by the worklists their mask policies produce on real inputs (74{,}844
-layer-frame samples for YOLOv8n alone). \textbf{Platforms.} RTX~3080 (68~SMs)
-and Jetson AGX Orin (16~SMs) at locked clocks.
+Before presenting \sysname, we characterize what worklist-driven tiled
+convolution achieves and where it falls short. We study the compute stage
+(a dense tiled implicit-GEMM kernel redirected to compute only positions
+from a worklist; \S\ref{sec:design:compute})
+and the construction stage (a mask-to-worklist pass) separately, so that each
+finding belongs to the execution model, not to a particular implementation.
+FP16 uses \texttt{mma.sync} tensor cores; FP32 is a SIMT kernel of the same
+structure. Each configuration is timed in isolation inside CUDA graphs on
+RTX~3080 (68~SMs) and Jetson AGX Orin (16~SMs) at locked clocks, using
+YOLOv8m~\cite{yolov8} at batch~1 on WildTrack~\cite{wildtrack} unless noted
+otherwise. Dense reference: the faster of the same kernel on the full grid
+and cuDNN non-Winograd.
 
 % ===========================================================================
-\subsection{Proportionality and the Configuration It Requires}
+\subsection{Affine Latency Requires Following the Length}
 \label{sec:char:affine}
-% 论证链（2026-11-07 与用户重定，取代 2026-10-31 版；outline 见 docs/characterization_outline.md）：
-%   Insight 1 可行性：配置跟随 n_W 时逐长度最优配置对 α 仿射、边际成本同 dense（本节只到这里）；
-%   Insight 2 斜率（§char:reduction）、Insight 3 order（§char:order）、Insight 4 bound = 每层固定成本（截距 + construction）；
-%   Insight 5 跟随 n_W 不免费（新 subsection，约束候选数与选择方式）。
-% TODO(rewrite)：本节下方 "Selecting per length gains little"、"One calibrated configuration per layer reaches the same
-%   line"、"Why one configuration suffices"、"The distribution, not the frame" 四段与 Insight 1 框是旧立场（单一 calibrated
-%   配置就够），与 updatable 主线相反，待按新链重写；截距表移到 Insight 4，机制成本图改作 Insight 5 主图（去掉 lagged graph）。
+
 \begin{figure}[t]
   \centering
-  \figbox{3.6cm}{Fig.\ char-affine: (a) normalized latency vs.\ $\alpha$ (log), 3080 / AGX, FP32 / FP16:
-  diagonal, per-length best + affine fit, dense-tuned.\\
-  (b) real layer-frame samples: per-length best vs.\ distribution-calibrated, two affine fits.}
-  \caption{Convolution latency normalized to dense, $t/t_{\mathrm{dense}}$,
-  summed over the layers of YOLOv8n. (a)~Synthetic worklists of active ratio
-  $\alpha$: the fastest configuration at each worklist length (per-length
-  best) follows an affine line close to the proportional diagonal; the
-  configuration a dense autotuner picks flattens at low $\alpha$.
-  (b)~Worklists of real frames on four workloads: one configuration per layer,
-  calibrated on separate frames of the same workload, traces the per-length
-  best's affine line with an intercept larger by \tbd{0.01--0.03}.}
+  \figbox{3.6cm}{Fig.\ char-affine: 4 subplots (FP32/FP16 $\times$ 3080/AGX),
+  YOLOv8m b1. Each: $t/t_{\mathrm{dense}}$ vs.\ $\alpha$ (layer-averaged),
+  lines: proportional diagonal, per-length best + affine fit, dense-tuned config.}
+  \caption{Convolution latency averaged across layers, normalized to dense, on
+  YOLOv8m at batch~1. Each panel shows the per-length best (with affine fit),
+  the dense-tuned configuration, and the best single configuration under a
+  uniform worklist-length assumption.}
+  % Panels: FP32 and FP16 on RTX 3080 and AGX Orin.
   \Description{Placeholder.}
   \label{fig:char-affine}
 \end{figure}
 
-\paragraph{The per-length best configuration is nearly affine.}
-A worklist kernel issues only active outputs ($\eta \approx 1$, apart from the
-padding of the last tile), so proportional latency, $t(\alpha) = \alpha\,
-t_{\mathrm{dense}}$, is equivalent to keeping the dense throughput. We first
-grant the kernel its best case and pick the fastest configuration for every
-worklist length. Its latency is affine in $\alpha$ rather than proportional
-(Figure~\ref{fig:char-affine}a): $t/t_{\mathrm{dense}} = 0.794\alpha + 0.258$
-for FP32 and $0.643\alpha + 0.417$ for FP16 on RTX~3080, and $0.917\alpha +
-0.085$ and $0.830\alpha + 0.267$ on AGX Orin, with a median per-layer $R^2$ of
-0.97--0.995. Each line meets dense latency at $\alpha = 1$ (slope and intercept
-sum to about one), so the whole departure from proportionality is the intercept
-$b$, a latency every layer pays regardless of how many positions are active.
-Table~\ref{tab:char-intercept} breaks $b$ down with hardware counters: it is
-launch and synchronization latency, not memory traffic. An empty kernel spends
-92\% of its stall cycles on constant-cache misses (the kernel parameters are
-cold at every launch), and a single tile adds a dependent chain of barriers,
-constant-cache misses, and, with split-K, memory fences, with memory-latency
-stalls at only 6--27\% and the data in L2. The intercept is 31\% (FP32) and
-47\% (FP16) of a median layer's dense time on RTX~3080 and 10\% and 33\% on AGX
-Orin: a layer comes closer to proportional the larger it is relative to the
-device.
+A worklist kernel issues only active outputs ($\eta \approx 1$), so
+proportional speedup means keeping dense throughput. When we grant the kernel
+its best configuration at every worklist length, its latency averaged across
+layers is affine in $\alpha$, well fitted by $t/t_{\mathrm{dense}} = a\alpha + b$.
+On RTX~3080, $a = 0.794,\, b = 0.258$ (FP32) and $a = 0.643,\, b = 0.417$
+(FP16); on AGX Orin, $a = 0.917,\, b = 0.085$ (FP32) and $a = 0.830,\,
+b = 0.267$ (FP16), with per-layer $R^2$ medians of 0.97--0.995
+(Figure~\ref{fig:char-affine}). The slope $a$ matches the dense
+marginal cost; the entire departure from proportional is the intercept $b$, a
+per-layer fixed cost analyzed in \S\ref{sec:char:bound}.
 
-\begin{table}[t]
-  \centering\small
-  \caption{Composition of the intercept $b$ on a representative layer: latency
-  and dominant stall reasons of the worklist kernel with no active position, one
-  tile, and the full grid (Nsight Compute, RTX~3080 and AGX Orin).}
-  \label{tab:char-intercept}
-  \figbox{1.6cm}{Table char-intercept: rows $n_W = 0$, one tile, $\alpha = 1$; columns latency ($\mu$s),
-  SM-active time, stall shares (constant-cache miss, barrier, fixed-latency dependency, membar,
-  long scoreboard), DRAM bytes; both GPUs.}
-\end{table}
-% 数据已有：logs/wise2_intercept/（3080：空 kernel 1.0–1.2 µs、SM 活跃约 0.5 µs、92% imc_miss；单 tile 再加 2.6–3.3 µs
-%   FP32 / 1.4–2.2 µs FP16；AGX 空 kernel 2.2–2.6 µs，单 tile 再加 FP32 8–19 / FP16 3.5–6.5 µs）。
+This affine behavior holds only when the configuration follows the worklist
+length. The dense-tuned
+configuration runs 2.3$\times$ (FP32) and 1.6$\times$ (FP16) slower than
+the per-length best at low activity on RTX~3080, and 4.0$\times$ and
+1.9$\times$ on AGX Orin (Figure~\ref{fig:char-affine}): large tiles
+amortize weight loads over many rows, but when rows are few, smaller tiles
+and split-K shorten the chain each SM executes. The best single
+configuration under a uniform worklist-length assumption narrows the gap but
+remains \tbd{XX--XX}\% slower than the per-length oracle.
 
-\begin{figure}[t]
-  \centering
-  \figbox{3.0cm}{Fig.\ char-persm: slowdown of a fixed configuration over the per-length best vs.\ work per SM
-  (log), dense-tuned and activity-agnostic single configuration, 3080 and AGX overlaid.}
-  \caption{Slowdown of a fixed configuration over the per-length best across
-  the synthetic sweep of Figure~\ref{fig:char-affine}a, binned by the work per SM
-  of the fixed configuration (its tiles times its K splits, divided by the SM
-  count). Both GPUs fall on one curve: a configuration is near-optimal only in
-  the regime of work per SM it suits.}
-  \Description{Placeholder.}
-  \label{fig:char-persm}
-\end{figure}
-
-\paragraph{Over the full range of activity, the best configuration changes.}
-No single configuration stays near this line from $\alpha \to 0$ to $\alpha =
-1$. The configuration a dense autotuner picks, the fastest at $\alpha = 1$,
-runs 2.33$\times$ (FP32) and 1.64$\times$ (FP16) slower than the per-length best
-when it gives an SM less than a quarter of a tile on RTX~3080, and 4.00$\times$
-and 1.92$\times$ on AGX Orin, and matches the best above four tiles per SM
-(Figure~\ref{fig:char-persm}). Large tiles amortize each weight load over many
-rows; when rows are few, smaller tiles and split-K expose enough independent
-work to occupy the SMs and shorten the chain each one executes. Picking the
-configuration with the lowest expected latency over $\alpha$ uniform on $(0,
-1]$ only moves the loss: it is still 1.61$\times$ and 1.39$\times$ slower below a
-quarter of a tile per SM on RTX~3080, and 11.6--13.5\% slower at $\alpha = 1$.
-A layer therefore needs a configuration that depends on its activity. Whether
-it needs one per worklist length depends on how much of this range a layer
-actually visits, which we examine next.
-
-\begin{figure}[t]
-  \centering
-  \figbox{3.0cm}{Fig.\ char-mechanism: CDF over layers of the expected per-frame gain of per-length selection
-  over the layer's best single configuration ($\mu$s); vertical lines: per-layer cost of host readback,
-  updatable node, conditional node; markers: realized gain of in-kernel dispatch and of lagged graph selection.}
-  \caption{Per-layer gain that selecting the configuration for every worklist
-  length could deliver over the best single configuration of the layer (CDF over
-  the layers of four workloads, RTX~3080 and AGX Orin), against what each runtime
-  mechanism costs or realizes: host readback and launch, a device-updatable
-  kernel node, and a conditional graph node pay a fixed cost per layer; in-kernel
-  dispatch among fused configurations and a CUDA graph chosen per frame from
-  lagged activity pay almost nothing but realize only part of the gain.}
-  \Description{Placeholder.}
-  \label{fig:char-mechanism}
-\end{figure}
-
-\paragraph{Selecting per length gains little, and every mechanism pays for it.}
-Against the best single configuration for the layer's own frames, choosing per
-worklist length saves a median layer only \tbd{0.6}\,$\mu$s per frame on
-RTX~3080 and \tbd{1.5}\,$\mu$s on AGX Orin (Figure~\ref{fig:char-mechanism}).
-Capturing this gain at run time is costly, because the length that drives the
-choice exists only on the device and changes at every layer of every frame.
-Mechanisms that decide per layer pay a fixed cost per layer: reading the length
-back serializes each layer behind a host synchronization, a device-updatable
-kernel node rewrites the next launch at \tbd{0.9}\,$\mu$s on RTX~3080 and
-\tbd{2.2--3.3}\,$\mu$s on AGX Orin, and a conditional graph node selects a
-subgraph at \tbd{17--19}\,$\mu$s on AGX Orin; only \tbd{X\%} of the layers gain
-more than the cheapest of them costs. Mechanisms that avoid the per-layer cost
-give up part of the gain. Fusing the candidate configurations into one kernel
-and branching inside it decides for free, but the fused kernel carries the
-register and code footprint of all its paths and realizes \tbd{30--60\%} of the
-gain. Choosing one of a few pre-captured CUDA graphs per frame from the activity
-of past frames decides on the host without synchronization, but a frame-level
-prediction cannot follow layers whose activity varies independently, and it
-realizes \tbd{50\%} of the gain on YOLOv8n and \tbd{10\%} on DynConv.
-% 实验 E2（需 GPU，约半小时 / 设备）：
-%   收益：每层 per-frame oracle 相对该层在自身帧上最优的单一配置的期望增益（µs），隔离 sweep × 真实 trace，四个 workload。
-%     0.6 µs 是粗估（3080 FP32 YOLOv8n，in-situ：(S − O) / 层数 ≈ 40.6 / 63）。
-%   成本：当前 binary 重测：host 读回 + 分支 launch、device-updatable node（m0_probe）、conditional SWITCH node。
-%     0.9 / 2.2–3.3 / 17–19 µs 是第一代原型的数，必须重测后才能保留。
-%   实现比例：in-kernel dispatch 用 in-situ record（3080：D 只拿到 O 的 30–60%，static_vs_dynamic.py）；lagged graph 用
-%     bucket_static.py（3080 YOLOv8n K = 4：−2.8% vs 每帧 oracle −5.1%，约 55%；DynConv 帧级理想 −0.6% vs −1.5%）。
-
-\paragraph{One calibrated configuration per layer reaches the same line.}
-The range a layer visits is far narrower than $(0, 1]$, so a configuration
-suited to that range suffices. We calibrate one configuration per layer to its
-activity distribution, taking the configuration with the lowest mean latency on
-calibration frames, and evaluate it on separate frames of the same workload (a
-held-out camera for WildTrack, held-out clips otherwise). On real worklists its
-affine fit shares the per-length best's slope, and its intercept is larger by
-only \tbd{0.01--0.03} of dense time on both GPUs and precisions
-(Figure~\ref{fig:char-affine}b); summed over a model it is within
-\tbd{2--4\%} of the per-length best on YOLOv8n, YOLOv8m, and FireFlowNet and
-within \tbd{1\%} on DynConv. DynConv is the hardest case for a single choice:
-its learned gates vary a layer's active ratio by up to 9$\times$ between the
-tenth and ninetieth percentile frame, nearly independently of the other
-layers. The configuration a dense autotuner picks, in contrast, is 42--94\%
-slower than the calibrated one on the YOLO models: what matters is calibrating
-to the activity a layer sees, not adapting to each frame of it.
-% 实验 E1（离线，数据已有）：隔离 sweep（standalone persistent tile，与 (a) 同一配置空间）× 真实 trace，每个
-%   (层, 帧) 的 t/t_dense；per-length best、calibrated（交叉验证）、dense-tuned；两条仿射拟合 (a, b, R²)、Δb、模型级
-%   Σt 比；四个 workload × 3080 / AGX × FP32 / FP16（AGX YOLOv8m 待部署）。
-% 风险：隔离 sweep 上 per-frame oracle 相对 calibrated 在 YOLO 上是 −9 至 −11%（logs/wise2_static/，s = 1）；in-situ 只在
-%   4 个 static 候选里比是 −1.3 至 −4.5%。若 E1 的 Δb 明显大于 0.03，本段改为"差距存在，但小于任何机制能拿到的部分"，
-%   论证重心落到上一段。42–94%：隔离 sweep，anchor vs static（YOLOv8n FP32 / FP16 +66% / +42%，YOLOv8m +94% / +79%）。
-%   DynConv 9×：单层 α 的 P10–P90 例如 0.02–0.18（trace_fp32，3080）；跨层相关中位数 0.12–0.42。
-
-\begin{figure}[t]
-  \centering
-  \figbox{3.0cm}{Fig.\ char-wave: (a) $t(n)$ of the calibrated configuration and the per-length best on one
-  sub-wave and one multi-wave layer, with the layer's $n_W$ distribution; (b) regret vs.\ wave phase;
-  (c) per-layer P10--P90 span of the work per SM.}
-  \caption{Why one configuration suffices. (a)~Latency against worklist length
-  for a layer whose worklists fill less than one wave and for a layer that spans
-  several, with the layer's distribution of lengths shaded: below one wave the
-  latency is nearly flat, above it a staircase. (b)~Regret of the calibrated
-  configuration over the per-length best against the calibrated configuration's
-  wave phase: in the multi-wave regime it concentrates just past a wave
-  boundary. (c)~Span of each layer's work per SM between its tenth and ninetieth
-  percentile frame.}
-  \Description{Placeholder.}
-  \label{fig:char-wave}
-\end{figure}
-
-\paragraph{Why one configuration suffices.}
-A configuration's latency has two regimes in the worklist length
-(Figure~\ref{fig:char-wave}a). While its tiles fit in one wave of co-resident
-CTAs, every CTA runs at most one tile and the latency is the single-tile chain
-plus the launch, nearly flat in $n_W$; the best configuration here is the one
-with the shortest chain at the layer's shape, which does not move with $n_W$.
-Beyond one wave the latency is a staircase, $t_q(n) \approx
-\lceil \mathrm{tiles}_q(n) / W_q \rceil\, t_{\mathrm{tile},q} + t_{0,q}$ for
-$W_q$ co-resident CTAs, and configurations with different tile shapes place
-their steps at different lengths: the per-length best beats a fixed
-configuration mainly just past one of its steps, where a partial wave costs a
-full tile time (Figure~\ref{fig:char-wave}b). These steps account for
-\tbd{70\%} of the per-length gain; the rest comes from layers whose lengths
-straddle the two regimes. Most layers do not: between its tenth and ninetieth
-percentile frame, a median layer's work per SM spans a factor of \tbd{4}
-(Figure~\ref{fig:char-wave}c), and \tbd{X\%} of the layers stay on one side of a
-wave throughout. A layer thus spends nearly all its frames in one regime, where
-one configuration is best up to the steps.
-% 实验 E3（离线，数据已有）：(a) 两个代表层的 t(n) 曲线与 n_W 直方图；(b) 每层 regret(n) 对 calibrated 配置的 wave 相位
-%   （tiles·splits / (SM · occ) mod 1；occ 用 occupancy API 或由台阶位置推出）；(c) 阶梯残差分解：每个配置的 t(n) 拆成
-%   该层 n 范围内的仿射趋势 + 阶梯残差，oracle 增益中来自残差的比例（文中 70%），以及跨 regime 的层的贡献；(d) 每层 n_W 的
-%   P10–P90 跨度（tiles/SM，文中 4×）与始终在一个 wave 内 / 外的层比例。
-% 注意：YOLOv8n 95%（3080）/ 73%（AGX）的样本 < 1 tile/SM，主要在 sub-wave regime；需确认 sub-wave 内"近似平"成立
-%   （CLAUDE.md：同一 wave 内时间也随活跃 CTA 增长），否则改写 sub-wave 的机制描述。
-
-\paragraph{The distribution, not the frame, sets the configuration.}
-Calibration does depend on the distribution it sees. Scaling every layer's
-worklist lengths by a factor between $1/4$ and $4$ makes the configuration
-calibrated at the original scale 3--24\% slower than one re-calibrated at the
-new scale, which in turn stays within \tbd{1--3\%} of the per-length best. Real
-shifts behave the same way: a configuration calibrated on one MVSEC sequence
-loses \tbd{X\%} on a sequence with \tbd{4$\times$} its activity. A deployment
-must therefore calibrate to the activity it will see and recalibrate when that
-activity changes substantially, but within a distribution it needs no per-frame
-adaptation.
-% 实验 E4：合成漂移已有（static_vs_dynamic.py 的 shift，3080 四个 workload：沿用 3–24%；重选距 oracle：YOLO 3.5–12%，
-%   DynConv 0.3–2%，需在 E1 口径下复核文中的 1–3%）。真实漂移：held-out split 上跑 insitu_calib.py trace（FireFlowNet
-%   outdoor_day1 vs calib 的 indoor_flying1；WildTrack randpos vs calib），calib 上选的配置在 held-out 上的 regret 与重选对比。
-
-\insight{1}{With the configuration chosen for every worklist length, a
-worklist-driven implicit GEMM is nearly affine in the active ratio, but that
-choice gains little over one configuration calibrated to a layer's activity
-distribution, and every runtime mechanism either costs more per layer or
-realizes only part of it. The calibrated configuration reaches the same line
-with a slightly larger intercept, because a layer's work per SM stays in one
-regime across frames, where per-length selection only exploits
-wave-quantization steps.}
-
-The compute stage (\S\ref{sec:design:compute}) therefore provides a
-configuration space rich in fine decompositions, calibrates one configuration
-per layer to the deployment's activity, and has the kernel consume the
-device-resident worklist length directly.
+\insight{1}{The latency of worklist-driven tiled convolution is affine in the
+active ratio at dense marginal cost only when the tile configuration
+follows the worklist length.}
 
 % ===========================================================================
-\subsection{Irregularity Stays Outside the Reduction Loop}
+\subsection{Why Per-Tile Throughput Matches Dense}
 \label{sec:char:reduction}
 
 \begin{figure}[t]
   \centering
-  \figbox{3.0cm}{Fig.\ char-reduction: per representative layer, (a) global-load sectors per request,
-  worklist vs.\ dense; (b) DRAM bytes: measured, active-halo-union prediction, $k^2 n_W C_{in}$.}
-  \caption{Per-tile memory behavior of the worklist kernel on seven
-  representative YOLOv8n layers (RTX~3080 shown; AGX Orin is the same).
-  (a)~Sectors per global-load request stay close to the dense kernel's, except
-  for the stem, whose 32-byte rows cannot fill a request. (b)~DRAM traffic
-  equals the union of the active positions' input halos plus the weights, not
-  the $k^2 n_W C_{in}$ a gather-scatter path moves.}
+  \figbox{3.0cm}{Fig.\ char-reduction: representative layers, RTX~3080 FP32.
+  (a)~sectors/request: worklist vs.\ dense. (b)~DRAM bytes and L2 traffic:
+  worklist vs.\ dense.}
+  \caption{Per-tile memory behavior on representative layers (RTX~3080 FP32).
+  (a)~Sectors per request match dense. (b)~DRAM traffic does not increase
+  significantly; L2 absorbs the overlap of scattered receptive fields.}
   \Description{Placeholder.}
   \label{fig:char-reduction}
 \end{figure}
 
-The affine line meets dense latency at $\alpha = 1$, so an active position
-costs the worklist kernel what it costs the dense kernel. The reason lies in
-where the worklist enters the kernel. An implicit
-GEMM draws on three levels of reuse: contiguous channels within a row (memory
-coalescing), a weight tile shared by the $B_M$ rows of a CTA (arithmetic
-intensity), and overlapping receptive fields of neighboring outputs (L1 and L2
-hits). The worklist changes only the base address of each row. A tile issues
-$B_M$ index loads in its prologue, ahead of the multistage pipeline, and the
-reduction loop over $k^2$ taps and channel slices keeps the dense kernel's
-affine addressing. The first two levels of reuse are therefore untouched.
-Counters confirm it: a worklist tile executes the same instructions as a dense
-tile (within 0.5\%, with identical FMA, tensor, and global-load counts), and
-global loads keep 12.8--14.3 sectors per request against 14.5--15.5 in the
-dense kernel for FP32 (8.6--12.7 against 11.0--15.4 for FP16;
-Figure~\ref{fig:char-reduction}a). The one exception is the predicted boundary:
-the stem layer has eight padded input channels, a 32-byte row that fills only
-3.7 sectors per request in both kernels. DRAM traffic is set by the union of
-the active halos: measured bytes are 1.00--1.11$\times$ that prediction, while
-gathering each position's receptive field separately would move 2--7$\times$
-more on 3$\times$3 layers (Figure~\ref{fig:char-reduction}b). Point-cloud sparse
-convolution differs exactly here: its input is sparse too, so every reduction
-step depends on a rulebook lookup.
+The worklist changes only the base address of each row; under a
+channels-last layout, the reduction loop over $k^2$ taps and channel slices
+keeps the dense kernel's addressing, so channel coalescing and weight-tile
+reuse are untouched. Counters confirm it:
+a worklist tile executes the same instructions as a dense tile (within 0.5\%),
+with sectors per request matching dense
+(Figure~\ref{fig:char-reduction}a). DRAM traffic does not increase
+significantly over dense: neighboring active positions share overlapping
+receptive fields, and L2 absorbs the redundant accesses. L2 traffic is
+higher than dense because the worklist's spatial scattering reduces tile-local
+reuse, but this does not surface at DRAM
+(Figure~\ref{fig:char-reduction}b).
+
+\insight{2}{Irregularity is confined to row-level indirection outside the
+reduction loop, leaving channel-contiguous access and weight-tile reuse
+identical to dense execution.}
 
 % ===========================================================================
-\subsection{Worklist Order Barely Matters}
+\subsection{Order Is a Second-Order Effect}
 \label{sec:char:order}
 
 \begin{figure}[t]
   \centering
-  \figbox{3.0cm}{Fig.\ char-order: distribution over layer-frame samples of latency relative to the
-  construction order, for sorted / shuffled / uniform worklists, 3080 and AGX; inset: DRAM, L1-hit, L1-to-L2
-  traffic on representative layers.}
+  \figbox{3.0cm}{Fig.\ char-order: latency relative to construction order for
+  sorted / shuffled / uniform worklists; inset: DRAM, L1, L2 on representative
+  layers.}
   \caption{Latency of four worklists with the same length and tile on real
-  frames, relative to the order construction emits: sorted in global dense
-  order, shuffled, and uniform (the same count of positions spread uniformly,
-  removing the mask's spatial clustering). Inset: counters on representative
-  layers; order changes L1 hits, never DRAM bytes.}
+  frames. Order changes L1 hits, never DRAM bytes.}
   \Description{Placeholder.}
   \label{fig:char-order}
 \end{figure}
 
-The third level of reuse, overlapping receptive fields, depends on which
-positions share a CTA and therefore on the order of the worklist. It matters
-little (Figure~\ref{fig:char-order}). Across 3{,}560 layer-frame samples, a
-globally sorted worklist runs at 0.999$\times$ the latency of the order
-construction emits (median) and a shuffled one at 1.004--1.007$\times$; summed
-over the model, every variant is within 2.2\% on RTX~3080. Counters show why:
-the construction order, sorted, and shuffled worklists move identical DRAM bytes, and order only
-shifts reuse between L1 (6--46\% hits for the construction order, 3--26\%
-shuffled) and L2, which absorbs the rest. Order becomes visible only where L2
-bandwidth is scarce relative to the work: on AGX Orin, shuffling slows the
-early layers with many positions and little computation each by
-1.10--1.33$\times$, because the extra L1-to-L2 traffic (7--70\% more) surfaces on
-a GPU with little L2 bandwidth. Even there, a tile-local order recovers all of
-the global order's benefit (sorted against construction order:
-0.993--0.999$\times$).
+Scattered worklist entries could hurt L1 reuse by placing positions with
+non-overlapping receptive fields into the same tile. We test this by comparing
+three orderings of the same worklist: tile-local (dense traversal order within
+each spatial tile, arbitrary order across tiles),
+globally sorted in dense traversal order, and randomly shuffled. Across
+3{,}560 layer-frame samples on RTX~3080, global sorting runs at
+0.999$\times$ the tile-local order (median) and shuffling at
+1.004--1.007$\times$; model-level totals are within 2.2\%. All three move
+identical DRAM bytes; the difference is only in L1 hit rate. On AGX Orin, shuffling slows wide
+early layers by up to 1.33$\times$ because the extra L1-to-L2 traffic is
+exposed by the lower L2 bandwidth, but the tile-local order already recovers
+everything a global order would (0.993--0.999$\times$).
 
-\insight{2}{Worklist order never changes DRAM traffic, which the union of the
-active halos sets; it only shifts reuse between L1 and L2. A random order costs
-about 1\% except on low-intensity layers of a GPU with little L2 bandwidth, and
-a tile-local order already recovers everything a global order would.}
-
-Construction therefore needs to preserve only tile-local order
-(\S\ref{sec:design:construct}).
+\insight{3}{Worklist order has negligible impact on DRAM traffic; a tile-local
+order recovers all of a global order's benefit.}
 
 % ===========================================================================
-\subsection{Construction Cost Does Not Shrink with Activity}
-\label{sec:char:construct}
+\subsection{The Residual Gap Is a Per-Layer Fixed Cost}
+\label{sec:char:bound}
 
 \begin{figure}[t]
   \centering
-  \figbox{3.0cm}{Fig.\ char-construct: per-frame construction share of convolution time vs.\ frame
-  $\alpha$, 3080 / AGX, FP32 / FP16; inset: per-layer construction vs.\ compute by $C_{in}$.}
-  \caption{Share of convolution time spent building worklists, per YOLOv8n
-  frame, against the frame's active ratio. Construction costs a near-constant
-  time per layer, so its share rises as activity falls and as tensor cores
-  shorten the compute.}
+  \figbox{3.0cm}{Fig.\ char-bound: (a)~intercept breakdown (launch + single-tile
+  chain, stall reasons). (b)~Left axis: construction time / oracle conv time
+  vs.\ $\alpha$; right axis: absolute construction time vs.\ $\alpha$ (flat).}
+  \caption{(a)~Composition of the intercept: an empty kernel spends 92\% of
+  stall cycles on constant-cache misses; a single tile adds barriers and memory
+  fences. (b)~Construction cost is nearly constant in absolute time (right
+  axis), so its ratio to the oracle convolution time grows as activity falls
+  (left axis).}
   \Description{Placeholder.}
-  \label{fig:char-construct}
+  \label{fig:char-bound}
 \end{figure}
 
-A worklist must exist before the computation it enables, and building it scans
-the mask grid of the layer's geometry, whose size does not depend on activity.
-Its cost is therefore nearly constant per layer: 1.7--3.2\,$\mu$s on RTX~3080
-and 4.2--23.6\,$\mu$s on AGX Orin, dominated by a fixed launch cost (about
-1.8\,$\mu$s and 4\,$\mu$s) and visible mask scanning only on the 640$\times$640
-stem. The computation it enables shrinks with activity and channel count.
-Over a YOLOv8n frame, 52 constructions (the other 11 layers reuse their
-input's worklist) take 93\,$\mu$s on RTX~3080 against
-397\,$\mu$s (FP32) and 232\,$\mu$s (FP16) of computation, a median share of
-19\% and 29\%; on AGX Orin they take 258\,$\mu$s, 11\% and 27\%. The share
-tracks the frame's activity (correlation $-0.94$ and $-0.96$ on RTX~3080,
-$-0.81$ and $-0.93$ on AGX Orin): it reaches 24\% and 33\% in the
-least active quarter of frames on RTX~3080 and falls to 12\% and 23\% in the
-most active quarter (Figure~\ref{fig:char-construct}). Thin layers pay the most,
-because the computation scales with $C_{in}$ and the construction does not
-(construction reaches \tbd{0.48} of compute below 32 input channels against
-\tbd{0.36} above 96).
-% 0.48 / 0.36 是 construction 改进（2026-10-31）之前的 3080 FP32 数，需用当前实现重算（construction_cost.py 的逐层输出）。
+The intercept $b$ consists of launch latency and a single-tile dependent chain.
+An empty kernel spends 92\% of its stall cycles on constant-cache misses (the
+parameters are cold); a single tile adds barriers and, with split-K, memory
+fences, with long-scoreboard stalls at only 6--27\% (Table~\ref{tab:char-intercept}). The
+intercept is 10--17\% of a median YOLOv8m layer's dense time on RTX~3080,
+smaller on AGX Orin where each layer is larger relative to the device.
 
-\insight{3}{Building a worklist costs a near-constant time per layer,
-independent of activity and channel count, so its share of the convolution
-grows exactly where sparsity is most useful.}
+\begin{table}[t]
+  \centering\small
+  \caption{Intercept composition: latency and stall breakdown at $n_W = 0$, one
+  tile, and $\alpha = 1$ (Nsight Compute, RTX~3080 and AGX Orin).}
+  \label{tab:char-intercept}
+  \figbox{1.4cm}{TODO: table from logs/wise2\_intercept/}
+\end{table}
 
-Construction must therefore touch only the mask and be shared wherever layers
-can use the same worklist (\S\ref{sec:design:construct},
-\S\ref{sec:design:reuse}).
+Construction adds a second fixed cost. Each mask-to-worklist pass takes
+1.7--3.2\,$\mu$s on RTX~3080 and 4.2--23.6\,$\mu$s on AGX Orin, nearly
+independent of activity (Figure~\ref{fig:char-bound}b, right axis). As the
+oracle convolution time shrinks with $\alpha$, construction's share rises
+(Figure~\ref{fig:char-bound}b, left axis): from \tbd{XX}\% at $\alpha = 0.5$
+to \tbd{XX}\% at $\alpha = 0.1$ on RTX~3080 FP32.
+
+\insight{4}{The residual gap comes from per-layer fixed costs independent of
+activity: launch latency in the compute intercept, and near-constant
+construction time.}
+
+% ===========================================================================
+\subsection{Following the Length Is Not Free}
+\label{sec:char:cost}
+
+\begin{figure}[t]
+  \centering
+  \figbox{3.0cm}{Fig.\ char-cost: CDF of per-layer gain from per-length
+  selection over best single config ($\mu$s); vertical lines: per-layer cost of
+  host readback, updatable node, conditional node.}
+  \caption{Per-layer gain of selecting the configuration per worklist length
+  over the best single configuration (CDF over layers, RTX~3080), against
+  the per-layer cost of each selection mechanism.}
+  \Description{Placeholder.}
+  \label{fig:char-cost}
+\end{figure}
+
+Insight~1 requires the configuration to follow the worklist length, but the
+length exists only on the device and changes at every layer of every frame.
+Every mechanism that selects a kernel from it pays per decision point: reading
+the length back to the host stalls the per-frame path; a device-updatable
+kernel node costs \tbd{1.9}\,$\mu$s per layer on RTX~3080; a conditional
+graph node costs 9.5\,$\mu$s (RTX~3080) and 17--19\,$\mu$s (AGX Orin).
+Fusing candidates into one kernel avoids the per-layer cost but allocates
+registers and shared memory for the largest path, slowing every tile by
+5--6\%. These costs are comparable to the median per-layer gain from
+per-length selection (Figure~\ref{fig:char-cost}), so the number of candidates
+and selection points a frame can afford is bounded by the mechanism, not by
+the oracle.
+
+\insight{5}{Every mechanism for following the worklist length incurs a
+per-decision-point cost often comparable to the per-layer gain from adaptation.}
+
+Insights 4 and 5 together mean that current hardware cannot reach the oracle
+affine line without trading off selection cost against adaptation gain. Two
+architectural capabilities would close this gap: reducing the per-layer
+launch and synchronization floor that dominates the intercept (Insight~4),
+and providing a lightweight launch predicate evaluated before CTA resource
+allocation so that following the worklist length no longer competes with the
+gain it targets (Insight~5).

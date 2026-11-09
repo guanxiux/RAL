@@ -99,24 +99,20 @@ and required work.
 
 \begin{figure}[htb]
   \centering
+  % TODO: replace figure with YOLOv8m b4 / WildTrack 640 / RTX 3080 gap plot
   \includegraphics[width=\columnwidth]{figures/gap.pdf}
-  \caption{FireFlowNet~\cite{fireflownet} using the
-  Ev-Conv~\cite{evconv} event-driven mask policy on MVSEC~\cite{mvsec} and
-  RTX~3080, comparing cuDNN (Dense), DeltaCNN tile
-  skipping~\cite{deltacnn}, and MMCV's native gather-scatter path~\cite{mmcv}.
-  (a)~Mean full-model per-frame latency and average endpoint error (AEE; lower
-  is better). The dashed
-  line marks dense latency scaled by the active ratio aggregated across layers;
-  the
-  sparse paths use the same masks and produce nearly identical AEE.
+  \caption{TODO: YOLOv8m~\cite{yolov8} at batch~4 using the
+  DeltaCNN~\cite{deltacnn} temporal difference mask policy on
+  WildTrack~640 and RTX~3080, comparing cuDNN (Dense), DeltaCNN tile
+  skipping, and MMCV gather-scatter~\cite{mmcv}.
+  (a)~Mean full-model per-frame latency.
+  The dashed line marks dense latency scaled by the active ratio aggregated
+  across layers; the sparse paths use the same masks.
   (b)~Raw throughput $T$ and effective throughput $T_{\mathrm{eff}}$, each
   normalized to dense raw throughput. The dense useful-compute ratio equals
-  the active ratio set by the Ev-Conv mask policy ($\alpha\approx25.3\%$).}
-  \Description{Two grouped bar charts compare Dense, DeltaCNN tile skipping,
-  and MMCV gather-scatter for FireFlowNet on RTX 3080. The first contrasts
-  full-model latency and average endpoint error and marks the proportional
-  latency reference. The second contrasts raw and effective throughput after
-  normalization to dense raw throughput.}
+  the active ratio set by the mask policy.}
+  \Description{TODO: Two grouped bar charts compare Dense, DeltaCNN tile
+  skipping, and MMCV gather-scatter for YOLOv8m batch 4 on RTX 3080.}
   \label{fig:gap}
 \end{figure}
 Existing systems execute a mask along one of two paths. \emph{Tile
@@ -146,7 +142,7 @@ For $|\mathcal{C}|>0$, an ideal path achieves $\eta=1$ by issuing only required 
   \end{aligned}
   \label{eq:efficiency-framework-throughput}
 \end{equation}
-where \(t\) denotes the latency of the execution path, including auxiliary mask and coordinate processing, \(k\) is the convolution kernel size, and \(C_{in}\) and \(C_{out}\) are the input and output channel counts of the masked convolution layer, respectively. The factor of two counts each multiply-accumulate as two FLOPs. Consequently, \(T_{\mathrm{eff}}\) directly characterizes the processing rate of required outputs and therefore determines the realized latency.
+where \(t\) denotes the latency of the execution path, including auxiliary mask and coordinate processing, \(k\) is the filter kernel size, and \(C_{in}\) and \(C_{out}\) are the input and output channel counts respectively. The factor of two counts each multiply-accumulate as two FLOPs. Consequently, \(T_{\mathrm{eff}}\) directly characterizes the processing rate of required outputs and therefore determines the realized latency.
 
 
 % These paths fail for different reasons, so we separate policy sparsity from
@@ -175,58 +171,46 @@ where \(t\) denotes the latency of the execution path, including auxiliary mask 
 % as two FLOPs. Consequently, $T_{\mathrm{eff}}$ measures the rate of
 % required-output computation and therefore determines its latency.
 
-Figure~\ref{fig:gap} traces this on RTX~3080 for
-FireFlowNet~\cite{fireflownet} under the Ev-Conv~\cite{evconv} mask policy.
-Event cameras expose microsecond-scale changes, and Ev-Conv evaluates optical
-flow on event-window inputs updated at 1~kHz.
-The policy marks 74.7\% of the
-convolution work unnecessary, and
-the sparse paths discard it without reducing accuracy. Scaling dense latency by
-the fraction of convolution work that remains gives a 0.263\,ms ideal
-proportional-scaling reference (Fig.~\ref{fig:gap}a, dashed). Neither path
-approaches it: tile skipping (DeltaCNN~\cite{deltacnn}) reaches 0.605\,ms, still
-2.30$\times$ the reference, and gather-scatter (MMCV~\cite{mmcv}) runs at
-1.979\,ms, 1.90$\times$ the latency of dense convolution itself. The gap traces
-to low effective throughput on both paths. Tile skipping holds throughput at
-62.4\% of dense but at a useful-compute ratio of only 69.8\%; gather-scatter
-lifts the useful-compute ratio to one, yet extraction and data movement collapse
-its throughput to 13.3\% of dense (Fig.~\ref{fig:gap}b). Neither path efficiently
-converts the GPU's capability into effective
-throughput.
+% TODO: update numbers from TABLES.md YOLOv8m b4 FP32 efficiency breakdown
+Figure~\ref{fig:gap} makes this concrete on RTX~3080 for YOLOv8m~\cite{yolov8}
+at batch~4 under temporal difference masks~\cite{deltacnn}, where 82.2\% of
+convolution work is unnecessary. Tile skipping holds throughput at
+\tbd{XX}\% of dense but at a useful-compute ratio of only 67.4\%;
+gather-scatter lifts the useful-compute ratio to one, yet extraction traffic
+collapses its throughput to 43.7\% of dense. Neither path efficiently converts
+the GPU's capability into effective throughput.
 
 
 \subsection{Distinction from Related Sparse Execution}
 \label{sec:bg:related}
 
-Other related sparse-execution work differs from \sysname in
-representation, operator, sparsity type, or platform. 3D
-sparse-convolution
+\sysname differs from other sparse-execution work in representation and
+sparsity type. 3D sparse-convolution
 systems~\cite{spconv2,torchsparsepp,torchsparse,minuet,minkowski,submanifold}
-operate on sparse point-cloud coordinates and construct coordinate maps for
-irregular input-to-output relations; \sysname instead consumes a runtime mask
-over a dense 2D grid while retaining dense tensor layouts. Sparse matrix
-multiplication~\cite{dtcspmm,maxkgnn,sputnik} accelerates sparse-graph and
-pruned-weight matrix products, where sparsity is structural rather than a
-dynamic spatial mask over a convolution grid. Structured weight pruning (e.g., 2:4
-sparsity~\cite{sparse24}) exploits fixed patterns in model weights.
-Sparse-format compilers~\cite{taco,sparsetir} expose sparsity through
-explicit tensor formats, whereas \sysname retains dense layouts and uses a
-transient per-frame mask only to select output coordinates. DPACS~\cite{dpacs} resolves similar
-dynamic spatial sparsity in CNN feature maps, but on a custom accelerator
-instead of a commodity GPU.
+operate on sparse point-cloud coordinates; sparse matrix
+multiplication~\cite{dtcspmm,maxkgnn,sputnik} targets structural sparsity in
+graphs or pruned weights; structured weight pruning~\cite{sparse24} exploits
+fixed patterns; sparse-format compilers~\cite{taco,sparsetir} encode sparsity
+in tensor formats. DPACS~\cite{dpacs} targets the same dynamic 2D spatial
+sparsity but designs a custom dataflow accelerator to handle the resulting
+irregular access patterns. Our characterization (\S\ref{sec:char:reduction})
+shows that on commodity GPUs the irregularity is confined to row-level
+indirection outside the reduction loop, so a worklist-driven execution model
+achieves dense-level throughput without hardware changes.
 
-Some 3D systems~\cite{spconv2,torchsparsepp} compute through
-coordinate-indexed fused GEMM~\cite{cutlass}, where an index array derived
-from coordinate maps redirects the position dimension of a tiled GEMM. It seemingly coincides with \sysname's
-goal, but 3D sparse convolution requires explicit coordinate metadata because
-its tensors are represented as sparse coordinate sets. Constructing the index
-array incurs hashing, sorting, and global scans that frequently dominate
-per-layer latency over the GEMM itself~\cite{torchsparsepp,minuet}, making
-construction cost one of the central research problems in the 3D
-community; thus directly introducing coordinate indirection into 2D convolution
-which already tiles densely appears unattractive. 2D masked convolution, however, presents a structurally simpler
-mapping problem: the output grid is regular, the mask is a bitmap, and each
-coordinate's receptive-field addresses follow from fixed grid arithmetic, so
-the coordinate-map machinery of 3D systems is unnecessary. \sysname exploits
-this simpler mapping by replacing the coordinate source without altering the
-tiled reduction.
+
+% Some 3D systems~\cite{spconv2,torchsparsepp} compute through
+% coordinate-indexed fused GEMM~\cite{cutlass}, where an index array derived
+% from coordinate maps redirects the position dimension of a tiled GEMM. It seemingly coincides with \sysname's
+% goal, but 3D sparse convolution requires explicit coordinate metadata because
+% its tensors are represented as sparse coordinate sets. Constructing the index
+% array incurs hashing, sorting, and global scans that frequently dominate
+% per-layer latency over the GEMM itself~\cite{torchsparsepp,minuet}, making
+% construction cost one of the central research problems in the 3D
+% community; thus directly introducing coordinate indirection into 2D convolution
+% which already tiles densely appears unattractive. 2D masked convolution, however, presents a structurally simpler
+% mapping problem: the output grid is regular, the mask is a bitmap, and each
+% coordinate's receptive-field addresses follow from fixed grid arithmetic, so
+% the coordinate-map machinery of 3D systems is unnecessary. \sysname exploits
+% this simpler mapping by replacing the coordinate source without altering the
+% tiled reduction.
