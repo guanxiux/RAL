@@ -1,37 +1,29 @@
-\begin{table}[!ht]
+\begin{table}[!t]
   \centering
-  \caption{YOLOv8n latency decomposition under stream-level
-  batching on RTX~3080. Each sequence is split into disjoint temporal
-  streams; each batch combines one current frame per stream and advances
-  their states independently. Stage definitions, units, and cell format follow
-  Table~\ref{tab:cost-decomposition}.}
-  \Description{A table compares Dense, Tile skipping, Gather-scatter,
-  and WISEConv at batch sizes one, four, and eight. Each row gives
-  amortized total latency per frame and its division among worklist
-  construction, convolution, elementwise, and other work.}
+  \caption{YOLOv8m latency decomposition under stream-level batching (RTX~3080, FP32). Each batch
+  combines one current frame of each of $B$ disjoint temporal streams; times are per frame. Stage
+  definitions and cell format follow Table~\ref{tab:cost-decomposition}.}
+  \Description{A table compares Dense, Tile skipping, Gather-scatter and WISEConv at batch sizes one and
+  four, dividing the per-frame latency into construction, convolution, gather and scatter, other GPU work,
+  and GPU idle time.}
   \label{tab:batch-cost-decomposition}
   \footnotesize
-  \setlength{\tabcolsep}{2.4pt}
-  \renewcommand{\arraystretch}{1.15}
-  \begin{tabular}{@{}c c c c c c c@{}}
+  \setlength{\tabcolsep}{1.5pt}
+  \renewcommand{\arraystretch}{1.13}
+  \begin{tabular*}{\columnwidth}{@{\extracolsep{\fill}}c l c c c c c c@{}}
     \hline
-      & \textbf{System} & \textbf{Tot.} & \textbf{Cons.} &
-    \textbf{Conv.} & \textbf{Elem.} & \textbf{Other} \\
+      & \textbf{System} & \textbf{Tot.} & \textbf{Cons.} & \textbf{Conv.} & \textbf{G/S} &
+      \textbf{Other} & \textbf{Idle} \\
     \hline
-    \multirow{4}{*}{\rotatebox[origin=c]{90}{Batch size=1}} & Dense & 2.82 & \textemdash{} & 2.32(82.0\%) & 0.39(13.8\%) & 0.12(4.2\%) \\
-    & Tile skipping & 3.52 & \textemdash{} & 2.89(82.1\%) & 0.31(8.9\%) & 0.31(9.0\%) \\
-    & Gather & 12.60 & \textemdash{} & 3.82(30.3\%) & 1.30(10.3\%) & 7.48(59.4\%) \\
-    & \textbf{WISEConv} & 1.66 & 0.12(7.5\%) & 0.99(59.5\%) & 0.33(19.9\%) & 0.22(13.1\%) \\
+    \multirow{4}{*}{\rotatebox[origin=c]{90}{\strut $B{=}1$}} & Dense & 10.76 & \textemdash{} & 9.68\,(90) & \textemdash{} & 1.08\,(10) & \textemdash{} \\
+     & Tile skipping & 12.51 & \textemdash{} & 11.70\,(94) & \textemdash{} & 0.81\,(6) & \textemdash{} \\
+     & Gather-scatter & 12.74 & 0.37\,(3) & 1.68\,(13) & 1.58\,(12) & 0.84\,(7) & 8.26\,(65) \\
+     & \textbf{WISEConv} & 3.00 & 0.17\,(6) & 2.27\,(76) & \textemdash{} & 0.56\,(19) & \textemdash{} \\
     \hline
-    \multirow{4}{*}{\rotatebox[origin=c]{90}{Batch size=4}} & Dense & 1.82 & \textemdash{} & 1.38(75.4\%) & 0.31(17.0\%) & 0.14(7.6\%) \\
-    & Tile skipping & 1.69 & \textemdash{} & 1.17(69.2\%) & 0.27(15.7\%) & 0.26(15.1\%) \\
-    & Gather & 6.44 & \textemdash{} & 1.92(29.8\%) & 0.78(12.1\%) & 3.74(58.1\%) \\
-    & \textbf{WISEConv} & 1.02 & 0.03(3.1\%) & 0.58(56.6\%) & 0.23(22.8\%) & 0.18(17.6\%) \\
+    \multirow{4}{*}{\rotatebox[origin=c]{90}{\strut $B{=}4$}} & Dense & 11.04 & \textemdash{} & 9.90\,(90) & \textemdash{} & 1.12\,(10) & 0.02\,(0) \\
+     & Tile skipping & 5.04 & \textemdash{} & 4.46\,(88) & \textemdash{} & 0.59\,(12) & \textemdash{} \\
+     & Gather-scatter & 4.50 & 0.13\,(3) & 1.42\,(32) & 1.50\,(33) & 0.56\,(12) & 0.89\,(20) \\
+     & \textbf{WISEConv} & 1.88 & 0.05\,(3) & 1.49\,(79) & \textemdash{} & 0.33\,(18) & 0.01\,(0) \\
     \hline
-    \multirow{4}{*}{\rotatebox[origin=c]{90}{Batch size=8}} & Dense & 1.69 & \textemdash{} & 1.20(70.9\%) & 0.33(19.5\%) & 0.16(9.6\%) \\
-    & Tile skipping & 1.43 & \textemdash{} & 0.92(64.0\%) & 0.26(18.3\%) & 0.25(17.7\%) \\
-    & Gather & 4.06 & \textemdash{} & 1.14(28.0\%) & 0.51(12.6\%) & 2.41(59.4\%) \\
-    & \textbf{WISEConv} & 0.90 & 0.02(1.7\%) & 0.49(54.3\%) & 0.22(24.0\%) & 0.18(19.9\%) \\
-    \hline
-  \end{tabular}
+  \end{tabular*}
 \end{table}

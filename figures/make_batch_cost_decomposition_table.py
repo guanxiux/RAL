@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generate the stream-batching decomposition LaTeX table from CSV."""
+"""Generate the stream-batching latency-decomposition table (YOLOv8m, RTX 3080, FP32) from batch_cost_decomposition.csv."""
 
 from __future__ import annotations
 
@@ -10,88 +10,54 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 SOURCE = HERE / "batch_cost_decomposition.csv"
 OUTPUT = HERE / "batch_cost_decomposition_table.tex"
-
-SYSTEMS = ("dense", "tile_skip", "gather_scatter", "wiseconv")
-BATCH_SIZES = (1, 4, 8)
-CATEGORIES = ("construction", "convolution", "elementwise", "other")
-TABLE_SYSTEM_LABELS = {
-    "dense": "Dense",
-    "tile_skip": "Tile skipping",
-    "gather_scatter": "Gather",
-    "wiseconv": "WISEConv",
-}
+FIELDS = ("construction_ms", "convolution_ms", "gather_ms", "other_ms", "idle_ms")
+BATCH_SIZES = (1, 4)
 
 
-def stage_cell(row: dict, category: str) -> str:
-    if category == "construction" and row["construction_applicable"] != "true":
+def cell(row: dict, field: str) -> str:
+    v = float(row[field])
+    if v < 0.005:
         return r"\textemdash{}"
-    milliseconds = float(row[f"{category}_ms_per_frame"])
-    percent = float(row[f"{category}_percent"])
-    return rf"{milliseconds:.2f}({percent:.1f}\%)"
+    return f"{v:.2f}\\,({100 * v / float(row['total_ms']):.0f})"
 
 
 def make_table(rows: list[dict]) -> str:
-    expected = {
-        (batch_size, system)
-        for batch_size in BATCH_SIZES
-        for system in SYSTEMS
-    }
-    by_key = {
-        (int(row["batch_size"]), str(row["system"])): row for row in rows
-    }
-    if len(rows) != len(expected) or set(by_key) != expected:
-        raise ValueError("paper batch-decomposition CSV has unexpected rows")
-
     lines = [
-        r"\begin{table}[!ht]",
+        r"\begin{table}[!t]",
         r"  \centering",
-        r"  \caption{YOLOv8n latency decomposition under stream-level",
-        r"  batching on RTX~3080. Each sequence is split into disjoint temporal",
-        r"  streams; each batch combines one current frame per stream and advances",
-        r"  their states independently. Stage definitions, units, and cell format follow",
-        r"  Table~\ref{tab:cost-decomposition}.}",
-        r"  \Description{A table compares Dense, Tile skipping, Gather-scatter,",
-        r"  and WISEConv at batch sizes one, four, and eight. Each row gives",
-        r"  amortized total latency per frame and its division among worklist",
-        r"  construction, convolution, elementwise, and other work.}",
+        r"  \caption{YOLOv8m latency decomposition under stream-level batching (RTX~3080, FP32). Each batch",
+        r"  combines one current frame of each of $B$ disjoint temporal streams; times are per frame. Stage",
+        r"  definitions and cell format follow Table~\ref{tab:cost-decomposition}.}",
+        r"  \Description{A table compares Dense, Tile skipping, Gather-scatter and WISEConv at batch sizes one and",
+        r"  four, dividing the per-frame latency into construction, convolution, gather and scatter, other GPU work,",
+        r"  and GPU idle time.}",
         r"  \label{tab:batch-cost-decomposition}",
         r"  \footnotesize",
-        r"  \setlength{\tabcolsep}{2.4pt}",
-        r"  \renewcommand{\arraystretch}{1.15}",
-        r"  \begin{tabular}{@{}c c c c c c c@{}}",
+        r"  \setlength{\tabcolsep}{1.5pt}",
+        r"  \renewcommand{\arraystretch}{1.13}",
+        r"  \begin{tabular*}{\columnwidth}{@{\extracolsep{\fill}}c l c c c c c c@{}}",
         r"    \hline",
-        r"      & \textbf{System} & \textbf{Tot.} & \textbf{Cons.} &",
-        r"    \textbf{Conv.} & \textbf{Elem.} & \textbf{Other} \\",
+        r"      & \textbf{System} & \textbf{Tot.} & \textbf{Cons.} & \textbf{Conv.} & \textbf{G/S} &",
+        r"      \textbf{Other} & \textbf{Idle} \\",
         r"    \hline",
     ]
-
-    for batch_size in BATCH_SIZES:
-        for system_index, system in enumerate(SYSTEMS):
-            row = by_key[(batch_size, system)]
-            prefix = (
-                rf"    \multirow{{4}}{{*}}{{\rotatebox[origin=c]{{90}}{{Batch size={batch_size}}}}}"
-                if system_index == 0
-                else "   "
-            )
-            system_label = TABLE_SYSTEM_LABELS[system]
-            if system == "wiseconv":
-                system_label = rf"\textbf{{{system_label}}}"
-            cells = [
-                f"{float(row['total_latency_ms_per_frame']):.2f}",
-                *(stage_cell(row, category) for category in CATEGORIES),
-            ]
-            lines.append(
-                f"{prefix} & {system_label} & " + " & ".join(cells) + r" \\"
-            )
-        lines.append(r"    \hline")
-
-    lines.extend(
-        [
-            r"  \end{tabular}",
-            r"\end{table}",
-            "",
-        ]
-    )
+    for bi, batch in enumerate(BATCH_SIZES):
+        group = [r for r in rows if int(r["batch_size"]) == batch]
+        if len(group) != 4:
+            raise ValueError(f"batch {batch}: expected 4 rows")
+        if bi:
+            lines.append(r"    \hline")
+        for i, row in enumerate(group):
+            lead = rf"\multirow{{4}}{{*}}{{\rotatebox[origin=c]{{90}}{{\strut $B{{=}}{batch}$}}}}" if i == 0 else ""
+            name = rf"\textbf{{{row['system_label']}}}" if row["system"] == "wiseconv" else row["system_label"]
+            lines.append(f"    {lead} & {name} & {float(row['total_ms']):.2f} & " +
+                         " & ".join(cell(row, f) for f in FIELDS) + r" \\")
+    lines.extend([
+        r"    \hline",
+        r"  \end{tabular*}",
+        r"\end{table}",
+        "",
+    ])
     return "\n".join(lines)
 
 

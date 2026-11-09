@@ -1,18 +1,18 @@
 \begin{table}[htb]
   \centering
-  \caption{Peak live GPU allocation (MiB) on RTX~3080.}
+  \caption{Peak live GPU allocation (MiB) on RTX~3080 (FP32; batch 1 unless noted).}
   \label{tab:memory}
   \footnotesize
   \setlength{\tabcolsep}{4pt}
   \renewcommand{\arraystretch}{1.08}
   \begin{tabular}{@{}lrrrr@{}}
     \hline
-    \textbf{System} & \textbf{FireFlowNet} & \textbf{YOLOv8n} & \textbf{YOLOv8m} & \textbf{DynConv} \\
+    \textbf{System} & \textbf{FireFlowNet} & \textbf{YOLOv8m} & \textbf{YOLOv8m b4} & \textbf{DynConv} \\
     \hline
-    Dense & 34.9 & 76.5 & 195.1 & 31.8 \\
-    Tile skipping & 148.4 & 240.8 & 752.6 & 31.8 \\
-    Gather-scatter & 145.1 & 238.7 & 824.8 & 27.4 \\
-    \textbf{WISEConv} & 135.9 & 246.1 & 736.0 & 34.1 \\
+    Dense & 33.9 & 182.0 & 432.2 & 56.8 \\
+    Tile skipping & 141.8 & 751.0 & 2701.0 & 53.8 \\
+    Gather-scatter & 197.0 & 834.8 & 2737.0 & 57.2 \\
+    \textbf{WISEConv} & 128.6 & 763.9 & 2730.4 & 56.9 \\
     \hline
   \end{tabular}
 \end{table}

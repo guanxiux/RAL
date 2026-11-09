@@ -1,10 +1,10 @@
 \begin{table}[!t]
   \centering
   \caption{WISEConv $\eta$ decomposition and worklist-length statistics
-  on RTX~3080. The $n_{\mathcal{W}}$ percentiles are computed from worklist
+  on RTX~3080 (FP32; batch 1 unless noted). The $n_{\mathcal{W}}$ percentiles are computed from worklist
   lengths pooled across all layers and frames.}
   \Description{A table reports eta construct, eta compute, eta, and the
-  P10, P50, and P90 worklist lengths for FireFlowNet, YOLOv8n, YOLOv8m,
+  P10, P50, and P90 worklist lengths for FireFlowNet, YOLOv8m at batch 1 and 4,
   and DynConv on RTX 3080. Worklist-length statistics are computed from samples
   pooled across all layers and frames.}
   \label{tab:worklist-efficiency}
@@ -21,10 +21,10 @@
     \cline{5-7}
     & & & & \textbf{P10} & \textbf{P50} & \textbf{P90} \\
     \hline
-    FireFlowNet & 100.0\% & 99.8\% & 99.8\% & $1{,}303$ & $15{,}083$ & $33{,}880$ \\
-    YOLOv8n & 98.6\% & 99.7\% & 98.3\% & $76$ & $937$ & $5{,}937$ \\
-    YOLOv8m & 98.7\% & 99.5\% & 98.2\% & $75$ & $841$ & $6{,}105$ \\
-    DynConv & 100.0\% & 90.6\% & 90.6\% & $3$ & $43$ & $389$ \\
+    FireFlowNet & 100.0\% & 99.8\% & 99.8\% & $529$ & $13{,}651$ & $36{,}009$ \\
+    YOLOv8m & 100.0\% & 92.4\% & 92.4\% & $24$ & $261$ & $1{,}481$ \\
+    YOLOv8m b4 & 100.0\% & 98.1\% & 98.1\% & $184$ & $1{,}410$ & $7{,}256$ \\
+    DynConv & 100.0\% & 92.1\% & 92.1\% & $3$ & $43$ & $389$ \\
     \hline
   \end{tabular*}
 \end{table}

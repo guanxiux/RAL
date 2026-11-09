@@ -190,6 +190,8 @@ throughput is the product of the two axes, \sysname reaches 1.38--2.06$\times$
 the strongest competing effective throughput on RTX~3080 and 1.47--1.87$\times$
 on AGX~Orin.
 
+% TODO(user): Table~\ref{tab:worklist-efficiency} now reports wise2 (updatable plan) FireFlowNet, YOLOv8m b1 / b4
+% (WildTrack) and DynConv; eta_compute 99.8 / 92.4 / 98.1 / 92.1%. The prose below is still first-generation.
 Table~\ref{tab:worklist-efficiency} localizes \sysname's own loss on RTX~3080
 through the decomposition of Eq.~\ref{eq:eta-decomp}. $\eta_{\mathrm{construct}}$,
 the fraction of worklist entries that are required positions, stays at
@@ -246,6 +248,9 @@ selection alone does not lower latency without a fused datapath.
 % standalone counter survey.
 
 \paragraph{Memory overhead.}
+% TODO(user): Table~\ref{tab:memory} now reports wise2 FP32 (FireFlowNet, YOLOv8m b1 / b4, DynConv; peak from before
+% the graph capture). DynConv: every path within 53.8--57.2 MiB (gather-scatter no longer the most compact); YOLOv8m b4
+% sparse paths 2.70--2.74 GB. The prose below is still first-generation.
 Table~\ref{tab:memory} reports peak live GPU allocation.
 FireFlowNet, YOLOv8n, and YOLOv8m use temporal mask policies that retain
 previous-frame activations for differencing, so every sparse path allocates
@@ -321,6 +326,9 @@ a larger share of the total under FP16.
 \input{figures/batch_cost_decomposition_table}
 
 \paragraph{Stream-level batching.}
+% TODO(user): Table~\ref{tab:batch-cost-decomposition} now reports wise2 YOLOv8m b1 / b4 (FP32; b8 not rerun on the
+% new mainline). Gather-scatter b4: the whole-video E2E is 1.15x its clip latency (eager path), scaled like the rest.
+% The prose below is still first-generation (YOLOv8n, b8).
 Table~\ref{tab:batch-cost-decomposition} reports per-frame latency
 decomposition for YOLOv8n on RTX~3080 at batch sizes 1, 4, and~8. \sysname
 remains fastest at every batch size, but its lead over the fastest competing

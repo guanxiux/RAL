@@ -1,92 +1,74 @@
 #!/usr/bin/env python3
-"""Build the paper-facing peak-memory table data from the unified logs.
+"""Build the paper-facing peak-memory data (wise2, RTX 3080, FP32) from the collected logs.
 
-Reads ``logs/peak_memory/<workload>/<device>/<dtype>/<run>/summary.json`` for
-every workload/system cell and emits ``memory.csv``.  The reported value is the
-peak live allocation (``peak_allocated_mb``), i.e. the high-water mark of tensors
-actually alive on the device, rather than the allocator-reserved pool (which is
-quantized to 2~MiB segments).
-DynConv's gather-scatter backend is stored under the ``dynconv`` cell key;
-every other workload uses ``gather_scatter``.
+Sources (logs/wise2_eval/rtx_3080_sm86/, experiments/wise2/report/collect.py):
+  runs/latency/<fireflownet|dynconv_pose>/fp32/memory2-<path>/summary.json   the E2E latency protocol, one round
+  <wildtrack640_yolov8m|_b4>_select/micro_upd/memory2_fp32.json            e2e_breakdown.py (16 clips x 250 frames at
+                                                                             batch 1, 4 x 4 streams x 125 frames at batch 4)
+The value is the peak live allocation (torch.cuda.max_memory_allocated) from before the CUDA-graph capture to the end
+of the timed frames (a graph's activations are allocated at capture; replays do not allocate), without the preloaded
+input frames; for runs over several sequences the largest sequence peak.  FP32 only: in FP16 the cuDNN workspace of the
+remaining dense convolutions depends on cudnn.benchmark's per-run choice (up to +120 MiB on DynConv).
 """
-
 from __future__ import annotations
 
-import argparse
 import csv
 import json
 from pathlib import Path
 
-
+# ---- CONFIG
 HERE = Path(__file__).resolve().parent
 REPO = HERE.parents[1]
-LOGS = REPO / "logs"
+EV = REPO / "logs/wise2_eval/rtx_3080_sm86"
+DTYPE = "fp32"
 OUT_CSV = HERE / "memory.csv"
-
+PATHS = ("dense", "tile_skip", "gather_scatter", "wiseconv")
+# (key, label, source kind, source)
 WORKLOADS = (
-    ("fireflownet", "FireFlowNet"),
-    ("yolov8n", "YOLOv8n"),
-    ("yolov8m", "YOLOv8m"),
-    ("dynconv", "DynConv"),
+    ("fireflownet", "FireFlowNet", "run", "fireflownet"),
+    ("yolov8m", "YOLOv8m", "breakdown", "wildtrack640_yolov8m_select"),
+    ("yolov8m_b4", "YOLOv8m b4", "breakdown", "wildtrack640_yolov8m_b4_select"),
+    ("dynconv", "DynConv", "run", "dynconv_pose"),
 )
-# Summary cell key for each column.
-COLUMNS = {
-    "dense": "dense",
-    "tile_skip": "tile_skip",
-    "gather_scatter": "gather_scatter",
-    "wiseconv": "wiseconv",
-}
-GATHER_ALIASES = ("gather_scatter", "dynconv")
 
 
-def load_json(path: Path) -> dict:
-    with path.open(encoding="utf-8") as source:
-        return json.load(source)
+def peaks(kind: str, src: str) -> dict:
+    if kind == "breakdown":
+        b = json.loads((EV / src / f"micro_upd/memory2_{DTYPE}.json").read_text())["backends"]
+        return {k: v["peak_mib"] for k, v in b.items()}
+    out = {}
+    for path in PATHS:
+        name = "dynconv" if src == "dynconv_pose" and path == "gather_scatter" else path
+        s = json.loads((EV / f"runs/latency/{src}/{DTYPE}/memory2-{name}/summary.json").read_text())
+        found = []
 
-
-def cell_value(cells: dict, key: str) -> float | None:
-    if key == "gather_scatter":
-        for alias in GATHER_ALIASES:
-            if alias in cells:
-                return float(cells[alias]["peak_allocated_mb"])
-        return None
-    if key not in cells:
-        return None
-    return float(cells[key]["peak_allocated_mb"])
+        def walk(v):  # every sequence's peak_mib
+            if isinstance(v, dict):
+                for k, u in v.items():
+                    if k == "peak_mib":
+                        found.append(float(u))
+                    else:
+                        walk(u)
+            elif isinstance(v, list):
+                for u in v:
+                    walk(u)
+        walk(s)
+        out[path] = max(found)
+    return out
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--device", default="3080")
-    parser.add_argument("--dtype", default="fp32")
-    parser.add_argument("--run", default="full")
-    args = parser.parse_args()
-
     rows = []
-    for workload, label in WORKLOADS:
-        path = LOGS / "peak_memory" / workload / args.device / args.dtype \
-            / args.run / "summary.json"
-        if not path.is_file():
-            raise FileNotFoundError(path)
-        cells = load_json(path)["cells"]
-        row = {"workload": workload, "workload_label": label}
-        for column, key in COLUMNS.items():
-            value = cell_value(cells, key)
-            row[column] = "" if value is None else f"{value:.12g}"
-        rows.append(row)
-
-    temporary = OUT_CSV.with_suffix(OUT_CSV.suffix + ".tmp")
-    with temporary.open("w", newline="", encoding="utf-8") as destination:
-        writer = csv.DictWriter(
-            destination, fieldnames=list(rows[0]), lineterminator="\n")
-        writer.writeheader()
-        writer.writerows(rows)
-    temporary.replace(OUT_CSV)
+    for key, label, kind, src in WORKLOADS:
+        p = peaks(kind, src)
+        rows.append({"workload": key, "workload_label": label, **{k: f"{p[k]:.12g}" for k in PATHS}})
+    with OUT_CSV.open("w", newline="", encoding="utf-8") as out:
+        w = csv.DictWriter(out, fieldnames=list(rows[0]), lineterminator="\n")
+        w.writeheader()
+        w.writerows(rows)
     print(f"wrote {OUT_CSV}")
-    for row in rows:
-        print(f"{row['workload_label']:<12} dense={row['dense']:<7} "
-              f"tile={row['tile_skip']:<7} gather={row['gather_scatter']:<7} "
-              f"wise={row['wiseconv']}")
+    for r in rows:
+        print(f"{r['workload_label']:<12} " + " ".join(f"{k}={float(r[k]):.1f}" for k in PATHS))
 
 
 if __name__ == "__main__":

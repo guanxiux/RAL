@@ -10,7 +10,7 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 SOURCE = HERE / "worklist_efficiency.csv"
 OUTPUT = HERE / "worklist_efficiency_table.tex"
-WORKLOADS = ("fireflownet", "yolov8n", "yolov8m", "dynconv_pose")
+WORKLOADS = ("fireflownet", "yolov8m", "yolov8m_b4", "dynconv_pose")
 
 
 def percentage(value: str) -> str:
@@ -30,10 +30,10 @@ def make_table(rows: list[dict]) -> str:
         r"\begin{table}[!t]",
         r"  \centering",
         r"  \caption{WISEConv $\eta$ decomposition and worklist-length statistics",
-        r"  on RTX~3080. The $n_{\mathcal{W}}$ percentiles are computed from worklist",
+        r"  on RTX~3080 (FP32; batch 1 unless noted). The $n_{\mathcal{W}}$ percentiles are computed from worklist",
         r"  lengths pooled across all layers and frames.}",
         r"  \Description{A table reports eta construct, eta compute, eta, and the",
-        r"  P10, P50, and P90 worklist lengths for FireFlowNet, YOLOv8n, YOLOv8m,",
+        r"  P10, P50, and P90 worklist lengths for FireFlowNet, YOLOv8m at batch 1 and 4,",
         r"  and DynConv on RTX 3080. Worklist-length statistics are computed from samples",
         r"  pooled across all layers and frames.}",
         r"  \label{tab:worklist-efficiency}",

@@ -27,23 +27,21 @@ def cell(row: dict, field: str) -> str:
 
 
 def make_table(rows: list[dict]) -> str:
-    by_workload = {row["workload"]: row for row in rows}
     lines = [
         r"\begin{table}[htb]",
         r"  \centering",
-        r"  \caption{Peak live GPU allocation (MiB) on RTX~3080.}",
+        r"  \caption{Peak live GPU allocation (MiB) on RTX~3080 (FP32; batch 1 unless noted).}",
         r"  \label{tab:memory}",
         r"  \footnotesize",
         r"  \setlength{\tabcolsep}{4pt}",
         r"  \renewcommand{\arraystretch}{1.08}",
         r"  \begin{tabular}{@{}lrrrr@{}}",
         r"    \hline",
-        r"    \textbf{System} & \textbf{FireFlowNet} & \textbf{YOLOv8n} & "
-        r"\textbf{YOLOv8m} & \textbf{DynConv} \\",
+        r"    \textbf{System} & " + " & ".join(rf"\textbf{{{row['workload_label']}}}" for row in rows) + r" \\",
         r"    \hline",
     ]
     for field, label in SYSTEMS:
-        cells = [cell(by_workload[row["workload"]], field) for row in rows]
+        cells = [cell(row, field) for row in rows]
         if field == "wiseconv":
             label = rf"\textbf{{{label}}}"
         lines.append(f"    {label} & " + " & ".join(cells) + r" \\")
