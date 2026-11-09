@@ -1,12 +1,41 @@
 \section{\sysname Design}
 \label{sec:design}
 
-The design follows the worklist from its construction
-(\S\ref{sec:design:construct}) and propagation across compatible operators
-(\S\ref{sec:design:reuse}) to its consumption by the convolution pipeline
-(\S\ref{sec:design:compute}).
+%% ================================================================
+\subsection{Overview}
+\label{sec:overview}
 
-%% ----------------------------------------------------------------
+% TODO: Replace this placeholder with the final two-stage overview figure.
+\begin{figure*}[t]
+  \centering
+  \includegraphics[width=0.8\textwidth]{figures/wiseconv_overview.png}
+  \caption{Overview of \sysname and baseline execution paths.
+  % TODO: update caption for new figure with tile selection
+  (a)~Masked convolution. (b)~Tile skipping. (c)~Gather-scatter.
+  (d)~\sysname: \ding{192}~constructs a tile-local worklist from the mask,
+  \ding{193}~consumes it via worklist-driven tiled execution.}
+  \Description{Placeholder.}
+  \label{fig:overview}
+\end{figure*}
+
+\sysname exploits the fact that dense tiled convolution is driven by output
+coordinates: each coordinate determines the receptive-field reads and output
+write, while the reduction over channels and kernel offsets remains regular.
+Replacing the dense coordinate sequence with an active-output worklist
+introduces position-level selectivity into the tiled pipeline without altering
+the reduction datapath (Figure~\ref{fig:overview}d).
+
+Translating this into end-to-end latency reduction requires co-designing two
+stages. The construction stage (\S\ref{sec:design:construct}) derives the
+worklist from the mask, and compatible operators reuse it to avoid repeated
+construction (\S\ref{sec:design:reuse}). The compute stage
+(\S\ref{sec:design:compute}) consumes the worklist through a persistent grid
+with the dense reduction datapath; because the worklist length varies per
+frame and is visible only on the device, a cost-aware mechanism selects the
+tile configuration without host involvement
+(\S\ref{sec:design:select}).
+
+%% ================================================================
 \subsection{Tile-Local Worklist Construction}
 \label{sec:design:construct}
 \label{sec:design:construct:compact}
@@ -96,6 +125,7 @@ contiguity, not compute-tile-to-construction-tile alignment. As shown in
 throughput comparable to global ordering, making the additional ordering pass
 an unfavorable end-to-end trade-off.
 
+%% ================================================================
 \subsection{Cross-Operator Worklist Reuse}
 \label{sec:design:reuse}
 
@@ -151,129 +181,20 @@ lengths variable across layers and frames. Compute must therefore handle a
 dynamic problem size.
 
 %% ================================================================
-%% COMPUTE SECTION — TO BE WRITTEN
-%% ================================================================
-%%
-%% Subsection title: On-Device Adaptive Stream-K Execution
-%% The kernel reads its own worklist length on-device, looks up a precomputed
-%% policy table, and selects its decomposition mode (DP / aligned Split-K /
-%% hybrid Stream-K) — no host readback, no prediction.
-%% Stream-K: Osama et al., PPoPP 2023; implemented in CUTLASS 3.x.
-%%
-%% ----------------------------------------------------------------
-%% PARAGRAPH PLAN (5 paragraphs + Algorithm + Figure)
-%% ----------------------------------------------------------------
-%%
-%% Para 1: GEMM mapping + static launch property
-%%   Intent: establish compute's mathematical object and the static-launch invariant.
-%%   - Worklist-driven conv as implicit GEMM: M = n_W positions, N = C_out, K = k^2 C_in
-%%   - Gather-at-load from dense feature tensor, no im2col materialization
-%%   - Physical kernel configuration (tile shape, pipeline depth, grid size) fixed
-%%     per convolution shape at deployment; host launch path is worklist-length-agnostic
-%%   - All per-frame adaptation occurs inside the kernel, driven by the
-%%     device-resident worklist length written by construction
-%%   - Transition: static launch + variable worklist length → scheduling problem
-%%
-%% Para 2: Variable-length scheduling problem
-%%   Intent: setup tension — motivate why adaptation is needed.
-%%   - Dense conv: static tile count → offline-optimal decomposition (DP or fixed Split-K)
-%%   - Worklist conv: M-axis tile count proportional to per-frame activity, varies 10-100x
-%%   - Two symmetric failure regimes:
-%%     (a) High activity, many tiles → K-parallelism (Split-K) is pure overhead
-%%     (b) Low activity, few tiles → data-parallel leaves SMs idle (wave quantization)
-%%   - Need: per-frame scheduling policy, decided on-device (worklist length is a
-%%     device scalar; readback to host would reintroduce synchronization)
-%%   - This paragraph states the problem only; the solution follows.
-%%
-%% Para 3: Stream-K context (3-4 sentences)
-%%   Intent: give reviewers enough vocabulary for the three modes. Cite prior work.
-%%   NOT a full tutorial — just DP / Split-K / hybrid Stream-K and their tradeoffs.
-%%   - Dense GEMM scheduling evolution: DP → Split-K → Stream-K
-%%   - Hybrid variant (cite Thakkar et al. / CUTLASS): DP prefix for full waves,
-%%     Stream-K tail for the partial wave → eliminates wave quantization, limits
-%%     reduction overhead to one wave of CTAs
-%%   - Transition: "These strategies assume a tile count known at kernel launch.
-%%     When tile count is determined on-device by a preceding construction stage,
-%%     the scheduling decision itself must move onto the device."
-%%
-%% Para 4: Device-resident mode selection (core contribution paragraph)
-%%   Intent: the mechanism. Points to Algorithm 2 for formal description.
-%%
-%%   Offline calibration (two orthogonal argmins, pruning perspective):
-%%
-%%     Starting assumption: every module runs the full fused three-mode kernel.
-%%
-%%     Step 1 — Envelope selection (per shape, once):
-%%       e*(sigma, d) = argmin_{e in E} T(sigma, d, e, n_full, DP)
-%%       - E = physical envelope catalog (tile shape, pipeline depth, occupancy); |E| ~ 4-6
-%%       - Selected at full occupancy: compute-bound regime where per-tile throughput
-%%         difference is largest. Low-activity bottleneck (parallelism) handled by
-%%         mode selection, orthogonal to envelope.
-%%
-%%     Step 2 — Policy table construction (per tile count, within selected e*):
-%%       P[t] = argmin_{(m,s) in M} T(sigma, d, e*, t * B_M, m, s)
-%%       - M = {(DP,1)} ∪ {(Split-K, s) : s in {2,4,8,...}} ∪ {(Stream-K)}; |M| ~ 6-8
-%%       - Indexed by tile count t = ceil(n_W / B_M); profiled with synthetic worklists
-%%       - Two argmins search different spaces, both offline, both over measured latency
-%%
-%%     Step 3 — Dead-mode elimination (pruning):
-%%       Inspect P[t] for all t. If every entry maps to DP, the partial-K scheduling
-%%       paths (mode branching, policy table lookup, partial workspace, last-arriver
-%%       fixup) are pruned from the fused kernel, producing a dedicated DP kernel.
-%%       This is deployment-time dead-path elimination, not a separate design branch.
-%%       → Design section only describes the fused kernel.
-%%       → Implementation mentions: "shapes whose policy table contains only DP entries
-%%          are specialized into a dedicated kernel that elides mode branching and
-%%          partial reduction."
-%%       → YOLOv8n: 31/60 dedicated (1x1 and shallow 3x3, K_iters ≤ 9),
-%%                  29/60 fused (deep 3x3, K_iters ≥ 18).
-%%
-%%   Runtime mechanism:
-%%   - Construction writes n_W as device scalar
-%%   - Compute kernel reads n_W at entry → computes tile count → looks up P[t]
-%%   - Policy table maps tile count to three regimes:
-%%     * Data-parallel: tile count >= several waves → each tile owns full K reduction
-%%     * Aligned Split-K: tile count < one wave, K deep enough → uniform K-partition
-%%     * Hybrid Stream-K: DP prefix for full waves, Stream-K tail for partial wave
-%%   - Three modes share one kernel binary and reduction datapath; only
-%%     CTA-to-iteration-range mapping differs
-%%
-%%   Dead-mode elimination (one sentence, detail in Implementation):
-%%   - If P[t] maps to DP for all t, the partial-K scheduling paths are pruned,
-%%     producing a dedicated kernel that elides mode branching and partial reduction.
-%%
-%% Para 5: Last-arriver partial reduction (2-3 sentences)
-%%   Intent: close the loop on how Split-K/Stream-K partials are resolved.
-%%   - Multiple CTAs sharing a tile's K range → each writes partial to workspace
-%%   - Per-tile completion tracking: last arriver reduces + writes output
-%%   - No global barrier
-%%
-%% ----------------------------------------------------------------
-%% ALGORITHM 2: Device-Resident Worklist Computation
-%% ----------------------------------------------------------------
-%% Shows the kernel's runtime decision flow, NOT the GEMM mainloop.
-%% Highlights vs vanilla Stream-K:
-%%   1. Lines 1-2: device-side runtime scheduling (read n_W from device, lookup P[t])
-%%   2. Lines 4-20: three-mode branching in one kernel (DP / Split-K / Stream-K)
-%%   3. Line 14: G = persistent grid size (occupancy-limited), not host-passed
-%%   4. Lines 21-23: last-arriver fixup without grid sync
-%%
-%% ----------------------------------------------------------------
-%% FIGURE: Three-mode decomposition diagram
-%% ----------------------------------------------------------------
-%% Placed near Para 4. Three columns showing the same worklist (e.g. 5 tiles x
-%% 8 K-iters) decomposed under DP / aligned Split-K / hybrid Stream-K.
-%% Axes: CTA (vertical) x iteration range (horizontal), color = output tile.
-%% Visual, not pseudocode — lets Para 4 skip iteration-space details.
-%%
-%% ================================================================
-
-%% ----------------------------------------------------------------
-\subsection{On-Device Adaptive Stream-K Execution}
+\subsection{Worklist-Driven Tiled Compute}
 \label{sec:design:compute}
 
+% TODO: rewrite this section per the new Design framework (CLAUDE.md §Design §3).
+% Content: implicit GEMM mapping (M = n_W, N = C_out, K = k^2 C_in),
+% worklist indirection changes only each row's base address,
+% tile configuration = (B_M, B_N, B_K, pipeline depth, decomposition mode)
+% as an indivisible point — Stream-K is a configuration dimension not a
+% separate adaptive mechanism. Persistent grid reads device-resident n_W.
+% This section does NOT discuss how to select configurations.
+% Algorithm 2 should be simplified to show persistent grid consuming worklist.
 
-
+%% --- Old adaptive Stream-K content (commented out) ---
+\begin{comment}
 Construction and reuse fix $\eta_{\mathrm{construct}}$; the compute stage
 controls $\eta_{\mathrm{compute}}$ and throughput~$T$. Dense convolution maps
 to an implicit GEMM with $M$ output positions, $N=C_{out}$ output channels, and
@@ -287,180 +208,16 @@ $K$-slice. Because $M$, $N$, and $K$ are static, the tile shape $(B_M, B_N)$,
 reduction step $B_K$, and split factor can be selected once offline by
 profiling and keeping the fastest.
 
-In worklist convolution, $N$ and $K$ remain static, but the
-$M$~dimension becomes $n_{\mathcal{W}}$, the device-resident worklist length
-written by construction, which varies by an order of magnitude or more across
-frames of a single layer. The offline assumption breaks: a single configuration
-cannot serve the full range. Two failure regimes bracket the problem. When
-activity is high and output tiles are plentiful, $K$-axis parallelism adds
-coordination and accumulation overhead without improving occupancy. When
-activity is low and tiles are scarce, data-parallel execution leaves
-streaming multiprocessors (SMs) without work because the tile count no longer
-fills a full \emph{wave} (the set of thread blocks that co-reside across all
-SMs), referred to as the problem of wave quantization.
-Adapting between these regimes requires knowing $n_{\mathcal{W}}$; transferring it to the host inserts a
-per-operator synchronization on the critical path.
+[... rest of old adaptive Stream-K text omitted for brevity ...]
+\end{comment}
 
-\sysname builds on Stream-$K$~\cite{streamk}, the established solution to wave
-quantization in dense GEMM. Stream-$K$ launches a \emph{persistent grid} of
-$g_{\mathrm{res}}$ blocks determined by the device's SM occupancy (not the
-tile count) and partitions all tiles'
-$K$-iterations into $S_k$ units consumed by grid stride; partial $K$-slices
-fill SMs that would otherwise sit idle after the data-parallel waves complete.
-Its hybrid variant~\cite{cutlass} restricts the $K$-splitting to the partial
-tail wave, handling complete waves data-parallel to avoid partial-reduction
-overhead where it is unnecessary. In worklist convolution the tile count
-changes every frame, so the wave boundary shifts with it. This shifting
-boundary is the operating point of \sysname's \emph{on-device adaptive
-Stream-$K$ execution}: the compute kernel reads the exact worklist length on
-the device, determines the current wave boundary, and selects between
-data-parallel, Stream-$K$, and hybrid Stream-$K$ decomposition accordingly,
-without host involvement.
+%% ================================================================
+\subsection{Cost-Aware Tile Selection}
+\label{sec:design:select}
 
-\sysname fixes the tile configuration~$\hat{q}^l=(B_M,B_N,B_K)$ per layer at
-deployment and adapts only the decomposition mode on-device. What changes per
-frame is how the $K$~reduction across output tiles is assigned to thread
-blocks, selected from three modes:
-\begin{itemize}
-  \item \emph{Data-parallel}: each block owns a complete output tile and
-    reduces the full $K$~range.
-  \item \emph{Stream-$K$}: each output tile's $K$-iterations are
-    partitioned into $S_k$ units; the persistent grid consumes all
-    units by grid stride, and partial results from blocks sharing
-    a tile are resolved through the workspace.
-  \item \emph{Hybrid Stream-$K$}: a data-parallel prefix handles complete
-    waves; a streaming tail distributes the remaining tiles' $K$-iterations
-    across one wave of blocks, eliminating partial-wave waste without applying
-    the streaming overhead to the entire grid.
-\end{itemize}
-
-Both $\hat{q}^l$ and the per-length mode choice are calibrated offline.
-\sysname selects~$\hat{q}^l$ from a small catalog~$\mathcal{Q}$ by profiling
-each configuration at the full worklist $\mathcal{W}^l_{\mathrm{full}}$ (all
-$|\mathcal{G}^l|$ output positions) and keeping the fastest. Let
-$t(q,\mathcal{W})$ denote the minimum kernel latency of configuration~$q$ on
-worklist~$\mathcal{W}$ over all mode candidates:
-\begin{equation}
-  \hat{q}^l
-  = \arg\min_{q\in\mathcal{Q}}\;
-    t(q,\;\mathcal{W}^l_{\mathrm{full}}).
-  \label{eq:tileconfig}
-\end{equation}
-At the full worklist $\eta_{\mathrm{compute}}\approx 1$, so this step
-essentially maximizes throughput~$T$, ensuring competitiveness with dense
-execution. The choice of $B_M$ also determines $\eta_{\mathrm{compute}}$ at
-every other worklist length: the issued slot count is
-$|\mathcal{C}|=B_M\lceil n^l_{\mathcal{W}}/B_M\rceil$, so
-$\eta_{\mathrm{compute}}=n^l_{\mathcal{W}}/|\mathcal{C}|$ can drop as
-$n^l_{\mathcal{W}}$ shrinks relative to~$B_M$. Fixing $B_M$ per layer is a
-necessary constraint, but per-shape profiling partially mitigates the cost:
-a large~$B_M$ on a small output grid often produces too few tiles to fill the device
-even at full worklist, so such layers naturally select a smaller~$B_M$ that
-also limits $\eta_{\mathrm{compute}}$ loss at low activity. The mode table below
-compensates for the remaining throughput gap by adapting the $K$-splitting
-strategy on-device.
-
-Within~$\hat{q}^l$, \sysname builds a \emph{policy table}~$P^l$ indexed by
-tile count $s=\lceil n^l_{\mathcal{W}}/B_M\rceil \times \lceil C_{out}/B_N\rceil$.
-Each entry stores a tail-tile count $s_{\mathrm{tail}}$ and a split
-factor~$S_k$: $s_{\mathrm{tail}}=0$ yields data-parallel execution,
-$s_{\mathrm{tail}}=s$ yields full Stream-$K$, and $0<s_{\mathrm{tail}}<s$
-yields hybrid Stream-$K$ with $s{-}s_{\mathrm{tail}}$ data-parallel prefix tiles.
-\sysname profiles a set of sampled tile counts and interpolates to fill the
-remaining entries:
-\begin{equation}
-  P^l[s]
-  = \arg\min_{s_{\mathrm{tail}},\,S_k}\;
-    t(\hat{q}^l,\;s,\;s_{\mathrm{tail}},\;S_k),
-  \label{eq:policy}
-\end{equation}
-where the minimization ranges over candidate tail-tile counts and split
-factors. All candidates process the same output tiles and differ only in how
-$K$-iterations are assigned to blocks, so $\eta_{\mathrm{compute}}$ is
-invariant and minimizing latency directly maximizes $\eta_{\mathrm{compute}}\,T$.
-
-Algorithm~\ref{alg:streamk} presents the hybrid mode, which subsumes the
-other two: $s_{\mathrm{tail}}=0$ yields data-parallel (empty tail), while
-$s_{\mathrm{tail}}=s$ yields full Stream-$K$ (no data-parallel prefix); the
-policy table selects among the three based on the current tile count.
-Algorithm~\ref{alg:streamk} omits boundary-tile padding when
-$n_{\mathcal{W}}$, $C_{in}$, or $C_{out}$ is not divisible by $B_M$, $B_K$,
-or $B_N$, respectively; the implementation masks out-of-bounds accesses in
-these tiles.
-
-Lines~1--4 of Algorithm~\ref{alg:streamk} read $n_{\mathcal{W}}$, derive
-the tile count, and look up $(s_{\mathrm{tail}}, S_k)$ from~$P^l$.
-The persistent grid first processes complete waves data-parallel
-(Lines~7--18): each block decodes its position and channel tile indices,
-reads $B_M$ output coordinates from the worklist $\mathcal{W}$, and reduces the full
-reduction depth, writing the result directly to the output.
-The remaining partial-wave tiles enter the Stream-$K$ tail
-(Lines~21--36): the reduction depth of each tile is partitioned among $S_k$
-contributors (the split factor selected by the policy table), and each block
-reduces its assigned slice into a pre-allocated workspace slot for that tile.
-Each slot holds a $B_M \times B_N$ partial accumulator in accumulation
-precision (typically FP32); the workspace $\mathbf{Z}$ is sized to
-$\max(S_k) \times |\mathbf{y}^l|$ elements per layer, where $\max(S_k)$
-is the largest split factor in the policy table $P^l$. A per-tile
-completion counter tracks how many contributors have finished; the last block
-to arrive loads all partial fragments, reduces them, applies the output
-epilogue, and writes the final result (Lines~33--37). Both write paths guard
-stores with $M_{out}$ (\S\ref{sec:design:reuse}). No device-wide barrier
-is needed; data-parallel tiles bypass the workspace entirely.
-
-
-\begin{algorithm}[htb]
-\caption{On-Device Adaptive Hybrid Stream-$K$}
-\label{alg:streamk}
-\begin{algorithmic}[1]
-\REQUIRE $\mathcal{W}$, $M_{out}$, $P$, $g_{\mathrm{res}}$,
-         $B_M$, $B_N$, $B_K$, $\mathbf{x}$, $\mathbf{f}$, $k$, $\mathbf{Z}$
-\ENSURE $\mathbf{y}$
-\STATE $n_{\mathcal{W}} \leftarrow$ \textbf{read} device-resident worklist length
-\STATE $s_M \leftarrow \lceil n_{\mathcal{W}} / B_M \rceil$;\;
-       $s_N \leftarrow \lceil C_{out} / B_N \rceil$;\;
-       $s \leftarrow s_M \times s_N$
-\STATE $(s_{\mathrm{tail}},\, S_k) \leftarrow P[s]$ \COMMENT{policy lookup}
-\STATE $K_{\mathrm{iters}} \leftarrow k^2 \lceil C_{in} / B_K \rceil$
-\STATE \COMMENT{---------------------------Data-parallel prefix---------------------------}
-\STATE $s_{\mathrm{dp}} \leftarrow s - s_{\mathrm{tail}}$
-\FOR{$b = \mathrm{bid},\; \mathrm{bid}{+}g_{\mathrm{res}},\; \ldots < s_{\mathrm{dp}}$}
-  \STATE $(b_m, b_n) \leftarrow \textsc{Decode}(b,\, s_N)$
-  \STATE $\mathbf{w} \leftarrow \mathcal{W}[b_m B_M \,..\, (b_m{+}1) B_M)$ \COMMENT{worklist indirection}
-  \STATE $\mathbf{Y} \leftarrow \mathbf{0}_{B_M \times B_N}$
-  \FOR{$j = 0, \ldots, K_{\mathrm{iters}}{-}1$}
-    \STATE $(i, c_k) \leftarrow \textsc{Offset}(j)$ \COMMENT{kernel offset, channel tile}
-    \STATE $\mathbf{X} \leftarrow 
-           \mathbf{x}[\mathcal{N}_{i}(\mathbf{w}),\;
-           c_k B_K{:}(c_k{+}1) B_K)$
-    \STATE $\mathbf{F} \leftarrow
-           \mathbf{f}_{i}[c_k B_K{:}(c_k{+}1) B_K,\;b_n B_N{:}(b_n{+}1)B_N)$
-    \STATE $\mathbf{Y} \leftarrow \mathbf{Y} + \mathbf{X} \cdot \mathbf{F}$
-  \ENDFOR
-  \STATE $\mathbf{y}[\mathbf{w},\; b_n B_N{:}(b_n{+}1) B_N) \leftarrow \mathbf{Y}$ \textbf{where} $M_{out}[\mathbf{w}]{=}1$
-\ENDFOR
-\STATE \COMMENT{-----------------------------Stream-$K$ tail-----------------------------}
-\FOR{$b = \mathrm{bid},\; \mathrm{bid}{+}g_{\mathrm{res}},\; \ldots
-     < s_{\mathrm{tail}} \times S_k$}
-  \STATE $(b_m, b_n, r) \leftarrow \textsc{TailDecode}(b,\, s_N,\, S_k,\, s_{\mathrm{dp}})$
-  \STATE $(k_{\mathrm{lo}}, k_{\mathrm{hi}}) \leftarrow
-         \textsc{Partition}(K_{\mathrm{iters}},\, S_k,\, r)$ \COMMENT{$r$-th $K$-slice}
-  \STATE $\mathbf{w} \leftarrow \mathcal{W}[b_m B_M \,..\, (b_m{+}1) B_M)$
-  \STATE $\mathbf{Y} \leftarrow \mathbf{0}_{B_M \times B_N}$
-  \FOR{$j = k_{\mathrm{lo}}, \ldots, k_{\mathrm{hi}}{-}1$}
-    \STATE $(i, c_k) \leftarrow \textsc{Offset}(j)$
-    \STATE $\mathbf{X} \leftarrow 
-           \mathbf{x}[\mathcal{N}_{i}(\mathbf{w}),\;
-           c_k B_K{:}(c_k{+}1) B_K)$
-    \STATE $\mathbf{F} \leftarrow
-           \mathbf{f}_{i}[c_k B_K{:}(c_k{+}1) B_K,\;b_n B_N{:}(b_n{+}1)B_N)$
-    \STATE $\mathbf{Y} \leftarrow \mathbf{Y} + \mathbf{X} \cdot \mathbf{F}$
-  \ENDFOR
-  \STATE $\mathbf{Z}[b_m, b_n][r] \leftarrow \mathbf{Y}$ \COMMENT{partial to workspace}
-  \IF{\textsc{LastArriver}($b_m, b_n$)}
-    \STATE $\mathbf{Y} \leftarrow \sum_{r'=0}^{S_k-1} \mathbf{Z}[b_m, b_n][r']$
-    \STATE $\mathbf{y}[\mathbf{w},\; b_n B_N{:}(b_n{+}1) B_N) \leftarrow \mathbf{Y}$ \textbf{where} $M_{out}[\mathbf{w}]{=}1$
-  \ENDIF
-\ENDFOR
-\end{algorithmic}
-\end{algorithm}
+% TODO: write this section per the new Design framework (CLAUDE.md §Design §4).
+% Content: why a single configuration is not enough (Insight 1),
+% the cost of selection (Insight 5), cost model (offline sweep + gain/cost,
+% uniform n_W assumption, K is a cost-model output not a design constant),
+% runtime mechanism (selection fused into producer epilogue,
+% device-updatable node switching). Calibration belongs here, not in §3.
