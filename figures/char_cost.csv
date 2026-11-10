@@ -1,0 +1,7 @@
+device,mechanism,us,per_switch_us
+RTX 3080,Host readback,7.51756,0
+RTX 3080,Conditional node,9.51283,0
+RTX 3080,Updatable node,0.8158,0.783621
+AGX Orin,Host readback,20.8,0
+AGX Orin,Conditional node,32.3521,0
+AGX Orin,Updatable node,1.71525,1.95956

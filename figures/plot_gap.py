@@ -1,16 +1,14 @@
 #!/usr/bin/env python3
-"""Render the Background sparsity-to-latency example from gap_stats.csv.
+"""Render the Background sparsity-to-latency example (fig:gap) from gap_stats.csv.
 
-The single-column figure contains two equal-area panels:
+Two equal-area panels, the three execution paths named on the x axis (no path legend):
 
-* Panel (a) compares full-model latency and AEE for the three execution paths.
-  The dashed line is dense latency scaled by the active ratio aggregated
-  across layers.
-* Panel (b) compares raw and effective throughput, each normalized to dense raw
-  throughput.
+* (a) end-to-end latency per batch step; the dashed line ("Ideal") is dense latency scaled by the active ratio of the
+  MACs (the proportional reference).
+* (b) throughput normalized to dense raw throughput, stacked: the useful share (the path's color) under the wasted
+  share (gray dots); the bar height is the raw throughput, the number the useful throughput.
 
-The plotting script reads only the generated CSV.  Run gap_stats.py first to
-refresh every number from the formal logs.
+The plotting script reads only the CSV; run gap_stats.py first.
 """
 
 from __future__ import annotations
@@ -24,236 +22,103 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.font_manager as fm
 import matplotlib.pyplot as plt
-from matplotlib.ticker import FuncFormatter
+from matplotlib.patheffects import withStroke
+from matplotlib.ticker import FuncFormatter, MultipleLocator
 
-from bar_patterns import add_bar, legend_handles
-
+from bar_patterns import INK, MUTED, WASTED_COLOR, add_bar, add_wasted, wasted_handle
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 CSV = os.path.join(HERE, "gap_stats.csv")
 
-for directory in (
-    "/usr/share/texmf/fonts/opentype/public/tex-gyre",
-    "/usr/share/fonts/opentype/public/tex-gyre",
-    "/usr/local/texlive",
-):
-    for path in glob.glob(
-        os.path.join(directory, "**", "texgyretermes-*.otf"), recursive=True
-    ):
+for directory in ("/usr/share/texmf/fonts/opentype/public/tex-gyre", "/usr/share/fonts/opentype/public/tex-gyre",
+                  "/usr/local/texlive"):
+    for path in glob.glob(os.path.join(directory, "**", "texgyretermes-*.otf"), recursive=True):
         fm.fontManager.addfont(path)
 
-# acmart's sigplan column is 240.945 TeX pt, or 3.334 physical inches.  Emit
-# at that width so LaTeX does not rescale the typography.
-FIG_W, FIG_H = 3.334, 1.15
-FS_TICK, FS_LAB, FS_LEG, FS_CAP, FS_REF = 6.5, 7.0, 7.0, 7.5, 6.0
+# acmart's sigplan column is 240.945 TeX pt (3.334 in): emit at that width so LaTeX does not rescale the type.
+FIG_W, FIG_H = 3.334, 1.32
+FS_TICK, FS_LAB, FS_CAP, FS_NOTE = 6.5, 7.0, 7.5, 6.0
+GRID = "#e6e6e3"
 
-plt.rcParams.update(
-    {
-        "font.family": "serif",
-        "font.serif": ["TeX Gyre Termes", "Nimbus Roman", "DejaVu Serif"],
-        "mathtext.fontset": "cm",
-        "pdf.fonttype": 42,
-        "ps.fonttype": 42,
-        "axes.linewidth": 0.7,
-        "hatch.linewidth": 0.38,
-    }
-)
+plt.rcParams.update({
+    "font.family": "serif", "font.serif": ["TeX Gyre Termes", "Nimbus Roman", "DejaVu Serif"],
+    "mathtext.fontset": "cm", "pdf.fonttype": 42, "ps.fonttype": 42,
+    "axes.linewidth": 0.6, "axes.edgecolor": INK, "xtick.color": INK, "ytick.color": INK,
+    "axes.labelcolor": INK, "text.color": INK, "hatch.linewidth": 0.5,
+})
 
-ORDER = ["Dense", "Tile skipping", "Gather-scatter"]
-STYLE_KEY = {
-    "Dense": "dense",
-    "Tile skipping": "tile_skip",
-    "Gather-scatter": "gather_scatter",
-}
-LABEL = {
-    "Dense": "Dense",
-    "Tile skipping": "Tile skipping",
-    "Gather-scatter": "Gather-scatter",
-}
+ORDER = ["dense", "tile_skip", "gather_scatter"]
+TICK = {"dense": "Dense", "tile_skip": "Tile\nskipping", "gather_scatter": "Gather-\nscatter"}
 
-rows = {row["system"]: row for row in csv.DictReader(open(CSV, encoding="utf-8"))}
-if set(rows) != set(ORDER):
-    raise ValueError(f"unexpected systems in {CSV}: {tuple(rows)}")
-latency = {system: float(rows[system]["latency_ms"]) for system in ORDER}
-aee = {system: float(rows[system]["aee"]) for system in ORDER}
-raw_relative = {
-    system: float(rows[system]["raw_throughput_vs_dense"]) for system in ORDER
-}
-effective_relative = {
-    system: float(rows[system]["effective_throughput_vs_dense"])
-    for system in ORDER
-}
-reference_ms = float(rows["Dense"]["proportional_reference_ms"])
+rows = {r["backend"]: r for r in csv.DictReader(open(CSV, encoding="utf-8"))}
+val = lambda key, b: float(rows[b][key])
+reference_ms = val("proportional_reference_ms", "dense")
 
-# Equal-area panel geometry in figure fractions.  The central gutter carries
-# both panel (a)'s right y label and panel (b)'s left y label.
-LX0, RX0, PW = 0.120, 0.680, 0.300
-PB, PT = 0.22, 0.82
+# panel geometry (figure fractions): equal areas, a gutter wide enough for panel (b)'s y label
+LX0, RX0, PW = 0.105, 0.625, 0.355
+PB, PT = 0.30, 0.95
 PH = PT - PB
-
-# Panel (a) contains two groups of three touching bars.  The gap between groups
-# holds the proportional-reference annotation.
-BW_A = 0.34
-LAT_C, AEE_C = 0.0, 2.15
-LAT_X = [LAT_C + (index - 1) * BW_A for index in range(len(ORDER))]
-AEE_X = [AEE_C + (index - 1) * BW_A for index in range(len(ORDER))]
-GROUP_HALF = 1.5 * BW_A
-GAP_L = LAT_C + GROUP_HALF
-GAP_R = AEE_C - GROUP_HALF
-AX_LO = LAT_C - GROUP_HALF - 0.19
-AX_HI = AEE_C + GROUP_HALF + 0.19
+XS = [0.0, 1.0, 2.0]
+BW = 0.56
 
 
-def draw_latency_and_aee(fig: plt.Figure) -> None:
-    """Draw full-model latency and AEE on separate y axes."""
-    ax_latency = fig.add_axes([LX0, PB, PW, PH], zorder=2)
-    ax_aee = ax_latency.twinx()
-    ax_aee.set_zorder(1)
-    ax_latency.patch.set_visible(False)
-    ax_aee.patch.set_visible(False)
-
-    for index, system in enumerate(ORDER):
-        add_bar(
-            ax_latency,
-            LAT_X[index],
-            latency[system],
-            BW_A,
-            STYLE_KEY[system],
-            linewidth=0.8,
-        )
-        add_bar(
-            ax_aee,
-            AEE_X[index],
-            aee[system],
-            BW_A,
-            STYLE_KEY[system],
-            linewidth=0.8,
-        )
-
-    for axis in (ax_latency, ax_aee):
-        axis.set_xlim(AX_LO, AX_HI)
-        axis.set_ylim(0.0, 2.2)
-        axis.set_yticks([0.0, 0.5, 1.0, 1.5, 2.0])
-        axis.tick_params(axis="y", labelsize=FS_TICK, pad=1.5)
-        axis.spines["top"].set_visible(False)
-
-    ax_latency.set_xticks([LAT_C, AEE_C])
-    ax_latency.set_xticklabels(["Latency", "AEE"], fontsize=FS_TICK)
-    ax_latency.tick_params(axis="x", length=0, pad=2.5)
-    ax_latency.set_ylabel("Per-frame latency (ms)", fontsize=FS_LAB)
-    ax_latency.yaxis.set_label_coords(-0.225, 0.5)
-    ax_latency.spines["right"].set_visible(False)
-
-    # ``twinx`` shares its x locator with ``ax_latency``. Hide only this
-    # axis's labels so the primary axis retains the Latency/AEE group labels.
-    ax_aee.tick_params(axis="x", bottom=False, labelbottom=False)
-    ax_aee.set_ylabel("AEE", fontsize=FS_LAB, rotation=-90, va="bottom")
-    ax_aee.yaxis.set_label_coords(1.22, 0.5)
-    ax_aee.spines["left"].set_visible(False)
-    ax_aee.spines["bottom"].set_visible(False)
-
-    line_right = GAP_L + 0.55 * (GAP_R - GAP_L)
-    ax_latency.plot(
-        [AX_LO, line_right],
-        [reference_ms, reference_ms],
-        linestyle=(0, (4, 2)),
-        color="#b23b3b",
-        linewidth=1.1,
-        zorder=4,
-    )
-    ax_latency.annotate(
-        f"{reference_ms:.2f} ms\nideal",
-        (GAP_L + 0.02, reference_ms),
-        xytext=(1, 2),
-        textcoords="offset points",
-        ha="left",
-        va="bottom",
-        fontsize=FS_REF,
-        color="#b23b3b",
-        linespacing=1.05,
-    )
+def style_axes(ax, ylabel, xmax=2.5):
+    ax.set_xlim(-0.5, xmax)
+    ax.set_xticks(XS)
+    ax.set_xticklabels([TICK[b] for b in ORDER], fontsize=FS_TICK, linespacing=0.95)
+    ax.tick_params(axis="x", length=0, pad=2.0)
+    ax.tick_params(axis="y", labelsize=FS_TICK, pad=1.5, length=2.0, width=0.5)
+    ax.set_ylabel(ylabel, fontsize=FS_LAB, labelpad=2.0)
+    for side in ("top", "right"):
+        ax.spines[side].set_visible(False)
+    ax.yaxis.grid(True, color=GRID, linewidth=0.5, zorder=0)
+    ax.set_axisbelow(True)
 
 
-def relative_tick(value: float, _: int) -> str:
-    return f"{value:.2f}".rstrip("0").rstrip(".")
+def draw_latency(fig):
+    ax = fig.add_axes([LX0, PB, PW, PH])
+    for x, b in zip(XS, ORDER):
+        t = val("latency_ms", b)
+        add_bar(ax, x, t, BW, b)
+        ax.text(x, t + 1.0, f"{t:.1f}", ha="center", va="bottom", fontsize=FS_NOTE, color=INK)
+    # the proportional reference: a dashed line, labeled in the free margin right of the last bar
+    ax.axhline(reference_ms, color=MUTED, linestyle=(0, (3.5, 2)), linewidth=0.8, zorder=4)
+    ax.text(3.08, reference_ms + 0.9, f"Ideal\n{reference_ms:.1f}", ha="right", va="bottom", fontsize=FS_NOTE,
+            color=MUTED, linespacing=0.95)
+    ax.set_ylim(0, 50)
+    ax.yaxis.set_major_locator(MultipleLocator(10))
+    style_axes(ax, "Latency (ms)", xmax=3.1)
 
 
-def draw_relative_throughput(fig: plt.Figure) -> None:
-    """Draw raw and effective throughput relative to dense raw throughput."""
+def draw_throughput(fig):
     ax = fig.add_axes([RX0, PB, PW, PH])
-    group_centers = (0.0, 1.0)
-    bar_width = 0.24
-    offsets = {
-        system: (index - 1) * bar_width for index, system in enumerate(ORDER)
-    }
-    for center, values in zip(
-        group_centers, (raw_relative, effective_relative), strict=True
-    ):
-        for system in ORDER:
-            add_bar(
-                ax,
-                center + offsets[system],
-                values[system],
-                bar_width,
-                STYLE_KEY[system],
-                linewidth=0.8,
-            )
-
-    ax.set_xlim(-0.55, 1.55)
-    ax.set_ylim(0.0, 1.1)
-    ax.set_yticks([0.0, 0.25, 0.5, 0.75, 1.0])
-    ax.yaxis.set_major_formatter(FuncFormatter(relative_tick))
-    ax.set_xticks(group_centers)
-    ax.set_xticklabels(["Raw", "Effective"], fontsize=FS_TICK)
-    ax.tick_params(axis="x", length=0, pad=2.5)
-    ax.tick_params(axis="y", labelsize=FS_TICK, pad=1.5)
-    ax.set_ylabel("Relative throughput", fontsize=FS_LAB)
-    ax.yaxis.set_label_coords(-0.25, 0.5)
-    ax.spines["top"].set_visible(False)
-    ax.spines["right"].set_visible(False)
+    for x, b in zip(XS, ORDER):
+        eff, waste = val("effective_throughput_vs_dense", b), val("wasted_throughput_vs_dense", b)
+        add_bar(ax, x, eff, BW, b)
+        if waste > 1e-6:
+            add_wasted(ax, x, waste, BW, bottom=eff)
+        # the useful value at the top of the useful share (inside the wasted share where there is one)
+        ax.text(x, eff + 0.02, f"{eff:.2f}", ha="center", va="bottom", fontsize=FS_NOTE, color=INK, zorder=6,
+                path_effects=[withStroke(linewidth=1.6, foreground=WASTED_COLOR)] if waste > 1e-6 else None)
+    # the wasted share's key, in the free area right of the dense bar (the colored share is the useful work)
+    ax.legend([wasted_handle()], ["wasted"], loc="center", bbox_to_anchor=(1.45, 0.86), bbox_transform=ax.transData,
+              frameon=False, fontsize=FS_NOTE, handlelength=1.5, handleheight=0.9, handletextpad=0.35, borderpad=0.1)
+    ax.set_ylim(0, 1.18)
+    ax.yaxis.set_major_locator(MultipleLocator(0.25))
+    ax.yaxis.set_major_formatter(FuncFormatter(lambda v, _: f"{v:.2f}".rstrip("0").rstrip(".")))
+    style_axes(ax, "Rel. throughput")
 
 
-def shared_legend(fig: plt.Figure) -> None:
-    handles = legend_handles([STYLE_KEY[system] for system in ORDER])
-    fig.legend(
-        handles=handles,
-        labels=[LABEL[system] for system in ORDER],
-        fontsize=FS_LEG,
-        ncol=3,
-        frameon=False,
-        loc="upper center",
-        bbox_to_anchor=(0.55, 1.01),
-        handlelength=1.2,
-        columnspacing=1.1,
-        handletextpad=0.4,
-    )
-
-
-def main() -> None:
+def main():
     fig = plt.figure(figsize=(FIG_W, FIG_H))
-    draw_latency_and_aee(fig)
-    draw_relative_throughput(fig)
-    shared_legend(fig)
-    fig.text(
-        LX0 + PW / 2,
-        0.005,
-        "(a) Latency and accuracy",
-        ha="center",
-        va="bottom",
-        fontsize=FS_CAP,
-    )
-    fig.text(
-        RX0 + PW / 2,
-        0.005,
-        "(b) Relative throughput",
-        ha="center",
-        va="bottom",
-        fontsize=FS_CAP,
-    )
-    output = os.path.join(HERE, "gap.pdf")
-    fig.savefig(output)
+    draw_latency(fig)
+    draw_throughput(fig)
+    for x0, cap in ((LX0, "(a) Latency per batch"), (RX0, "(b) Relative throughput")):
+        fig.text(x0 + PW / 2, 0.012, cap, ha="center", va="bottom", fontsize=FS_CAP)
+    out = os.path.join(HERE, "gap.pdf")
+    fig.savefig(out)
     plt.close(fig)
-    print(f"wrote {output}")
+    print(f"wrote {out}")
 
 
 if __name__ == "__main__":

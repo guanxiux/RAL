@@ -1,9 +1,24 @@
 \section{Introduction}
 \label{sec:intro}
 
-Dense convolution dominates per-frame inference latency in many
-latency-critical vision tasks~\cite{nanoflownet,fastdepth,perclatency}, yet
-on a given input much of that computation is spatially redundant. A
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=\columnwidth]{figures/intro_teaser.png}
+  \caption{Perception latency decides whether a vehicle can react in time:
+  a pedestrian steps out from a blind zone, and the vehicle whose detector
+  returns later travels farther before steering.}
+  \Description{Top-down street scene: a pedestrian emerges from behind a
+  parked van; the trajectory with the longer perception latency collides,
+  the one with the shorter latency steers clear.}
+  \label{fig:teaser}
+\end{figure}
+
+Dense convolution dominates per-frame latency in vision tasks where reaction
+time decides the outcome~\cite{nanoflownet,fastdepth,perclatency}, such as a
+car avoiding a pedestrian stepping out of occlusion~\cite{avarch}, a drone
+dodging an obstacle~\cite{eventavoid}, or a robot returning a table-tennis
+ball~\cite{robottabletennis} (Figure~\ref{fig:teaser}). Yet on a given input
+much of that computation is spatially redundant. A
 common remedy is masked convolution: an upstream policy marks spatially
 active positions on the dense feature grid, and a dedicated sparse
 convolution operator updates only these positions in the dense output. The mask may derive
@@ -51,8 +66,8 @@ one indirection per tile in the prologue, outside the reduction loop that
 drives coalesced channel loads and weight-tile reuse, so per-tile throughput
 matches dense execution. When the tile configuration follows the
 worklist length, convolution time is affine in the active ratio with a slope matching
-the dense marginal cost; the residual gap is an intercept of 9.0--25.8\% of
-dense time per layer, dominated by launch latency and constant-cache misses,
+the dense marginal cost; the residual gap is an intercept of 5.6--17.4\% of
+dense time per layer (median per GPU and precision), dominated by launch latency and constant-cache misses,
 not by throughput loss.
 
 While this finding establishes that worklist-driven tiled execution can

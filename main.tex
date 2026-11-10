@@ -45,26 +45,26 @@
 \author{Anonymous Authors}
 
 \begin{abstract}
-% v15 (ISCA framing, 2026-11-07)
-Masked convolution promises to reduce inference latency by computing only
-positions an upstream policy marks active, yet existing paths sacrifice either
-throughput or useful-compute ratio, failing to translate sparsity into
-proportional latency reduction. We find that redirecting a dense tiled
-pipeline to compute only scattered active positions largely preserves per-tile
-throughput: irregularity is confined to only row-level indirection outside the
-reduction loop, leaving channel-contiguous access and weight-tile reuse
-identical to dense execution. Based on this finding, we present \sysname,
-which drives the dense tiled pipeline with an active-output worklist to
-achieve both high useful-compute ratio and high throughput. To handle a
-construction cost that does not shrink with sparsity, \sysname builds the
-worklist in a single mask-space pass and reuses it across compatible operators.
-To adapt tile configurations as the workload size shifts per frame on the
-device, \sysname introduces on-device tile switching that trades off each
-candidate's gain against its selection cost. Across
-six GPUs and four workloads, \sysname achieves a 2.20$\times$
-geometric-mean latency reduction over the fastest baseline per
-workload-platform pair and reduces energy by 60.8--90.1\% relative to dense
-execution on embedded GPUs.
+% v17 (ISCA framing, 2026-11-10)
+Masked convolution computes only positions an upstream policy marks active, yet existing paths keep either
+throughput (tile skipping) or useful-compute ratio (gather-scatter), never
+both, failing to translate sparsity into proportional latency reduction.
+Contrary to the expectation that scattered work breaks dense efficiency, we
+find that restricting a dense tiled pipeline to scattered active positions
+largely preserves per-tile throughput: irregularity is confined to row-level
+indirection outside the reduction loop, leaving channel-contiguous access and
+weight-tile reuse identical to dense. We therefore present
+\sysname, which changes only which outputs the dense pipeline computes by
+driving it with an active-output worklist. The worklist brings two costs
+dense execution never pays. Construction cost stays fixed per layer shape as
+compute shrinks with the active ratio, so \sysname builds the worklist in one
+mask-space pass and reuses it across compatible operators. The best tile
+configuration varies with the per-frame worklist length, which only the
+device sees, so \sysname selects tiles on the device, adding a candidate only
+when its gain exceeds its selection cost. Across six GPUs and four workloads,
+\sysname achieves a 2.20$\times$ geometric-mean latency reduction over the
+fastest baseline per workload-platform pair and reduces energy by
+60.8--90.1\% relative to dense execution on embedded GPUs.
 \end{abstract}
 
 \keywords{Sparse convolution, dynamic spatial sparsity, GPU runtime, deep learning

@@ -1,131 +1,73 @@
 #!/usr/bin/env python3
-"""Derive the Background sparsity-to-latency example from the unified logs.
+"""Derive the Background sparsity-to-latency example (fig:gap) from the evaluation logs.
 
-Sources (RTX 3080, fireflownet, fp32):
+Workload: YOLOv8m at batch 4 on WildTrack 640, RTX 3080, FP32, the temporal difference masks of the task policy
+(DeltaCNN).  Every number comes from the files the evaluation tables use (experiments/wise2/report/eval_tables.py,
+``Effective throughput / worklist efficiency``):
 
-  * ``logs/effective_throughput/3080/summary.json`` supplies the position-count
-    work ratios ``E/D`` (required) and ``A/D`` (tile-skip issued), matching the
-    paper's spatial alpha/eta definitions.
-  * ``logs/latency/fireflownet/3080/fp32/full-r3-<backend>/summary.json``
-    supplies full-model GPU latency.
-  * ``logs/accuracy/fireflownet/3080/fp32/full-r3-<backend>/summary.json``
-    supplies AEE.
+  * ``logs/wise2_eval/rtx_3080_sm86/wildtrack640_yolov8m_b4_select/micro_upd/work_fp32.json``: issued and required
+    MACs of each path (tile skipping: the MAC-level useful-compute ratio ``eta_mac``);
+  * the end-to-end latency per batch step of each path (eval_tables._yolo_latencies).
 
-Raw and effective throughput are normalized to dense raw throughput:
+Throughput is normalized to dense raw throughput (cuDNN):
 
-  T_path / T_dense     = (issued_path / D) * (t_dense / t_path)
-  T_eff,path / T_dense = (E / D) * (t_dense / t_path)
+  T_path / T_dense     = (issued_path / dense MACs) * (t_dense / t_path)
+  T_eff,path / T_dense = eta_path * T_path / T_dense,        wasted = (1 - eta_path) * T_path / T_dense
+
+The proportional reference is dense latency scaled by the required / dense MAC ratio (alpha_MAC).
 """
 
 from __future__ import annotations
 
 import csv
 import json
-import statistics
+import sys
 from pathlib import Path
-
 
 HERE = Path(__file__).resolve().parent
 REPO = HERE.parents[1]
-LOGS = REPO / "logs"
-DEVICE = "3080"
-DTYPE = "fp32"
-WORKLOAD = "fireflownet"
-RUN_PREFIX = "full-r3"
-DEVICE_LABEL = "RTX 3080"
+sys.path.insert(0, str(REPO / "experiments/wise2/report"))
+import eval_tables as T  # noqa: E402
+
+DEVICE, TASK, DTYPE = "rtx_3080_sm86", "wildtrack640_yolov8m_b4_select", "fp32"
 OUT_CSV = HERE / "gap_stats.csv"
-
-SYSTEMS = [
-    ("dense", "Dense", "D"),
-    ("tile_skip", "Tile skipping", "A"),
-    ("gather_scatter", "Gather-scatter", "E"),
-]
-
-
-def load_json(path: Path) -> dict:
-    if not path.is_file():
-        raise FileNotFoundError(path)
-    value = json.loads(path.read_text(encoding="utf-8"))
-    if not isinstance(value, dict):
-        raise ValueError(f"expected JSON object at {path}")
-    return value
-
-
-def latency(backend: str):
-    path = (LOGS / "latency" / WORKLOAD / DEVICE / DTYPE
-            / f"{RUN_PREFIX}-{backend}" / "summary.json")
-    sequences = load_json(path)["sequences"]
-    values = [float(s["all_frames_gpu_ms"]["mean"]) for s in sequences.values()]
-    return statistics.fmean(values), str(path.relative_to(REPO))
-
-
-def aee(backend: str):
-    path = (LOGS / "accuracy" / WORKLOAD / DEVICE / DTYPE
-            / f"{RUN_PREFIX}-{backend}" / "summary.json")
-    if not path.is_file():
-        return None, ""
-    weighted = count = 0
-    for seq in load_json(path)["sequences"].values():
-        value = seq.get("aee")
-        if isinstance(value, dict):
-            value = value.get("mean")
-        frames = seq.get("valid_aee_frames")
-        if isinstance(value, (int, float)) and isinstance(frames, int) and frames > 0:
-            weighted += float(value) * frames
-            count += frames
-    return (weighted / count if count else None), str(path.relative_to(REPO))
+SYSTEMS = [("dense", "Dense"), ("tile_skip", "Tile skipping"), ("gather_scatter", "Gather-scatter"),
+           ("wiseconv", "WISEConv")]  # WISEConv: for the evaluation figure, not drawn in fig:gap
 
 
 def main() -> None:
-    et_path = LOGS / "effective_throughput" / DEVICE / "summary.json"
-    workload = load_json(et_path)["workloads"][WORKLOAD]
-    work = workload["work"]
-    dense = float(work["D_dense_positions"])
-    required = float(work["E_required_positions"]) / dense
-    scheduled = float(work["A_tile_skip_issued_positions"]) / dense
-    frames = int(workload["frames"])
-
-    measured = {b: latency(b) for b, _, _ in SYSTEMS}
-    dense_latency = measured["dense"][0]
-    reference_ms = dense_latency * required
-    issued_ratio = {"D": 1.0, "A": scheduled, "E": required}
-
+    work_path = T.EV / DEVICE / TASK / "micro_upd" / f"work_{DTYPE}.json"
+    work = json.loads(work_path.read_text())
+    lats = T._yolo_latencies(DEVICE, TASK, DTYPE)
+    dense_macs = work["paths"]["dense"]["dense_macs"]
+    required = work["paths"]["wiseconv"]["required_macs"]
+    alpha = required / dense_macs
+    t_dense = lats["dense"]
     rows = []
-    for backend, name, quantity in SYSTEMS:
-        latency_ms, source = measured[backend]
-        aee_value, _ = aee(backend)
-        issued = issued_ratio[quantity]
-        raw_relative = issued * dense_latency / latency_ms
-        effective_relative = required * dense_latency / latency_ms
-        rows.append({
-            "system": name,
-            "backend": backend,
-            "device": DEVICE_LABEL,
-            "frames": frames,
-            "latency_ms": f"{latency_ms:.9f}",
-            "aee": "" if aee_value is None else f"{aee_value:.9f}",
-            "issued_work_ratio": f"{issued:.9f}",
-            "active_ratio": f"{required:.9f}",
-            "eta": f"{effective_relative / raw_relative:.9f}",
-            "raw_throughput_vs_dense": f"{raw_relative:.9f}",
-            "effective_throughput_vs_dense": f"{effective_relative:.9f}",
-            "speedup_vs_dense": f"{dense_latency / latency_ms:.9f}",
-            "proportional_reference_ms": f"{reference_ms:.9f}",
-            "gap_to_reference_x": f"{latency_ms / reference_ms:.9f}",
-            "source": source,
-        })
-
-    with OUT_CSV.open("w", newline="", encoding="utf-8") as destination:
-        writer = csv.DictWriter(
-            destination, fieldnames=list(rows[0]), lineterminator="\n")
-        writer.writeheader()
-        writer.writerows(rows)
-
-    print(f"# work anchor : {et_path.relative_to(REPO)} "
-          f"({WORKLOAD}, {frames} frames)")
-    print(f"# active E/D={required:.4f}; tile A/D={scheduled:.4f}")
-    print(f"# proportional reference = {reference_ms:.3f} ms")
-    print(f"wrote {OUT_CSV}")
+    for key, label in SYSTEMS:
+        w = work["paths"][key]
+        eta = w["eta_mac"] if key == "tile_skip" else w["required_macs"] / w["issued_macs"]
+        t = lats[key]
+        t_rel = (w["issued_macs"] / dense_macs) * (t_dense / t)
+        rows.append(dict(system=label, backend=key, latency_ms=t, useful_compute_ratio=eta,
+                         raw_throughput_vs_dense=t_rel, effective_throughput_vs_dense=eta * t_rel,
+                         wasted_throughput_vs_dense=(1 - eta) * t_rel, latency_reduction_vs_dense=1 - t / t_dense,
+                         active_ratio_mac=alpha, proportional_reference_ms=alpha * t_dense,
+                         source=f"{work_path.relative_to(REPO)}; e2e latency per batch step (eval_tables)"))
+    # cross-checks against the numbers quoted in the text (intro / background)
+    r = {x["backend"]: x for x in rows}
+    assert abs(r["dense"]["useful_compute_ratio"] - (1 - 0.822)) < 5e-4
+    assert abs(r["gather_scatter"]["raw_throughput_vs_dense"] - 0.437) < 5e-4
+    assert abs(r["tile_skip"]["useful_compute_ratio"] - 0.674) < 5e-4
+    with OUT_CSV.open("w", newline="", encoding="utf-8") as f:
+        wr = csv.DictWriter(f, fieldnames=list(rows[0]))
+        wr.writeheader()
+        for x in rows:
+            wr.writerow({k: f"{v:.9g}" if isinstance(v, float) else v for k, v in x.items()})
+    for x in rows:
+        print(f"{x['system']:15s} {x['latency_ms']:7.2f} ms  eta {x['useful_compute_ratio']:.3f}  T {x['raw_throughput_vs_dense']:.3f}"
+              f"  eff {x['effective_throughput_vs_dense']:.3f}  wasted {x['wasted_throughput_vs_dense']:.3f}")
+    print(f"proportional reference {alpha * t_dense:.2f} ms (alpha_MAC {alpha:.3f}) -> {OUT_CSV}")
 
 
 if __name__ == "__main__":

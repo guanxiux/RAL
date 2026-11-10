@@ -99,20 +99,20 @@ and required work.
 
 \begin{figure}[htb]
   \centering
-  % TODO: replace figure with YOLOv8m b4 / WildTrack 640 / RTX 3080 gap plot
   \includegraphics[width=\columnwidth]{figures/gap.pdf}
-  \caption{TODO: YOLOv8m~\cite{yolov8} at batch~4 using the
-  DeltaCNN~\cite{deltacnn} temporal difference mask policy on
-  WildTrack~640 and RTX~3080, comparing cuDNN (Dense), DeltaCNN tile
-  skipping, and MMCV gather-scatter~\cite{mmcv}.
-  (a)~Mean full-model per-frame latency.
-  The dashed line marks dense latency scaled by the active ratio aggregated
-  across layers; the sparse paths use the same masks.
-  (b)~Raw throughput $T$ and effective throughput $T_{\mathrm{eff}}$, each
-  normalized to dense raw throughput. The dense useful-compute ratio equals
-  the active ratio set by the mask policy.}
-  \Description{TODO: Two grouped bar charts compare Dense, DeltaCNN tile
-  skipping, and MMCV gather-scatter for YOLOv8m batch 4 on RTX 3080.}
+  \caption{YOLOv8m~\cite{yolov8} at batch~4 on WildTrack~640 and RTX~3080
+  (FP32) under the DeltaCNN~\cite{deltacnn} temporal difference masks,
+  comparing cuDNN (Dense), DeltaCNN tile skipping, and MMCV
+  gather-scatter~\cite{mmcv}; all paths consume the same masks.
+  (a)~End-to-end latency per batch step; the dashed line (Ideal) is dense latency
+  scaled by the active ratio of the convolution work.
+  (b)~Throughput normalized to dense raw throughput. Bar height is raw
+  throughput $T$; the colored share is effective throughput
+  $T_{\mathrm{eff}}$ (labeled) and the dotted share is spent on inactive
+  positions.}
+  \Description{Two bar charts for Dense, tile skipping, and gather-scatter:
+  end-to-end latency against a proportional reference line, and raw
+  throughput stacked into useful and wasted shares.}
   \label{fig:gap}
 \end{figure}
 Existing systems execute a mask along one of two paths. \emph{Tile
