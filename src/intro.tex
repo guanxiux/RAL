@@ -60,14 +60,14 @@ than gather-scatter despite its throughput advantage
 We find that redirecting a dense tiled pipeline to compute only scattered
 active positions achieves both a high useful-compute ratio and the throughput
 of dense execution. We collect these
-positions into a worklist and charaterize (\S\ref{sec:char}) the resulting tiled execution on a
-desktop and an embedded GPU, identifying why: the irregularity is confined to
-one indirection per tile in the prologue, outside the reduction loop that
-drives coalesced channel loads and weight-tile reuse, so per-tile throughput
-matches dense execution. When the tile configuration follows the
+positions into a worklist and characterize (\S\ref{sec:char}) the resulting tiled execution on a
+desktop and an embedded GPU, identifying why: because the input stays a dense
+grid, the irregularity reduces to one index per output row, outside the
+reduction loop that drives coalesced channel loads and weight-tile reuse, so
+per-tile throughput matches dense execution. When the tile configuration follows the
 worklist length, convolution time is affine in the active ratio with a slope matching
 the dense marginal cost; the residual gap is an intercept of 5.6--17.4\% of
-dense time per layer (median per GPU and precision), dominated by launch latency and constant-cache misses,
+dense time per layer (median per GPU and precision), dominated by kernel launch latency and fixed per-tile stalls such as barriers,
 not by throughput loss.
 
 While this finding establishes that worklist-driven tiled execution can

@@ -214,9 +214,6 @@ the oracle.
 per-decision-point cost often comparable to the per-layer gain from adaptation.}
 
 Insights 4 and 5 together mean that current hardware cannot reach the oracle
-affine line without trading off selection cost against adaptation gain. Two
-architectural capabilities would close this gap: reducing the per-layer
-launch and synchronization floor that dominates the intercept (Insight~4),
-and providing a lightweight launch predicate evaluated before CTA resource
-allocation so that following the worklist length no longer competes with the
-gain it targets (Insight~5).
+affine line without trading selection cost against adaptation gain;
+\S\ref{sec:eval:discussion} discusses the hardware support that would remove
+this trade-off.

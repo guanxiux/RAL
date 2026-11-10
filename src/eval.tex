@@ -345,27 +345,32 @@ batch~8.
 \subsection{Discussion}
 \label{sec:eval:discussion}
 
-\sysname consumes rather than generates masks, so its gains are conditional on
-the upstream policy and its activity distribution; it guarantees coverage of
-requested outputs but does not improve mask quality. When the active ratio is
-high enough, construction overhead and the gap between the worklist kernel and
-cuDNN leave little room for a net gain, as the YOLO workloads' narrower
-speedups already suggest.
+\paragraph{Limitations.}
+\sysname converts spatial sparsity into latency, so its benefit is bounded by
+how sparse the upstream masks are and by how much of the frame convolution
+occupies. First, the gain vanishes as the active ratio approaches one: at full
+activity the per-length best configuration only matches dense execution
+(\S\ref{sec:char:affine}) while construction still runs, so a fully active
+input runs slightly slower than the dense path. \sysname consumes masks and
+makes no claim about their quality or the resulting accuracy; a policy that
+keeps most positions active should stay on the dense path. Second, \sysname
+accelerates convolution only, so convolution's share of frame latency caps the
+end-to-end speedup. FP16 tensor cores shrink that share, and the remaining
+non-convolution operators become the next bottleneck, which is why FP16
+speedups are narrower than FP32 ones (\S\ref{sec:eval:microbenchmarks}).
+Models dominated by other operators bound the gain further.
 
-The adaptive decomposition is calibrated per convolution shape and device;
-results are cached and reused across models that share the same shapes, but a
-new shape or device requires reprofiling. Because calibration selects only
-among decomposition modes, it affects performance but not coverage or
-correctness. The current calibration policy is simple; a faster or more
-effective one is a natural direction for future work.
-
-The full workload comparison uses FP32 (SIMT) because the evaluated sparse
-baselines~\cite{deltacnn,dynconv,mmcv} provide only FP32 paths. The
-sensitivity study confirms that \sysname retains end-to-end gains under FP16
-tensor cores on both evaluated platforms across all four workloads.
-Extending the worklist compute stage to native tensor-core reduction remains
-open. Stream-$K$ performs FP32 partial-sum reduction through an external
-workspace (\S\ref{sec:design:compute}), which is necessary for numerical
-precision but adds overhead that, for the short worklists where split-$K$ is
-most needed, can outweigh the tensor-core arithmetic savings. A broader
-study across GPU architectures remains for future work.
+\paragraph{Hardware implications.}
+The characterization traces the remaining gap to two per-layer costs that
+current GPUs leave to software. The intercept of the affine model is launch
+and dependency latency rather than lost bandwidth (Insight~4), and its share
+grows as inputs become sparser; hardware that shortens the path from launch to
+the first useful instruction (for example, by staging kernel parameters before
+the CTA starts) and the dependent chain of a single tile would move sparse
+execution toward the proportional line. Following the worklist length costs
+about as much per decision point as it gains (Insight~5), because every
+existing mechanism either returns to the host or reconfigures the graph. A
+launch predicate that the hardware evaluates on a device-resident value before
+allocating CTA resources, or a work distributor that picks the tile shape from
+the worklist length, would let every layer adapt its configuration at
+negligible cost.

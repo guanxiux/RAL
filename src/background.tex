@@ -44,8 +44,20 @@ gates~\cite{sact,sai,dgnet,dynconv}. These sources differ in sensing
 modality and policy, but all expose the same dynamic spatial sparsity on a dense 2D
 feature grid, so a single masked-convolution runtime serves them all.
 
+\begin{figure}[b]
+  \centering
+  \includegraphics[width=0.85\columnwidth]{figures/convolution.png}
+  \caption{Masked convolution: each output $O_p$ aggregates its receptive
+  field $\mathcal{N}(p)$ in $\mathbf{x}$ with the weights $\mathbf{f}$;
+  colored outputs are active in $M_{out}$.}
+  \Description{An input grid, a kernel, and an output grid whose active
+  positions are colored; dotted boxes mark the receptive fields of two active
+  outputs.}
+  \label{fig:masked-conv}
+\end{figure}
+
 Masked convolution retains dense tensor layouts and arithmetic, restricting
-only which output coordinates are computed. It operates on an input
+only which output coordinates are computed (Figure~\ref{fig:masked-conv}). It operates on an input
 feature tensor $\mathbf{x}\in\mathbb{R}^{H_{in}\times W_{in}\times C_{in}}$, a
 weight tensor $\mathbf{f}\in\mathbb{R}^{k\times k\times C_{in}\times C_{out}}$ of
 kernel size $k$, and an output
@@ -115,12 +127,37 @@ and required work.
   throughput stacked into useful and wasted shares.}
   \label{fig:gap}
 \end{figure}
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=0.75\columnwidth]{figures/tile_skip.png}
+  \caption{Tile skipping on the example of Figure~\ref{fig:masked-conv}.
+  An all-inactive tile is skipped; other tiles run in full, so their inactive
+  (white) outputs are wasted computation.}
+  \Description{Two SMs process mask tiles: tiles with active positions are
+  computed in full, and an all-inactive tile is skipped.}
+  \label{fig:tile-skip}
+\end{figure}
+
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=0.9\columnwidth]{figures/gather_scatter.png}
+  \caption{Gather-scatter on the example of
+  Figure~\ref{fig:masked-conv}. Receptive fields of active outputs are
+  gathered into a packed buffer, computed, and scattered back into
+  $\mathbf{y}$; the extra gather and scatter overhead, not the computation, dominate
+  its latency.}
+  \Description{Receptive fields of active positions are gathered into a
+  packed column, split across two SMs, and the packed outputs are scattered
+  to the output tensor.}
+  \label{fig:gather-scatter}
+\end{figure}
+
 Existing systems execute a mask along one of two paths. \emph{Tile
-skipping}~\cite{sbnet,skipconv,evconv,dynaspa,motiondelta,sparsetem} (Figure~\ref{fig:overview}b) inherits the dense pipeline's tile-based computation without additional metadata passes, skipping a tile only when all its coordinates are inactive and
+skipping}~\cite{sbnet,skipconv,evconv,dynaspa,motiondelta,sparsetem} (Figure~\ref{fig:tile-skip}) inherits the dense pipeline's tile-based computation without additional metadata passes, skipping a tile only when all its coordinates are inactive and
 otherwise computing the whole tile; DeltaCNN~\cite{deltacnn} fuses a selective
 path into the kernel, taken when a tile is estimated to be mostly empty, to cut
 wasted work. \emph{Gather-scatter}~\cite{sai,dgnet}
-(Figure~\ref{fig:overview}c) instead abandons the dense pipeline: it extracts exactly the active
+(Figure~\ref{fig:gather-scatter}) instead abandons the dense pipeline: it extracts exactly the active
 coordinates into a packed representation, runs a separate GEMM, and scatters
 the results back, removing the inactive arithmetic but adding extraction,
 irregular access, and writeback overhead; DynConv~\cite{dynconv} adopts a model structure suited to gather-scatter, where one gather feeds several consecutive layers before a single
@@ -193,10 +230,18 @@ graphs or pruned weights; structured weight pruning~\cite{sparse24} exploits
 fixed patterns; sparse-format compilers~\cite{taco,sparsetir} encode sparsity
 in tensor formats. DPACS~\cite{dpacs} targets the same dynamic 2D spatial
 sparsity but designs a custom dataflow accelerator to handle the resulting
-irregular access patterns. Our characterization (\S\ref{sec:char:reduction})
-shows that on commodity GPUs the irregularity is confined to row-level
-indirection outside the reduction loop, so a worklist-driven execution model
-achieves dense-level throughput without hardware changes.
+irregular access patterns.
+
+Row-indexed operand loads are an established implementation technique:
+CUTLASS fuses gather and scatter into GEMM~\cite{cutlass}, mixture-of-experts
+kernels read tokens through scattered indices inside a grouped
+GEMM~\cite{scattermoe,megablocks}, and the Blackwell TMA gathers rows by
+index~\cite{ptxisa}. These kernels use the indirection to avoid a copy, but
+do not characterize its cost against the dense kernel, nor face the
+overlapping receptive fields that scattering convolution outputs disrupts. We
+show that for convolution on a dense input grid the indirection leaves the
+reduction identical to dense, so the residual gap is a per-layer fixed cost
+rather than lost throughput (\S\ref{sec:char}).
 
 
 % Some 3D systems~\cite{spconv2,torchsparsepp} compute through
