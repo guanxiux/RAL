@@ -95,10 +95,10 @@ This paper makes the following contributions:
         jointly sustain high useful-compute ratio and high throughput
         (\S\ref{sec:design}).
 
-  % FP32 geomean ~2.5x, FP16 geomean ~2.4x (approximate, from TABLES.md)
+  % geomean over 44 workload-device-precision cases (fastest available baseline, dense included), 2026-11-10
   \item We evaluate \sysname on four workloads across six GPUs. \sysname
-        achieves a \tbd{2.5}$\times$ (FP32) and \tbd{2.4}$\times$ (FP16)
+        achieves a 2.18$\times$ (FP32) and 2.22$\times$ (FP16)
         geometric-mean speedup over the fastest baseline per
-        pair, reducing energy by \tbd{XX}--\tbd{XX}\% on embedded GPUs
-        (\S\ref{sec:eval}).
+        pair, and reduces energy by 60.8--90.1\% relative to dense
+        execution on embedded GPUs (\S\ref{sec:eval}).
 \end{itemize}

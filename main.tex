@@ -61,9 +61,10 @@ worklist in a single mask-space pass and reuses it across compatible operators.
 To adapt tile configurations as the workload size shifts per frame on the
 device, \sysname introduces on-device tile switching that trades off each
 candidate's gain against its selection cost. Across
-six GPUs and four workloads, \sysname achieves a XX$\times$
+six GPUs and four workloads, \sysname achieves a 2.20$\times$
 geometric-mean latency reduction over the fastest baseline per
-workload-platform pair, reducing energy by XX--XX\% on embedded GPUs.
+workload-platform pair and reduces energy by 60.8--90.1\% relative to dense
+execution on embedded GPUs.
 \end{abstract}
 
 \keywords{Sparse convolution, dynamic spatial sparsity, GPU runtime, deep learning
