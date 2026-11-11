@@ -22,9 +22,9 @@ HATCHES = {
     "gather_scatter": "\\\\\\\\",
     "wiseconv": "",
 }
-WASTED_COLOR = "#e4e4e2"
+WASTED_COLOR = "#dddddd"
 WASTED_HATCH = "...."
-WASTED_INK = "#a8a8a4"
+WASTED_INK = "#9a9a9a"
 HATCH_INK = "#ffffff"
 EDGE = "#2b2b2b"  # outline of the older figures (plot_e2e.py and friends)
 INK = "#222222"  # text and axes

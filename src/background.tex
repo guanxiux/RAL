@@ -46,13 +46,17 @@ feature grid, so a single masked-convolution runtime serves them all.
 
 \begin{figure}[b]
   \centering
-  \includegraphics[width=0.85\columnwidth]{figures/convolution.png}
-  \caption{Masked convolution: each output $O_p$ aggregates its receptive
-  field $\mathcal{N}(p)$ in $\mathbf{x}$ with the weights $\mathbf{f}$;
-  colored outputs are active in $M_{out}$.}
-  \Description{An input grid, a kernel, and an output grid whose active
-  positions are colored; dotted boxes mark the receptive fields of two active
-  outputs.}
+  \includegraphics[width=\columnwidth]{figures/tikz/bg_conv.pdf}
+  \caption{Masked convolution: each output $y_p$ aggregates its receptive
+  field $\mathcal{N}(p)$ in $\mathbf{x}$ with the weights $\mathbf{f}$.
+  Dense convolution computes every output in tiles of contiguous positions,
+  which keeps loads coalesced and each weight tile reused across the tile, so
+  it runs at high throughput; but only the outputs active in $M_{out}$
+  (colored) are required, and the throughput spent on the rest (dotted) is
+  wasted.}
+  \Description{An input grid, a kernel, and an output grid whose active positions
+  are colored and inactive positions dotted; a dashed box marks the receptive
+  field of one active output.}
   \label{fig:masked-conv}
 \end{figure}
 
@@ -129,10 +133,12 @@ and required work.
 \end{figure}
 \begin{figure}[t]
   \centering
-  \includegraphics[width=0.75\columnwidth]{figures/tile_skip.png}
+  \includegraphics[width=\columnwidth]{figures/tikz/bg_tileskip.pdf}
   \caption{Tile skipping on the example of Figure~\ref{fig:masked-conv}.
-  An all-inactive tile is skipped; other tiles run in full, so their inactive
-  (white) outputs are wasted computation.}
+  It keeps the dense tiled pipeline, so each issued tile runs at dense
+  throughput without extra passes, and skips only tiles with no active
+  position. A partially active tile still runs in full, so its inactive
+  (dotted) outputs are wasted computation.}
   \Description{Two SMs process mask tiles: tiles with active positions are
   computed in full, and an all-inactive tile is skipped.}
   \label{fig:tile-skip}
@@ -140,12 +146,13 @@ and required work.
 
 \begin{figure}[t]
   \centering
-  \includegraphics[width=0.9\columnwidth]{figures/gather_scatter.png}
+  \includegraphics[width=\columnwidth]{figures/tikz/bg_gather.pdf}
   \caption{Gather-scatter on the example of
-  Figure~\ref{fig:masked-conv}. Receptive fields of active outputs are
-  gathered into a packed buffer, computed, and scattered back into
-  $\mathbf{y}$; the extra gather and scatter overhead, not the computation, dominate
-  its latency.}
+  Figure~\ref{fig:masked-conv}. To compute only active outputs, it copies their
+  receptive fields into a packed buffer (gather) so that a GEMM can process
+  them as contiguous rows, then writes the packed results back into
+  $\mathbf{y}$ (scatter). No computation is wasted, but the two extra passes
+  over memory, not the computation, dominate its latency.}
   \Description{Receptive fields of active positions are gathered into a
   packed column, split across two SMs, and the packed outputs are scattered
   to the output tensor.}
