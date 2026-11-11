@@ -4,26 +4,13 @@
 %% ================================================================
 \subsection{Overview}
 \label{sec:overview}
-
-% TODO: Replace this placeholder with the final two-stage overview figure.
-\begin{figure*}[t]
-  \centering
-  \includegraphics[width=\textwidth]{figures/wiseconv_overview.png}
-  \caption{Overview of \sysname and baseline execution paths.
-  % TODO: update caption for new figure with tile selection
-  (a)~Masked convolution. (b)~Tile skipping. (c)~Gather-scatter.
-  (d)~\sysname: \ding{192}~constructs a tile-local worklist from the mask,
-  \ding{193}~consumes it via worklist-driven tiled execution.}
-  \Description{Placeholder.}
-  \label{fig:overview}
-\end{figure*}
-
+% fig:overview is defined in characterization.tex so that it floats to the top of the Design section page.
 \sysname exploits the fact that dense tiled convolution is driven by output
 coordinates: each coordinate determines the receptive-field reads and output
 write, while the reduction over channels and kernel offsets remains regular.
 Replacing the dense coordinate sequence with an active-output worklist
 introduces position-level selectivity into the tiled pipeline without altering
-the reduction datapath (Figure~\ref{fig:overview}d).
+the reduction datapath (Figure~\ref{fig:overview}).
 
 Translating this into end-to-end latency reduction requires co-designing two
 stages. The construction stage (\S\ref{sec:design:construct}) derives the

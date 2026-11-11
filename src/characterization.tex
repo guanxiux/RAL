@@ -154,6 +154,34 @@ order recovers all of a global order's benefit.}
   falls.}
   \label{fig:char-bound}
 \end{figure}
+% fig:overview (Design) is defined here so that it reaches the page where Design starts.
+\begin{figure*}[t]
+  \centering
+  \includegraphics[width=\textwidth]{figures/tikz/overview.pdf}
+  \caption{\sysname on the running example of Figure~\ref{fig:masked-conv}.
+  \ding{192}~One pass over the output mask $M_{out}$ compacts each construction
+  tile into a segment of its active positions and appends the segments to the
+  worklist $\mathcal{W}$ in arrival order; the same pass compares the worklist
+  length $n_\mathcal{W}$ with the layer's offline thresholds and selects the tile
+  configuration. \ding{193}~Later operators with the same geometry reuse
+  $\mathcal{W}$; an operator that changes the geometry (here a stride-2
+  convolution) gets a new worklist from \ding{192}. \ding{194}~A persistent grid
+  loops over $\mathcal{W}$ in tiles of the selected size; each tile reads its
+  receptive fields from $\mathbf{x}$ in place and runs the dense reduction, so
+  only the padding of the last tile is wasted. Bottom: the host launches the
+  per-frame CUDA graph once, and construction enables one of the layer's
+  candidate compute nodes on the device, so nothing is read back to the host.}
+  \Description{Three panels and a timeline. Construction: four 2x2 mask tiles
+  produce segments [0,5], none, [9,12], [14], appended to the worklist as
+  9, 12, 0, 5, 14; a ruler marks the length against small-tile and large-tile
+  ranges. Reuse: the worklist feeds conv l and conv l+1 and stops at a
+  stride-2 convolution, which gets a new worklist. Compute: the worklist is cut
+  into tiles of two rows; SM 0 runs tiles 0 and 2, SM 1 runs tile 1, each as
+  receptive fields times weights equals outputs, with a padded last row.
+  Timeline: one host launch; on the GPU, construct-and-select enables the
+  small-tile compute node while the large-tile node stays disabled.}
+  \label{fig:overview}
+\end{figure*}
 
 The intercept $b$ consists of launch latency and a single-tile dependent chain.
 An empty kernel spends 92\% of its stall cycles on constant-cache misses (the
@@ -187,18 +215,6 @@ construction time.}
 \subsection{Following the Length Is Not Free}
 \label{sec:char:cost}
 
-\begin{figure}[t]
-  \centering
-  \includegraphics[width=\columnwidth]{figures/char_cost.pdf}
-  \caption{Per-layer gain of selecting the configuration per worklist length
-  over the best single configuration on the real trace (CDF over layers),
-  against the per-layer cost of each selection mechanism on the same GPU.}
-  \Description{Cumulative distributions of per-layer gain, with vertical
-  lines at the cost of a device-updatable node, host readback, and a
-  conditional node.}
-  \label{fig:char-cost}
-\end{figure}
-
 Insight~1 requires the configuration to follow the worklist length, but the
 length exists only on the device and changes at every layer of every frame.
 Every mechanism that selects a kernel from it pays per decision point: reading
@@ -217,3 +233,17 @@ Insights 4 and 5 together mean that current hardware cannot reach the oracle
 affine line without trading selection cost against adaptation gain;
 \S\ref{sec:eval:discussion} discusses the hardware support that would remove
 this trade-off.
+
+% fig:char-cost sits at the end of the section so that its column space goes to the text and Design starts on the
+% page of fig:overview.
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=\columnwidth]{figures/char_cost.pdf}
+  \caption{Per-layer gain of selecting the configuration per worklist length
+  over the best single configuration on the real trace (CDF over layers),
+  against the per-layer cost of each selection mechanism on the same GPU.}
+  \Description{Cumulative distributions of per-layer gain, with vertical
+  lines at the cost of a device-updatable node, host readback, and a
+  conditional node.}
+  \label{fig:char-cost}
+\end{figure}
