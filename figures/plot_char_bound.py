@@ -1,8 +1,7 @@
 #!/usr/bin/env python3
 """fig:char-bound (Insight 4): the two per-layer fixed costs.  (a) warp stall reasons of the compute kernel with no
 work (n_W = 0: launch and exit) and with a single tile (n_W = 1: one tile's dependent chain), the median share over
-the representative layers (Nsight Compute, warm caches), with the median time per launch (graph timing) and,
-beside each pair, the median intercept b of the per-layer affine fit on the same layers (i1).
+the representative layers (Nsight Compute, warm caches); the launch times and the intercept b are in the text.
 (b) construction time over the per-length-best convolution time of the whole model, against the active ratio of
 synthetic clustered masks.  Reads char_intercept.csv and char_construction.csv (char_stats.py)."""
 from __future__ import annotations
@@ -25,7 +24,7 @@ ic = read("char_intercept.csv")
 cs = read("char_construction.csv")
 fig = plt.figure(figsize=(FIG_W, 2.10))
 B, T = 0.15, 0.78
-ax = fig.add_axes([0.235, B, 0.285, T - B])
+ax = fig.add_axes([0.235, B, 0.37, T - B])
 axb = fig.add_axes([0.75, B, 0.235, T - B])
 
 ys, labels, y = [], [], 0.0
@@ -39,11 +38,6 @@ for dev, prec in GROUPS:
             w = sum(share[k] for k in keys) / tot
             ax.barh(y, w, 0.78, left=left, color=color, edgecolor="white", linewidth=0.4, zorder=3)
             left += w
-        us = float(np.median([float(r["us"]) for r in rows]))
-        ax.text(1.02, y, f"{us:.1f}", ha="left", va="center", fontsize=FS_NOTE, color=INK)
-        if pt == "nw1":  # the intercept of the per-layer affine fit on the same layers
-            b = float(np.median([float(r["intercept_us"]) for r in rows]))
-            ax.text(1.27, y + 0.5, f"{b:.1f}", ha="left", va="center", fontsize=FS_NOTE, color=CFG["best"])
         ys.append(y)
         labels.append(plabel)
         y -= 1.0
@@ -57,8 +51,6 @@ ax.set_xlim(0, 1)
 ax.set_xticks([0, 0.5, 1])
 ax.set_xticklabels(["0", "50", "100"])
 ax.set_ylim(y + 0.6, 0.6)
-ax.text(1.02, 0.95, "µs", ha="left", va="center", fontsize=FS_NOTE, color=MUTED)
-ax.text(1.27, 0.95, "$b$", ha="left", va="center", fontsize=FS_NOTE, color=CFG["best"])
 ax.set_xlabel("(a) Share of stall cycles (%)", fontsize=FS_CAP)
 for side in ("top", "right", "left"):
     ax.spines[side].set_visible(False)
@@ -77,11 +69,11 @@ axb.set_xlim(0.008, 1.2)
 axb.set_xticks([0.01, 0.1, 1])
 axb.set_xticklabels(["0.01", "0.1", "1"])
 axb.minorticks_off()
-axb.set_ylim(0, 42)
+axb.set_ylim(0, 66)
 axb.set_yticks([0, 10, 20, 30, 40])
 axb.set_ylabel("Construction / convolution (%)")
 axb.set_xlabel(r"(b) Active ratio $\alpha$", fontsize=FS_CAP)
 tidy(axb)
-axb.legend(loc="upper right", bbox_to_anchor=(1.02, 1.03), frameon=False, fontsize=FS_NOTE, handlelength=1.8,
+axb.legend(loc="upper right", bbox_to_anchor=(1.04, 1.04), frameon=False, fontsize=FS_LEG, handlelength=1.3,
            handletextpad=0.35, labelspacing=0.25, borderaxespad=0.1)
 save(fig, "char_bound.pdf")

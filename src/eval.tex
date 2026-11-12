@@ -90,51 +90,43 @@ agree.
 \end{figure*}
 
 \paragraph{Latency.}
-\sysname is the fastest path in all 24
-measured workload-platform pairs (Figure~\ref{fig:e2e-latency}). Relative to
-the fastest evaluated competing path in each pair, it achieves a 1.58$\times$
-geometric-mean speedup; individual-pair speedups range from 1.33$\times$ to
-2.12$\times$, corresponding to 25.0--52.8\% lower latency. Gains span more
-than two orders of magnitude in absolute latency, from 0.23\,ms for
-FireFlowNet on RTX~4090 to 88.6\,ms for YOLOv8m on Xavier NX.
+\sysname is the fastest path in all 44 groups of workload, platform, and
+precision (Figure~\ref{fig:e2e-latency}). In FP32 it runs 1.49--4.31$\times$
+faster than the fastest baseline of each group (geometric mean 2.18$\times$),
+and in FP16, where Dense is the only baseline, 1.27--4.69$\times$ faster
+(2.22$\times$), 2.20$\times$ over all 44 groups. No baseline is consistently
+second: tile skipping is the
+fastest baseline in 14 of the 24 FP32 groups, gather-scatter in 6, and Dense
+in 4. Gather-scatter varies most, because its per-layer extraction, scatter,
+and host synchronization do not shrink with the active ratio. In 11 FP32
+groups, mostly FireFlowNet and DynConv, it runs 1.86--12.1$\times$ slower than
+Dense and extends beyond the axis (red crosses). On YOLOv8m b4, four streams
+amortize these costs and make it the fastest baseline on four of the six GPUs,
+where \sysname still runs 1.69--2.39$\times$ faster.
 
-The two existing sparse paths split the remaining 24 pairs between them: dense
-is fastest in 13 and tile skipping in 11; gather-scatter never wins. The split
-tracks active ratio: at the YOLO workloads' $\alpha\approx48$--$49\%$, few
-tiles are fully inactive, so tile skipping cannot compensate for its lower
-throughput; on FireFlowNet ($\alpha\approx25\%$) and DynConv
-($\alpha\approx16\%$), enough tiles are skippable for it to overtake dense.
-Neither path is uniformly strong, and \sysname outperforms whichever wins.
-On the Jetson platforms the lead narrows
-(geometric mean 1.53$\times$ vs.\ 1.61$\times$ on discrete GPUs) but \sysname
-remains fastest in all eight pairs.
-
-Across all 24 pairs, \sysname averages 1.76$\times$ the ideal
-proportional-scaling reference (dashed lines in
-Figure~\ref{fig:e2e-latency}), compared with 2.79$\times$ for the per-pair
-fastest competing path. The gap to ideal tracks active ratio: on the YOLO
-workloads \sysname runs at 1.36$\times$ ideal, while on DynConv
-($\alpha\approx16\%$) construction and fixed costs widen it to
-2.60$\times$.
+The distance to the ideal line follows worklist length, as Insight~4
+predicts. Averaged over GPUs and precisions, \sysname runs at 1.27$\times$ the
+ideal latency on YOLOv8m b4, whose median worklist holds 1{,}382 entries, and
+at 2.78$\times$ on DynConv, whose median worklist holds 43
+(Table~\ref{tab:worklist-efficiency}), so per-layer fixed costs dominate its
+frame.
 
 \paragraph{Energy.}
-\sysname is the lowest-energy path for every workload on both Jetson
-platforms (Table~\ref{tab:e2e-energy}). In FP32 it uses 32.8--51.8\% less
-energy per frame than the lowest-energy baseline, and in FP16 60.8--83.6\% less
-than Dense.
+Shorter frames translate into lower energy (Table~\ref{tab:e2e-energy}).
+\sysname is the lowest-energy path for every workload on both Jetson boards:
+in FP32 it uses 32.8--55.3\% less energy per frame than the lowest-energy
+baseline, and across both precisions 60.8--90.1\% less than Dense.
 
 \input{figures/e2e_energy_table}
 
 \paragraph{Accuracy.}
-\sysname's latency and energy gains do not change accuracy
-(Table~\ref{tab:e2e-accuracy}). Given the same layer masks, the three masked
-paths agree: AEE and PCKh are identical, and YOLOv8m AP differs by at most 0.1
-points, a residual of floating-point reduction order rather than of covered
-positions. Where worklist reuse computes a superset of the required positions,
-the output mask gates writeback, so the extra positions never reach downstream
-layers. The remaining gap to Dense (1.4 PCKh points lower on DynConv, slightly
-better AEE and AP on the other two) is set by the upstream mask policy, which
-\sysname consumes without modification.
+Given the same layer masks, the three masked paths reach the same accuracy
+(Table~\ref{tab:e2e-accuracy}): AEE and PCKh are identical, and YOLOv8m AP
+differs by at most 0.1 points, a residual of floating-point reduction order.
+Where worklist reuse computes a superset of the required positions, the output
+mask gates writeback, so the extra positions never reach downstream layers.
+The remaining gap to Dense (1.4 PCKh points lower on DynConv, slightly better
+AEE and AP elsewhere) is set by the upstream mask policy.
 
 \input{figures/e2e_accuracy_table}
 
@@ -155,31 +147,28 @@ better AEE and AP on the other two) is set by the upstream mask policy, which
 \end{figure}
 
 \paragraph{Effective throughput.}
-A masked path lowers latency only if it is both selective, captured by the
-useful-compute ratio $\eta$, and fast, captured by raw throughput $T$
-(Eq.~\ref{eq:efficiency-framework-throughput}).
-Figure~\ref{fig:effective-throughput} reports both, and the two baselines fail
-on opposite axes. Tile skipping keeps the dense tile schedule but computes
-every position of an active tile, so its $\eta$ is only 0.49--0.74 while its
-raw throughput reaches 19.0--77.5\% of Dense. Gather-scatter issues exactly the
-required positions ($\eta=1$), but extraction and writeback hold its raw
-throughput to 2.6--66.5\% of Dense. \sysname keeps $\eta$ at 0.91--1.00 and
-sustains 50.8--120.2\% of Dense raw throughput in FP32 (29.6--83.6\% in FP16),
-the highest of the masked paths in every case. On YOLOv8m b4 its effective
-throughput exceeds even Dense's raw throughput, because cuDNN runs this
-configuration slower than \sysname's kernels.
+Figure~\ref{fig:effective-throughput} explains the end-to-end result with the
+two axes of Eq.~\ref{eq:efficiency-framework-throughput}: a masked path is
+fast only if it is both selective (useful-compute ratio $\eta$) and keeps
+dense throughput ($T$). The two baselines fail on opposite axes. Tile skipping
+keeps the dense tile schedule, reaching 22.5--76.7\% of Dense raw throughput,
+but computes every position of an active tile, so $\eta$ is 0.49--0.74.
+Gather-scatter issues only required positions ($\eta = 1$), but extraction and
+writeback hold its raw throughput to 2.6--65.4\% of Dense. \sysname keeps
+$\eta$ at 0.91--1.00 and sustains 53.9--117.3\% of Dense raw throughput in
+FP32 (29.6--81.4\% in FP16), the highest effective throughput in every group.
+On YOLOv8m b4 its effective throughput exceeds Dense's raw throughput because
+cuDNN runs this configuration slower than \sysname's kernels.
 
 \input{figures/worklist_efficiency_table}
 
-Table~\ref{tab:worklist-efficiency} localizes \sysname's own loss through the
-decomposition of Eq.~\ref{eq:eta-decomp}. $\eta_{\mathrm{construct}}$ is
-100.0\% on every workload: tile-local compaction emits each active coordinate
-exactly once. All of the loss is in $\eta_{\mathrm{compute}}$, the fraction of
-issued slots that are worklist entries, and it tracks worklist length.
-FireFlowNet and YOLOv8m b4, whose median worklists hold thousands of entries,
-reach 99.8\% and 98.1\%; YOLOv8m b1 and DynConv, whose worklists are often
-shorter than a few tiles (P10 of 24 and 3 entries), lose 7.6\% and 7.9\% to the
-padding of their final tiles.
+Table~\ref{tab:worklist-efficiency} locates \sysname's remaining loss with the
+decomposition of Eq.~\ref{eq:eta-decomp}. Tile-local compaction emits each
+active coordinate exactly once ($\eta_{\mathrm{construct}} = 100\%$), so all
+loss is padding in the final tile of each worklist ($\eta_{\mathrm{compute}}$)
+and it follows worklist length: 99.8\% and 98.1\% on FireFlowNet and YOLOv8m
+b4, whose median worklists hold thousands of entries, and 93.6\% and 92.1\% on
+YOLOv8m b1 and DynConv, whose shortest worklists (P10) hold 26 and 3 entries.
 
 \begin{figure}[t]
   \centering
@@ -197,35 +186,36 @@ padding of their final tiles.
 \end{figure}
 
 \paragraph{Latency decomposition.}
-Figure~\ref{fig:decomposition} splits YOLOv8m latency by stage. At batch~1 in
-FP32, \sysname cuts convolution from 9.68 to 2.27\,ms (4.3$\times$) at the cost
-of 0.17\,ms of construction, and the frame falls from 10.76 to 3.00\,ms.
-Gather-scatter issues the least convolution of any masked path (1.68\,ms), but
-its per-layer host synchronization leaves the GPU idle for 8.26\,ms, 64.8\% of
-its frame. Batching four streams hides most of that idle time (0.87\,ms per
-frame) and lets both baselines fill the GPU, so tile skipping and
-gather-scatter fall to 5.04 and 4.50\,ms per frame; \sysname still leads at
-1.88\,ms because its batch-1 grid already keeps the GPU busy. In FP16, tensor
+Figure~\ref{fig:decomposition} shows where each path spends a YOLOv8m frame.
+At b1 in FP32, \sysname cuts convolution from 9.68 to 2.27\,ms at the cost of
+0.17\,ms of construction, and keeps the GPU busy because the compute path never
+returns to the host. Gather-scatter spends the least time in convolution (1.68\,ms),
+but its per-layer host synchronization leaves the GPU idle for 8.26\,ms, 64.8\%
+of its frame; at b4, four streams hide most of that idle time and bring it to
+4.50\,ms per frame, still 2.39$\times$ \sysname's 1.88\,ms. In FP16, tensor
 cores shrink convolution more than the rest of the frame: construction and
-other operators grow from 24.3\% of \sysname's FP32 frame to 39.6\%, and the
+other operators grow from 24.3\% to 39.0\% of \sysname's b1 frame, and its
 speedup over Dense narrows from 3.59$\times$ to 2.63$\times$.
 
+\paragraph{Speedup across activity.}
+Grouping the frames of YOLOv8m b1 on RTX~3080 by their active ratio tests the
+affine behavior end to end. \sysname's speedup over Dense falls smoothly with
+activity, from 5.90$\times$ for frames with $\alpha<0.02$ to 1.69$\times$ for
+$\alpha\ge0.4$ in FP32 (3.34$\times$ to 1.52$\times$ in FP16), as the affine
+model with a per-layer intercept predicts (Insights~1 and~4). Neither baseline
+follows activity: tile skipping beats Dense only below $\alpha=0.02$, and
+gather-scatter never does. The selection of \S\ref{sec:design:select} places
+its gains where the uniform prior expects them: against the speedup-optimal
+configuration, \sysname is 1.13$\times$ faster on the sparsest frames and at
+most 4\% slower on the densest (FP32).
+
 \paragraph{Memory overhead.}
-% TODO(user): Table~\ref{tab:memory} now reports wise2 FP32 (FireFlowNet, YOLOv8m b1 / b4, DynConv; peak from before
-% the graph capture). DynConv: every path within 53.8--57.2 MiB (gather-scatter no longer the most compact); YOLOv8m b4
-% sparse paths 2.70--2.74 GB. The prose below is still first-generation.
-Table~\ref{tab:memory} reports peak live GPU allocation.
-FireFlowNet, YOLOv8n, and YOLOv8m use temporal mask policies that retain
-previous-frame activations for differencing, so every sparse path allocates
-3--4$\times$ Dense. The temporal state dominates the gap, and \sysname stays
-within the same tier as tile skipping; gather-scatter is the exception on
-YOLOv8m, where materializing input patches for each active position adds to the
-temporal state and pushes it above both other sparse paths.
-DynConv applies learned spatial gates without temporal state, placing all
-backends in a narrow 27--34\,MiB range. Here \sysname's worklist and coordinate
-metadata add only 2.3\,MiB over Dense, while gather-scatter is the most compact
-because DynConv's predominantly pointwise block structure lets intermediates
-stay in the gathered compact representation~\cite{dynconv}.
+\sysname's metadata adds little memory (Table~\ref{tab:memory}). The temporal
+mask policies of FireFlowNet and YOLOv8m retain previous-frame activations, so
+every masked path allocates 3.8--6.3$\times$ Dense, and \sysname stays within
+the range of the other masked paths (128.6 vs.\ 141.8--197.0\,MiB on
+FireFlowNet). DynConv's learned gates keep no temporal state, and \sysname
+allocates 0.1\,MiB more than Dense.
 
 \input{figures/memory_table}
 
@@ -234,31 +224,29 @@ stay in the gathered compact representation~\cite{dynconv}.
 
 \input{figures/ablation_table}
 
-% TODO(user): Table~\ref{tab:ablation} now reports the wise2 ablation (YOLOv8m batch 1, RTX~3080, FP16;
-% construction / compute / tile-selection variants incl. cost-unaware K_max and the zero-cost oracle;
-% figures/ablation_stats.py); the paragraphs below still describe the first-generation YOLOv8n variants.
-Table~\ref{tab:ablation} isolates each co-designed component by disabling it
-while holding all others fixed on YOLOv8n; the stage decomposition separates
-the effect on construction and convolution.
-
-\emph{Construction.} On RTX~3080, Atomic append and Global order raise construction from
-0.12 to 0.43 and 0.54\,ms without reducing convolution (0.94\,ms throughout),
-adding 19.1\% and 19.6\% to the end-to-end latency over Ours; Global order's
-higher construction reflects its additional kernel passes. No reuse
-\emph{raises} $\eta$ to 99.7\% ($\eta_{\mathrm{construct}}=1$ per layer) but
-increases construction 1.6$\times$ (0.12 to 0.19\,ms), adding 5.7\% over Ours:
-rebuilding the worklist every layer is more expensive than reusing a slightly loose
-superset worklist. On AGX~Orin the same pattern holds with smaller margins:
-construction variants add 1--9\% over Ours while convolution stays within
-0.05\,ms, because convolution is a larger share of the total.
-
-\emph{Compute.} On RTX~3080, DP only raises convolution from 0.94 to 1.01\,ms over Ours
-(+0.07\,ms); No hybrid, which retains full Stream-$K$ but not the hybrid
-mode, recovers most of that gap (0.96\,ms, +0.02\,ms over Ours). Readback \&
-launch runs the same kernels as Ours but adds per-operator host
-synchronization, inflating the total from 1.66 to 7.61\,ms (4.58$\times$
-Ours). On AGX~Orin, DP only adds 1.5\% end-to-end latency over Ours and
-readback inflates it to 2.38$\times$ Ours.
+Table~\ref{tab:ablation} replaces one mechanism at a time on YOLOv8m (b1,
+RTX~3080, FP16). Rebuilding the worklist at every layer (No reuse) doubles
+construction time from 0.16 to 0.30\,ms and adds 10\% to frame latency. The
+shuffled-order and full-layer-grid variants modify the speedup-optimal
+configuration and are compared against it. A shuffled worklist costs 3\%, as
+Insight~3 predicts (\S\ref{sec:char:order}). Launching the dense layer's grid,
+whose CTAs beyond the worklist exit, raises convolution time from 0.88 to
+1.06\,ms (1.13$\times$), the cost that the persistent grid avoids
+(\S\ref{sec:design:compute}). Reading $n_W$ back to the host at every layer to
+launch the exact grid runs 6.51$\times$ slower, as Insight~5 predicts. For
+selection, the configuration fastest at $\alpha = 1$ runs 1.71$\times$ slower,
+and the single configurations with the best expected speedup
+(speedup-optimal) or the lowest expected latency (latency-optimal) over a
+uniform $n_W$ run 1.02$\times$ and 1.10$\times$ slower.
+Placing four candidates at every layer regardless of their cost
+(Cost-unaware $K_{\max}$) runs 1.07$\times$ slower: more producers take the
+selection path, raising construction time to 0.22\,ms. The trade-off instead
+sets $K$ per GPU and precision: on YOLOv8m, RTX~3080 follows the length on 5
+of 83 layers in FP16 and 30 in FP32, and AGX Orin, whose gains are larger, on
+62 in FP32. Only the zero-cost
+oracle, which runs the same candidates on a graph captured for each frame's own
+$n_W$ without any selection mechanism, beats \sysname, by 8\%; this margin is
+the selection cost that current GPUs impose (\S\ref{sec:char:cost}).
 
 \subsection{Discussion}
 \label{sec:eval:discussion}

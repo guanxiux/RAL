@@ -30,15 +30,14 @@ def make_table(rows: list[dict]) -> str:
     lines = [
         r"\begin{table}[htb]",
         r"  \centering",
-        r"  \caption{Peak live GPU allocation (MiB) on RTX~3080 (FP32; batch 1 unless noted).}",
+        r"  \caption{Peak live GPU allocation (MiB) on RTX~3080 (FP32).}",
         r"  \label{tab:memory}",
         r"  \footnotesize",
         r"  \setlength{\tabcolsep}{4pt}",
-        r"  \renewcommand{\arraystretch}{1.08}",
         r"  \begin{tabular}{@{}lrrrr@{}}",
-        r"    \hline",
-        r"    \textbf{System} & " + " & ".join(rf"\textbf{{{row['workload_label']}}}" for row in rows) + r" \\",
-        r"    \hline",
+        r"    \toprule",
+        r"    & " + " & ".join(row['workload_label'] for row in rows) + r" \\",
+        r"    \midrule",
     ]
     for field, label in SYSTEMS:
         cells = [cell(row, field) for row in rows]
@@ -46,7 +45,7 @@ def make_table(rows: list[dict]) -> str:
             label = rf"\textbf{{{label}}}"
         lines.append(f"    {label} & " + " & ".join(cells) + r" \\")
     lines.extend([
-        r"    \hline",
+        r"    \bottomrule",
         r"  \end{tabular}",
         r"\end{table}",
         "",

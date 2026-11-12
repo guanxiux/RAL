@@ -250,6 +250,17 @@ show that for convolution on a dense input grid the indirection leaves the
 reduction identical to dense, so the residual gap is a per-layer fixed cost
 rather than lost throughput (\S\ref{sec:char}).
 
+Selecting kernels by problem size is equally established. Compilers and
+inference engines for dynamic shapes tune kernels over shape ranges and
+dispatch among them at run time~\cite{dietcode,nimble,tensorrt}, GEMM
+libraries choose a schedule per problem size~\cite{streamkpp}, and DA-MoE
+selects fused mixture-of-experts kernels on the device from each layer's
+token distribution~\cite{damoe}. These systems serve problems whose size
+changes per request or batch and whose kernels run long enough to absorb a
+selection step. Masked convolution in high-rate perception changes its size
+at every layer of every frame, and its layers last microseconds, so each
+decision point competes with the gain it buys (\S\ref{sec:char:cost}).
+
 
 % Some 3D systems~\cite{spconv2,torchsparsepp} compute through
 % coordinate-indexed fused GEMM~\cite{cutlass}, where an index array derived

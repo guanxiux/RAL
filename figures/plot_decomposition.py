@@ -2,7 +2,8 @@
 """fig:decomposition: per-frame YOLOv8m latency by stage on RTX 3080 (reads decomposition.csv).
 
 Horizontal stacked bars, one per path, grouped by batch and precision; the total is printed at the end of each bar.
-Stage colors are their own roles (not the path colors): convolution slate blue, construction ochre, gather/scatter
+Stage colors are their own roles (not the path colors): convolution dark slate, construction bright yellow (far apart in
+lightness: the two are always adjacent), gather/scatter
 sea green with the gather-scatter hatch, other operators warm gray, GPU idle the wasted gray with dots.
 """
 from __future__ import annotations
@@ -12,9 +13,9 @@ from matplotlib.patches import Patch
 from bar_patterns import WASTED_COLOR, WASTED_HATCH, WASTED_INK
 from char_style import FIG_W, INK, plt, read, save, tidy
 
-FS_TICK, FS_NOTE, FS_LAB, FS_LEG = 7.3, 6.8, 7.5, 7.0  # larger than the shared sizes: the bars leave room
+FS_TICK, FS_NOTE, FS_LAB, FS_LEG = 7.3, 6.8, 7.5, 8.0  # larger than the shared sizes: the bars leave room
 
-STAGES = [("construction", "construction", "#d9a441", ""), ("conv", "convolution", "#4e6e8e", ""),
+STAGES = [("construction", "construction", "#f2c14e", ""), ("conv", "convolution", "#2f4a68", ""),
           ("gather", "gather/scatter", "#5e9e8a", "\\\\\\\\"), ("other", "other ops", "#cfcac2", ""),
           ("idle", "GPU idle", WASTED_COLOR, WASTED_HATCH)]
 INKS = {"gather": "#ffffff", "idle": WASTED_INK}
@@ -24,8 +25,8 @@ H = 0.74  # bar height
 rows = read("decomposition.csv")
 PANELS = [("fp32", 14.0, [0, 2, 4, 6, 8, 10, 12, 14]), ("fp16", 4.4, [0, 1, 2, 3, 4])]
 nrows = {d: sum(1 for r in rows if r["dtype"] == d) + 0.5 for d, _, _ in PANELS}
-fig = plt.figure(figsize=(FIG_W, 2.75))
-L, R, T, B, VG = 0.255, 0.97, 0.875, 0.11, 0.12
+fig = plt.figure(figsize=(FIG_W, 2.95))
+L, R, T, B, VG = 0.255, 0.97, 0.83, 0.105, 0.12
 unit = (T - B - VG) / sum(nrows.values())
 top = T
 for pi, (dtype, xmax, xt) in enumerate(PANELS):
@@ -75,6 +76,6 @@ for pi, (dtype, xmax, xt) in enumerate(PANELS):
     if pi == len(PANELS) - 1:
         ax.set_xlabel("Latency per frame (ms)", fontsize=FS_LAB, labelpad=1.5)
 handles = [Patch(facecolor=c, edgecolor=INKS.get(k, "none"), hatch=h, lw=0) for k, _, c, h in STAGES]
-fig.legend(handles, [n for _, n, _, _ in STAGES], loc="upper center", ncol=5, frameon=False,
-           bbox_to_anchor=(0.55, 1.0), fontsize=FS_LEG - 0.4, handlelength=1.0, columnspacing=0.6, handletextpad=0.35)
+fig.legend(handles, [n for _, n, _, _ in STAGES], loc="upper center", ncol=3, frameon=False,
+           bbox_to_anchor=(0.5, 1.0), fontsize=FS_LEG, handlelength=1.0, columnspacing=1.0, handletextpad=0.3, labelspacing=0.25)
 save(fig, "decomposition.pdf")

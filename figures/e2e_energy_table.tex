@@ -10,18 +10,18 @@
  & & & \multirow{2}{*}{FireFlowNet} & \multicolumn{1}{c}{YOLOv8m} & \multicolumn{1}{c}{YOLOv8m} & \multirow{2}{*}{DynConv} \\
  & & & & \multicolumn{1}{c}{b1} & \multicolumn{1}{c}{b4} & \\
 \midrule
-\multirow{6}{*}{\rotatebox[origin=c]{90}{\scriptsize AGX Orin}} & \multirow{4}{*}{\rotatebox[origin=c]{90}{\scriptsize FP32}} & Dense & 165 & 2102 & 2212 & 951 \\
- &  & Tile skipping & 79.9\,{\scriptsize($-$51.5\%)} & 752\,{\scriptsize($-$64.2\%)} & 572\,{\scriptsize($-$74.1\%)} & 467\,{\scriptsize($-$50.9\%)} \\
- &  & Gather-scatter & 205\,{\scriptsize(+24.2\%)} & 791\,{\scriptsize($-$62.4\%)} & 543\,{\scriptsize($-$75.5\%)} & 2324\,{\scriptsize(+144.3\%)} \\
- &  & \sysname & \textbf{48.6}\,{\scriptsize($-$70.5\%)} & \textbf{363}\,{\scriptsize($-$82.7\%)} & \textbf{280}\,{\scriptsize($-$87.3\%)} & \textbf{258}\,{\scriptsize($-$72.8\%)} \\
+\multirow{6}{*}{\rotatebox[origin=c]{90}{\scriptsize AGX Orin}} & \multirow{4}{*}{\rotatebox[origin=c]{90}{\scriptsize FP32}} & Dense & 165 & 2110 & 2220 & 951 \\
+ &  & Tile skipping & 79.9\,{\scriptsize($-$51.5\%)} & 664\,{\scriptsize($-$68.5\%)} & 477\,{\scriptsize($-$78.5\%)} & 467\,{\scriptsize($-$50.9\%)} \\
+ &  & Gather-scatter & 205\,{\scriptsize(+24.2\%)} & 691\,{\scriptsize($-$67.2\%)} & 428\,{\scriptsize($-$80.7\%)} & 2324\,{\scriptsize(+144.3\%)} \\
+ &  & \sysname & \textbf{48.6}\,{\scriptsize($-$70.5\%)} & \textbf{297}\,{\scriptsize($-$85.9\%)} & \textbf{219}\,{\scriptsize($-$90.1\%)} & \textbf{258}\,{\scriptsize($-$72.8\%)} \\
 \cmidrule{2-7}
- & \multirow{2}{*}{\rotatebox[origin=c]{90}{\scriptsize FP16}} & Dense & 47.7 & 432 & 375 & 314 \\
- &  & \sysname & \textbf{17.5}\,{\scriptsize($-$63.3\%)} & \textbf{101}\,{\scriptsize($-$76.5\%)} & \textbf{61.6}\,{\scriptsize($-$83.6\%)} & \textbf{123}\,{\scriptsize($-$60.8\%)} \\
+ & \multirow{2}{*}{\rotatebox[origin=c]{90}{\scriptsize FP16}} & Dense & 47.7 & 444 & 376 & 314 \\
+ &  & \sysname & \textbf{17.5}\,{\scriptsize($-$63.3\%)} & \textbf{89.7}\,{\scriptsize($-$79.8\%)} & \textbf{49.3}\,{\scriptsize($-$86.9\%)} & \textbf{123}\,{\scriptsize($-$60.8\%)} \\
 \midrule
-\multirow{4}{*}{\rotatebox[origin=c]{90}{\scriptsize Xavier NX}} & \multirow{4}{*}{\rotatebox[origin=c]{90}{\scriptsize FP32}} & Dense & 248 & 2505 & 2425 & 1067 \\
- &  & Tile skipping & 114\,{\scriptsize($-$54.0\%)} & 876\,{\scriptsize($-$65.0\%)} & 837\,{\scriptsize($-$65.5\%)} & 499\,{\scriptsize($-$53.3\%)} \\
- &  & Gather-scatter & 299\,{\scriptsize(+20.2\%)} & 1028\,{\scriptsize($-$59.0\%)} & 818\,{\scriptsize($-$66.3\%)} & 2519\,{\scriptsize(+136.1\%)} \\
- &  & \sysname & \textbf{76.8}\,{\scriptsize($-$69.1\%)} & \textbf{539}\,{\scriptsize($-$78.5\%)} & \textbf{450}\,{\scriptsize($-$81.4\%)} & \textbf{332}\,{\scriptsize($-$68.9\%)} \\
+\multirow{4}{*}{\rotatebox[origin=c]{90}{\scriptsize Xavier NX}} & \multirow{4}{*}{\rotatebox[origin=c]{90}{\scriptsize FP32}} & Dense & 248 & 2505 & 2448 & 1067 \\
+ &  & Tile skipping & 114\,{\scriptsize($-$54.0\%)} & 720\,{\scriptsize($-$71.2\%)} & 678\,{\scriptsize($-$72.3\%)} & 499\,{\scriptsize($-$53.3\%)} \\
+ &  & Gather-scatter & 299\,{\scriptsize(+20.2\%)} & 802\,{\scriptsize($-$68.0\%)} & 565\,{\scriptsize($-$76.9\%)} & 2519\,{\scriptsize(+136.1\%)} \\
+ &  & \sysname & \textbf{76.8}\,{\scriptsize($-$69.1\%)} & \textbf{414}\,{\scriptsize($-$83.5\%)} & \textbf{335}\,{\scriptsize($-$86.3\%)} & \textbf{332}\,{\scriptsize($-$68.9\%)} \\
 \bottomrule
 \end{tabular}
 \end{table}

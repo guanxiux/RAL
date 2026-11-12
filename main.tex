@@ -1,26 +1,18 @@
-\documentclass[sigplan,anonymous,review]{acmart}
+\documentclass[sigconf, screen, review]{acmart}
 
-\settopmatter{printacmref=false}
-\renewcommand\footnotetextcopyrightpermission[1]{}
+%% ISCA 2027 submission format (iscaconf.org/isca2027/submit/guidelines.php, ISCA2027_ACM_template.zip):
+%% ACM sigconf, page numbers, confidentiality banner in the author position; margins, fonts, and spacing unmodified.
+\settopmatter{printfolios=true}
 \setcopyright{none}
-\acmConference[]{ }{ }{ }
-\acmBooktitle{ }
-% Strip all running heads. acmart installs "standardpagestyle" from its own
-% \AtBeginDocument hook, so \pagestyle in the preamble is overwritten; we
-% redefine the style itself (keeping review line numbers and the page folio).
-\makeatletter
-\AtBeginDocument{%
-  \fancypagestyle{standardpagestyle}{%
-    \fancyhf{}%
-    \renewcommand{\headrulewidth}{\z@}%
-    \renewcommand{\footrulewidth}{\z@}%
-    \fancyhead[L]{\ACM@linecountL}%
-    \fancyhead[R]{\ACM@linecountR}%
-    \fancyfoot[C]{\if@ACM@printfolios\footnotesize\thepage\fi}%
-  }%
-  \pagestyle{standardpagestyle}%
-}
-\makeatother
+\acmConference[ISCA '27]{54th IEEE/ACM International Symposium on Computer Architecture}{June 5--9, 2027}{Atlanta, Georgia, USA}
+\acmYear{2027}
+\acmISBN{978-x-xxxx-xxxx-x/YY/MM}
+\acmDOI{XXXXXXX.XXXXXXX}
+\settopmatter{printacmref=false}
+
+%%%%%%%%%%%---SETME-----%%%%%%%%%%%%%
+\newcommand{\iscasubmissionnumber}{NaN}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 \usepackage{amsmath,amsfonts}
 \usepackage{algorithm}
@@ -42,7 +34,9 @@
 %\title{\sysname: A Worklist-Driven GPU Runtime for Masked Convolution over Dense Feature Grids}
 %\title{\sysname: Worklist-Driven Masked Convolution for Low-Latency Vision Inference}
 \title{\sysname: Closing the Sparsity-to-Speedup Gap in Masked Convolution with Worklist-Driven Execution}
-\author{Anonymous Authors}
+\author{ISCA 2027 Submission
+  \textbf{\#\iscasubmissionnumber} -- Confidential Draft -- Do NOT Distribute!!}
+\renewcommand{\shortauthors}{ISCA 2027 Submission \#\iscasubmissionnumber}
 
 \begin{abstract}
 % v17 (ISCA framing, 2026-11-10)

@@ -12,54 +12,58 @@ Replacing the dense coordinate sequence with an active-output worklist
 introduces position-level selectivity into the tiled pipeline without altering
 the reduction datapath (Figure~\ref{fig:overview}).
 
-Translating this into end-to-end latency reduction requires co-designing two
-stages. The construction stage (\S\ref{sec:design:construct}) derives the
-worklist from the mask, and compatible operators reuse it to avoid repeated
-construction (\S\ref{sec:design:reuse}). The compute stage
-(\S\ref{sec:design:compute}) consumes the worklist through a persistent grid
-with the dense reduction datapath; because the worklist length varies per
-frame and is visible only on the device, a cost-aware mechanism selects the
-tile configuration without host involvement
-(\S\ref{sec:design:select}).
+Turning this selectivity into end-to-end latency reduction means meeting the two
+challenges of \S\ref{sec:intro}, worklist construction cost and worklist
+consumption efficiency. The construction stage
+builds the worklist from the mask in one pass over mask metadata
+(\S\ref{sec:design:construct}), and compatible operators reuse it so that the
+pass is not repeated at every layer (\S\ref{sec:design:reuse}). The compute
+stage consumes the worklist through a persistent grid that reads its length
+from device memory (\S\ref{sec:design:compute}). The length varies per frame
+and is visible only on the device, so a cost-aware selection chooses each
+layer's configuration without host involvement (\S\ref{sec:design:select}).
 
 %% ================================================================
 \subsection{Tile-Local Worklist Construction}
 \label{sec:design:construct}
 \label{sec:design:construct:compact}
 
-Constructing a tight schedule already requires a scan of the output grid, but
-the resulting coordinates must also retain enough spatial structure for
-efficient consumption. Globally stable compaction preserves the complete dense
-traversal order but requires a prefix scan or another pass to obtain
-device-wide offsets; per-coordinate appends avoid that coordination but scatter
-neighboring positions. Materializing active receptive fields, as gather-scatter
-does, regularizes the compute input at the cost of feature traffic proportional
-to the active count and $k^2C_{in}$. The useful middle ground is therefore a
-metadata-only schedule with local rather than global ordering.
+Construction turns $M_{in}$ into $M_{out}$ and the worklist $\mathcal{W}$ in
+one pass over the layer's output grid, reading and writing only mask metadata,
+never features or weights. The pass partitions the grid into construction
+tiles. Each CTA derives its tile's entries of $M_{out}$ by
+Eq.~\ref{eq:mask}, or reads them when a learned gate supplies the mask,
+compacts the tile's active coordinates in dense traversal order, and reserves
+a contiguous segment of $\mathcal{W}$ with one atomic add on a device-resident
+length counter. The buffer holds $|\mathcal{G}|$ entries, the static upper
+bound on $n_{\mathcal{W}}$, so construction allocates nothing at run time and
+$n_{\mathcal{W}}$ never leaves the device. Every active coordinate lands in
+exactly one segment, so the worklist is exact: $n_{\mathcal{W}}=\|M_{out}\|_0$.
 
-\sysname realizes this with contiguous, tile-local worklist
-segments. Because the number of active positions is not known before the pass,
-it preallocates a coordinate buffer with capacity
-$|\mathcal{G}|=H_{out}W_{out}$, the static upper bound on
-$|\mathcal{W}|$. Algorithm~\ref{alg:construct} details the resulting single
-pass. Line~1 initializes the device-resident length counter. Lines~2--7
-partition the output grid into $B_\tau\times B_\tau$ construction tiles, derive
-the corresponding entries of $M_{out}$ using Eq.~\ref{eq:mask}, and compact
-each tile's active coordinates into a local sequence $\mathcal{P}_\tau$ in
-dense-traversal order. When a learned gate supplies $M_{out}$
-directly~\cite{dynconv,dgnet}, Lines~4--5 are omitted and Line~7 compacts the
-supplied mask. Lines~8--11 count the compacted coordinates, atomically reserve
-$[\mathrm{base},\mathrm{base}+n_\tau)$ from the counter, and copy
-$\mathcal{P}_\tau$ into that interval. After all tiles complete, the reserved
-intervals collectively store $\mathcal{W}$, and the counter records
-$n_{\mathcal{W}}$. Because the layer shape fixes the buffer capacity and launch
-geometry while only the device observes the data-dependent length, construction
-requires no runtime allocation or host-visible active count.
+The resulting order is tile-local: dense within each segment, arrival order
+across segments. A globally ordered worklist would need a device-wide prefix
+scan or a second pass, and order has a negligible effect on the compute
+stage (Insight~3). What remains is the cost of the pass itself: it scans the whole
+grid, so it is fixed by the layer shape while the convolution it enables
+shrinks with activity and channel width.
 
-To relate the worklist to the useful-compute ratio of
-Eq.~\ref{eq:efficiency-framework}, we insert its length $n_{\mathcal{W}}$ between the
-required-position count and the issued-slot count. For
-$n_{\mathcal{W}}>0$,
+%% ================================================================
+\subsection{Cross-Operator Worklist Reuse}
+\label{sec:design:reuse}
+
+\sysname therefore builds a worklist only where the active set can grow. Layer
+$l+1$ reuses the worklist of layer $l$ when it keeps the output grid and cannot
+activate a position outside layer $l$'s active set:
+\begin{equation}
+  \mathcal{G}^{l+1}=\mathcal{G}^{l},\qquad
+  \{p \mid M^{l+1}_{out}[p]=1\} \subseteq \{p \mid M^{l}_{out}[p]=1\}.
+  \label{eq:reuse-condition}
+\end{equation}
+The condition depends on operator types, not on mask values ($1\times1$
+convolutions, activations, and normalization satisfy it), so model conversion
+marks reuse edges once. A reused worklist need not be exact. To track where
+issued work goes, we factor the useful-compute ratio of
+Eq.~\ref{eq:efficiency-framework} into a construction and a compute term:
 \begin{equation}
   \eta
   = \underbrace{\frac{\|M_{out}\|_0}{n_{\mathcal{W}}}}_{\eta_{\mathrm{construct}}}
@@ -67,144 +71,109 @@ $n_{\mathcal{W}}>0$,
   \underbrace{\frac{n_{\mathcal{W}}}{|\mathcal{C}|}}_{\eta_{\mathrm{compute}}} .
   \label{eq:eta-decomp}
 \end{equation}
-We analyze $\eta_{\mathrm{construct}}$ (required positions vs.\ worklist
-entries) here and $\eta_{\mathrm{compute}}$ (worklist entries vs.\ issued
-slots) in \S\ref{sec:design:compute}; the factorization decomposes $\eta$
-only, with all stage costs reflected in throughput~$T$.
-
-Because construction tiles partition the output grid and use disjoint
-reservations, each active coordinate appears exactly once, so
-$n_{\mathcal{W}}=\|M_{out}\|_0$. Fresh construction therefore has
-$\eta_{\mathrm{construct}}=1$ for a nonempty worklist.
-
-\begin{algorithm}[t]
-\caption{Tile-Local Worklist Construction}
-\label{alg:construct}
-\begin{algorithmic}[1]
-\REQUIRE Input mask $M_{in}$, output grid $\mathcal{G}$, tile size $B_\tau$
-\ENSURE Mask $M_{out}$, worklist $\mathcal{W}$, length
-        $n_{\mathcal{W}}=|\mathcal{W}|$
-\STATE $n_{\mathcal{W}} \leftarrow 0$
-\FOR{each $B_\tau \times B_\tau$ spatial tile $\tau$ \textbf{in parallel}}
-  \FOR{each position $p \in \tau$ \textbf{in parallel}}
-    \STATE $\mathrm{active}(p) \leftarrow \exists\, r \in \mathcal{N}(p): M_{in}[r] = 1$
-    \STATE $M_{out}[p] \leftarrow \mathrm{active}(p)$
-  \ENDFOR
-  \STATE $\mathcal{P}_\tau \leftarrow \textsc{Compact}(\tau,\,M_{out})$
-  \STATE $n_\tau \leftarrow |\mathcal{P}_\tau|$
-  \STATE $\mathrm{base} \leftarrow
-         \operatorname{AtomicAdd}(n_{\mathcal{W}},n_\tau)$
-  \FOR{each $0\le j<n_\tau$ \textbf{in parallel}}
-    \STATE $\mathcal{W}[\mathrm{base}+j] \leftarrow \mathcal{P}_\tau[j]$
-  \ENDFOR
-\ENDFOR
-\end{algorithmic}
-\end{algorithm}
-
-\sysname thus confines its ordering guarantee to each contiguous segment:
-coordinates retain the tile's dense traversal, while independently reserved
-segments provide no cross-boundary locality guarantee. A compute
-tile of $B_M$ positions (the output-position tile width used by the compute
-stage, \S\ref{sec:design:compute}) may therefore span coordinates from multiple construction segments when
-segments are shorter than $B_M$; the preserved locality is intra-segment
-contiguity, not compute-tile-to-construction-tile alignment. As shown in
-\S\ref{sec:eval:ablation-sensitivity}, this tile-local order achieves compute-stage
-throughput comparable to global ordering, making the additional ordering pass
-an unfavorable end-to-end trade-off.
-
-%% ================================================================
-\subsection{Cross-Operator Worklist Reuse}
-\label{sec:design:reuse}
-
-Each construction pass examines all $H_{out}W_{out}$ positions and, when
-deriving $M_{out}$ from $M_{in}$, performs $O(k^2)$ mask work per position.
-This channel-independent grid scan contrasts with required convolution work,
-which scales with the active ratio, spatial extent, and both channel
-dimensions. \sysname therefore amortizes construction by reusing one worklist
-across each compatible layer sequence.
-
-For layer $l$, let $\mathcal{G}^l$ denote its output grid, $M^l_{out}$ its
-output mask, $\mathcal{W}^l$ its worklist, and $n^l_{\mathcal{W}}$ its
-device-resident length. \sysname propagates the mask and worklist metadata
-alongside the feature tensor. Whether two consecutive layers are
-reuse-compatible depends on their operator types, not on runtime mask values.
-An operator that preserves the output grid and does not expand the active set
-guarantees, for any input mask, that
-$\mathcal{G}^{l+1}=\mathcal{G}^l$ and
-\begin{equation}
-  \{p\in\mathcal{G}^{l+1} \mid M^{l+1}_{out}[p]=1\}
-  \subseteq
-  \{p\in\mathcal{G}^l \mid M^l_{out}[p]=1\}.
-  \label{eq:reuse-condition}
-\end{equation}
-\sysname checks this condition once at model-conversion time. Because
-$\mathcal{W}^l$ covers $M^l_{out}$,
-Eq.~\ref{eq:reuse-condition} guarantees coverage for $M^{l+1}_{out}$.
-\sysname therefore forwards $\mathcal{W}^{l+1}=\mathcal{W}^l$ and
-$n^{l+1}_{\mathcal{W}}=n^l_{\mathcal{W}}$ without reconstruction and applies
-the condition recursively at each subsequent layer.
-
-Equality in Eq.~\ref{eq:reuse-condition} covers same-grid $1\times1$
-convolutions, mask-preserving activations, and inference-time normalization,
-leaving $\eta_{\mathrm{construct}}$ unchanged. Strict inclusion can result from
-mask-narrowing operators in the upstream policy, such as the activation-fused
-update truncation that DeltaCNN~\cite{deltacnn} uses to increase downstream
-sparsity. The inherited worklist remains a valid superset,
-trading a lower $\eta_{\mathrm{construct}}$ for one fewer construction pass
-without violating coverage. Because compute gates all output writes by the
-exact mask, positions scheduled but no longer active under the current mask
-participate in reduction yet produce no store; the superset schedule therefore
-cannot alter any inactive position's observable state.
-
-A change in the output grid violates the geometry constraint, while
-receptive-field expansion may violate Eq.~\ref{eq:reuse-condition} by
-introducing positions outside the upstream mask; either case invokes the
-construction pass of \S\ref{sec:design:construct:compact} to emit a new tight
-worklist. A lower $\eta_{\mathrm{construct}}$ alone does not trigger
-reconstruction because tightening a valid superset would pay another grid scan.
-Common receptive-field-expanding layers such as $3\times3$ convolutions still
-create rebuild points throughout the network, leaving device-resident worklist
-lengths variable across layers and frames. Compute must therefore handle a
-dynamic problem size.
+A freshly constructed worklist has $\eta_{\mathrm{construct}}=1$. When the
+upstream policy narrows a mask, as DeltaCNN's update truncation
+does~\cite{deltacnn}, the reused worklist becomes a superset
+($\eta_{\mathrm{construct}}<1$); the extra positions cost compute time but do
+not affect the output, because only positions active in the layer's own
+$M_{out}$ are written. A new grid or a receptive field wider than one position
+marks a rebuild point. Rebuild points recur at every $3\times3$ convolution, so
+the worklist length changes from layer to layer as well as from frame to frame,
+and the compute stage must consume a length that only the device knows.
 
 %% ================================================================
 \subsection{Worklist-Driven Tiled Compute}
 \label{sec:design:compute}
 
-% TODO: rewrite this section per the new Design framework (CLAUDE.md §Design §3).
-% Content: implicit GEMM mapping (M = n_W, N = C_out, K = k^2 C_in),
-% worklist indirection changes only each row's base address,
-% tile configuration = (B_M, B_N, B_K, pipeline depth, decomposition mode)
-% as an indivisible point — Stream-K is a configuration dimension not a
-% separate adaptive mechanism. Persistent grid reads device-resident n_W.
-% This section does NOT discuss how to select configurations.
-% Algorithm 2 should be simplified to show persistent grid consuming worklist.
+The compute stage keeps the dense kernel's implicit-GEMM mapping and changes
+only which output positions a tile covers. Dense convolution maps to a GEMM
+with $M$ output positions, $N=C_{out}$, and reduction depth $k^2C_{in}$;
+\sysname sets $M=n_{\mathcal{W}}$, so GEMM row $i$ is output position
+$\mathcal{W}[i]$. A configuration $q$ is one point of the dense kernel's
+configuration space: the tile shape $B_M\times B_N$, the reduction step $B_K$,
+and the remaining tiling parameters such as warp layout, pipeline depth, and a
+reduction split within or across CTAs~\cite{cutlass}. \sysname adds no
+parameter to this space.
 
-%% --- Old adaptive Stream-K content (commented out) ---
-\begin{comment}
-Construction and reuse fix $\eta_{\mathrm{construct}}$; the compute stage
-controls $\eta_{\mathrm{compute}}$ and throughput~$T$. Dense convolution maps
-to an implicit GEMM with $M$ output positions, $N=C_{out}$ output channels, and
-reduction depth $K=k^2 C_{in}$. An output tile covers $B_M$ positions and
-$B_N$ output channels; the reduction over $K$ proceeds in steps of $B_K$.
-In the standard \emph{data-parallel} decomposition, each of the
-$\lceil M/B_M\rceil \times \lceil N/B_N\rceil$ output tiles is assigned to one
-thread block, which performs the full $K$ reduction; split-$K$ instead
-replicates each tile across $S_k$ blocks that each reduce a disjoint
-$K$-slice. Because $M$, $N$, and $K$ are static, the tile shape $(B_M, B_N)$,
-reduction step $B_K$, and split factor can be selected once offline by
-profiling and keeping the fastest.
+\begin{algorithm}[t]
+\caption{Worklist-Driven Tiled Compute (configuration $q$)}
+\label{alg:compute}
+\begin{algorithmic}[1]
+\REQUIRE Input $\mathbf{x}$ on the dense grid, weights $\mathbf{w}$, output
+  mask $M_{out}$, worklist $\mathcal{W}$ and length $n_{\mathcal{W}}$ in device
+  memory; tile count
+  $T=\lceil n_{\mathcal{W}}/B_M\rceil\lceil C_{out}/B_N\rceil$
+\ENSURE Output $\mathbf{y}$ at every active position
+\FOR{each CTA $c=0,\dots,P-1$ \textbf{in parallel}}
+  \FOR{$t=c,\,c+P,\,c+2P,\dots$ while $t<T$}
+    \STATE $(b_m,b_n)\leftarrow$ output tile $t$
+    \STATE $R\leftarrow\mathcal{W}[b_mB_M:(b_m+1)B_M]$ \COMMENT{active positions}
+    \STATE $\mathbf{Y}\leftarrow\mathbf{0}_{B_M\times B_N}$
+    \FOR{each kernel offset $d_j$, $j=1,\dots,k^2$}
+      \FOR{each channel slice $s=1,\dots,\lceil C_{in}/B_K\rceil$}
+        \STATE $\mathbf{X}\leftarrow$ load $\mathbf{x}$ at positions $R+d_j$, slice $s$
+        \STATE $\mathbf{B}\leftarrow$ load $\mathbf{w}$ at offset $d_j$, slice $s$, columns $b_n$
+        \STATE $\mathbf{Y}\leftarrow\mathbf{Y}+\mathbf{X}\mathbf{B}$
+      \ENDFOR
+    \ENDFOR
+    \STATE write $\mathbf{Y}$ to $\mathbf{y}$ at each $p\in R$ with $M_{out}[p]=1$
+  \ENDFOR
+\ENDFOR
+\end{algorithmic}
+\end{algorithm}
 
-[... rest of old adaptive Stream-K text omitted for brevity ...]
-\end{comment}
+Because $n_{\mathcal{W}}$ exists only on the device, the host cannot launch
+the right number of tiles. Algorithm~\ref{alg:compute} instead launches a
+persistent grid of $P$ CTAs, sized by the configuration and the GPU alone,
+which reads $n_{\mathcal{W}}$ from device memory and strides over the output
+tiles it implies (line~2); CTAs beyond the tile count exit immediately, so one
+static launch serves every length and every frame. Each tile reads its $B_M$
+worklist entries once (line~4); the reduction (lines~6--12) then walks the
+kernel offsets and channel slices exactly as dense execution does. Because the
+input stays a dense grid, every neighbor of an active position lies at a fixed
+offset from that position, so the worklist sets only each row's base address
+and the addresses inside the reduction loop remain affine. The irregularity is
+$B_M$ indexed loads per tile outside the reduction, while channel-contiguous
+loads and weight-tile reuse are those of the dense kernel (Insight~2). The
+epilogue stores only positions active in $M_{out}$ (line~13), so the padding
+of the last tile and the superset entries inherited through reuse produce no
+writes. That padding is the only issued work beyond the worklist:
+$\eta_{\mathrm{compute}}=n_{\mathcal{W}}/(\lceil n_{\mathcal{W}}/B_M\rceil
+B_M)$.
+
+What a static grid cannot fix is the configuration itself: the fastest $q$
+depends on $n_{\mathcal{W}}$ (Insight~1).
 
 %% ================================================================
 \subsection{Cost-Aware Tile Selection}
 \label{sec:design:select}
 
-% TODO: write this section per the new Design framework (CLAUDE.md §Design §4).
-% Content: why a single configuration is not enough (Insight 1),
-% the cost of selection (Insight 5), cost model (offline sweep + gain/cost,
-% uniform n_W assumption, K is a cost-model output not a design constant),
-% runtime mechanism (selection fused into producer epilogue,
-% device-updatable node switching). Calibration belongs here, not in §3.
+Following $n_{\mathcal{W}}$, however, costs time at every decision point
+(Insight~5). \sysname therefore decides per layer whether, and how
+finely, to follow the length, by weighing the expected gain of each additional
+candidate configuration against its cost.
+
+For layer $l$, an offline sweep on the target GPU measures the time $t_q(n)$
+of every configuration $q$ across worklist lengths $n$. Given $K$ candidates
+and $K-1$ length thresholds, each length $n$ uses the candidate whose interval
+contains it; the GPU's per-layer cost of choosing among $K$
+candidates, $c(K)$ with $c(1)=0$, is measured once on the same GPU. Without a
+prior on the deployment's activity, the selection assumes $n$ uniform over the
+grid and maximizes the expected (geometric-mean) speedup, with $c(K)$ added to
+every length's time. Because $n$ is a scalar, candidates and thresholds
+partition a single range, and dynamic programming over that range finds the
+optimal selection exactly. The gain of each added candidate shrinks while
+$c(K)$ grows, so $K$ is an output of the trade-off rather than a design
+constant.
+
+At run time the decision must happen where $n_{\mathcal{W}}$ first exists,
+without host involvement. The kernel that writes a layer's worklist learns
+$n_{\mathcal{W}}$ when its last CTA finishes, compares it with the layer's
+thresholds, and switches to the selected candidate, when it differs from the
+current one, before the compute launch. The design does not depend on how the
+switch is performed: $c(K)$ is the cost of the cheapest device-side mechanism
+the GPU offers (\S\ref{sec:impl}). As a result, $K$ differs across layers,
+GPUs, and precisions: layers whose optimum shifts little keep one
+configuration and pay nothing for selection;
+\S\ref{sec:eval:ablation-sensitivity} shows that both ignoring the cost and
+fixing one configuration fall short of this selection.

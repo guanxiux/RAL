@@ -1,8 +1,7 @@
 \begin{table}[!t]
   \centering
-  \caption{WISEConv $\eta$ decomposition and worklist-length statistics
-  on RTX~3080 (FP32; batch 1 unless noted). The $n_{\mathcal{W}}$ percentiles are computed from worklist
-  lengths pooled across all layers and frames.}
+  \caption{\sysname's $\eta$ decomposition and worklist lengths on RTX~3080 (FP32). The
+  $n_{\mathcal{W}}$ percentiles pool all layers and frames.}
   \Description{A table reports eta construct, eta compute, eta, and the
   P10, P50, and P90 worklist lengths for FireFlowNet, YOLOv8m at batch 1 and 4,
   and DynConv on RTX 3080. Worklist-length statistics are computed from samples
@@ -10,21 +9,20 @@
   \label{tab:worklist-efficiency}
   \footnotesize
   \setlength{\tabcolsep}{1.5pt}
-  \renewcommand{\arraystretch}{1.12}
   \begin{tabular*}{\columnwidth}{@{\extracolsep{\fill}}l c c c r r r@{}}
-    \hline
-    \multirow{2}{*}{\textbf{Workload}} &
-    \multirow{2}{*}{$\boldsymbol{\eta}_{\mathrm{construct}}$} &
-    \multirow{2}{*}{$\boldsymbol{\eta}_{\mathrm{compute}}$} &
-    \multirow{2}{*}{$\boldsymbol{\eta}$} &
-    \multicolumn{3}{c}{$\boldsymbol{n}_{\mathcal{W}}$} \\
-    \cline{5-7}
-    & & & & \textbf{P10} & \textbf{P50} & \textbf{P90} \\
-    \hline
-    FireFlowNet & 100.0\% & 99.8\% & 99.8\% & $529$ & $13{,}651$ & $36{,}009$ \\
-    YOLOv8m & 100.0\% & 92.4\% & 92.4\% & $24$ & $261$ & $1{,}481$ \\
-    YOLOv8m b4 & 100.0\% & 98.1\% & 98.1\% & $184$ & $1{,}410$ & $7{,}256$ \\
+    \toprule
+    \multirow{2}{*}{Workload} &
+    \multirow{2}{*}{$\eta_{\mathrm{construct}}$} &
+    \multirow{2}{*}{$\eta_{\mathrm{compute}}$} &
+    \multirow{2}{*}{$\eta$} &
+    \multicolumn{3}{c}{$n_{\mathcal{W}}$} \\
+    \cmidrule(l){5-7}
+    & & & & P10 & P50 & P90 \\
+    \midrule
+    FireFlowNet & 100.0\% & 99.8\% & 99.8\% & $1{,}303$ & $15{,}083$ & $33{,}880$ \\
+    YOLOv8m b1 & 100.0\% & 93.6\% & 93.6\% & $26$ & $280$ & $1{,}792$ \\
+    YOLOv8m b4 & 100.0\% & 98.1\% & 98.1\% & $179$ & $1{,}382$ & $7{,}104$ \\
     DynConv & 100.0\% & 92.1\% & 92.1\% & $3$ & $43$ & $389$ \\
-    \hline
+    \bottomrule
   \end{tabular*}
 \end{table}

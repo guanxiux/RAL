@@ -36,8 +36,8 @@ for directory in ("/usr/share/texmf/fonts/opentype/public/tex-gyre", "/usr/share
         fm.fontManager.addfont(path)
 
 # acmart's sigplan column is 240.945 TeX pt (3.334 in): emit at that width so LaTeX does not rescale the type.
-FIG_W, FIG_H = 3.334, 1.32
-FS_TICK, FS_LAB, FS_CAP, FS_NOTE = 6.5, 7.0, 7.5, 6.0
+FIG_W, FIG_H = 3.334, 1.42
+FS_TICK, FS_LAB, FS_CAP, FS_NOTE = 7.0, 7.5, 8.0, 6.8
 GRID = "#e6e6e3"
 
 plt.rcParams.update({
@@ -102,7 +102,7 @@ def draw_throughput(fig):
                 path_effects=[withStroke(linewidth=1.6, foreground=WASTED_COLOR)] if waste > 1e-6 else None)
     # the wasted share's key, in the free area right of the dense bar (the colored share is the useful work)
     ax.legend([wasted_handle()], ["wasted"], loc="center", bbox_to_anchor=(1.45, 0.86), bbox_transform=ax.transData,
-              frameon=False, fontsize=FS_NOTE, handlelength=1.5, handleheight=0.9, handletextpad=0.35, borderpad=0.1)
+              frameon=False, fontsize=8.0, handlelength=1.5, handleheight=0.9, handletextpad=0.35, borderpad=0.1)
     ax.set_ylim(0, 1.18)
     ax.yaxis.set_major_locator(MultipleLocator(0.25))
     ax.yaxis.set_major_formatter(FuncFormatter(lambda v, _: f"{v:.2f}".rstrip("0").rstrip(".")))

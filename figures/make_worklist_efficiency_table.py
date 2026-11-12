@@ -29,9 +29,8 @@ def make_table(rows: list[dict]) -> str:
     lines = [
         r"\begin{table}[!t]",
         r"  \centering",
-        r"  \caption{WISEConv $\eta$ decomposition and worklist-length statistics",
-        r"  on RTX~3080 (FP32; batch 1 unless noted). The $n_{\mathcal{W}}$ percentiles are computed from worklist",
-        r"  lengths pooled across all layers and frames.}",
+        r"  \caption{\sysname's $\eta$ decomposition and worklist lengths on RTX~3080 (FP32). The",
+        r"  $n_{\mathcal{W}}$ percentiles pool all layers and frames.}",
         r"  \Description{A table reports eta construct, eta compute, eta, and the",
         r"  P10, P50, and P90 worklist lengths for FireFlowNet, YOLOv8m at batch 1 and 4,",
         r"  and DynConv on RTX 3080. Worklist-length statistics are computed from samples",
@@ -39,17 +38,16 @@ def make_table(rows: list[dict]) -> str:
         r"  \label{tab:worklist-efficiency}",
         r"  \footnotesize",
         r"  \setlength{\tabcolsep}{1.5pt}",
-        r"  \renewcommand{\arraystretch}{1.12}",
         r"  \begin{tabular*}{\columnwidth}{@{\extracolsep{\fill}}l c c c r r r@{}}",
-        r"    \hline",
-        r"    \multirow{2}{*}{\textbf{Workload}} &",
-        r"    \multirow{2}{*}{$\boldsymbol{\eta}_{\mathrm{construct}}$} &",
-        r"    \multirow{2}{*}{$\boldsymbol{\eta}_{\mathrm{compute}}$} &",
-        r"    \multirow{2}{*}{$\boldsymbol{\eta}$} &",
-        r"    \multicolumn{3}{c}{$\boldsymbol{n}_{\mathcal{W}}$} \\",
-        r"    \cline{5-7}",
-        r"    & & & & \textbf{P10} & \textbf{P50} & \textbf{P90} \\",
-        r"    \hline",
+        r"    \toprule",
+        r"    \multirow{2}{*}{Workload} &",
+        r"    \multirow{2}{*}{$\eta_{\mathrm{construct}}$} &",
+        r"    \multirow{2}{*}{$\eta_{\mathrm{compute}}$} &",
+        r"    \multirow{2}{*}{$\eta$} &",
+        r"    \multicolumn{3}{c}{$n_{\mathcal{W}}$} \\",
+        r"    \cmidrule(l){5-7}",
+        r"    & & & & P10 & P50 & P90 \\",
+        r"    \midrule",
     ]
     for workload in WORKLOADS:
         row = by_workload[workload]
@@ -63,7 +61,7 @@ def make_table(rows: list[dict]) -> str:
             f"${percentile_length(row['p90_worklist_length'])}$ \\\\"
         )
     lines.extend([
-        r"    \hline",
+        r"    \bottomrule",
         r"  \end{tabular*}",
         r"\end{table}",
         "",

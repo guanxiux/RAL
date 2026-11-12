@@ -1,137 +1,137 @@
 platform,workload,dtype,path,latency_ms,norm,alpha
-A100,fireflownet,fp32,dense,0.57070,1.00000,0.25320
-A100,fireflownet,fp32,tile_skip,0.67225,1.17794,0.25320
-A100,fireflownet,fp32,gather_scatter,3.17802,5.56869,0.25320
-A100,fireflownet,fp32,wiseconv,0.39418,0.69071,0.25320
-A100,fireflownet,fp16,dense,0.27082,1.00000,0.24959
-A100,fireflownet,fp16,wiseconv,0.21784,0.80438,0.24959
-A100,yolov8m_b1,fp32,dense,12.80937,1.00000,0.14094
-A100,yolov8m_b1,fp32,tile_skip,15.56808,1.21537,0.14094
-A100,yolov8m_b1,fp32,gather_scatter,17.05891,1.33175,0.14094
-A100,yolov8m_b1,fp32,wiseconv,2.96982,0.23185,0.14094
-A100,yolov8m_b1,fp16,dense,2.15305,1.00000,0.14025
-A100,yolov8m_b1,fp16,wiseconv,1.52983,0.71054,0.14025
-A100,yolov8m_b4,fp32,dense,37.65670,1.00000,0.17804
-A100,yolov8m_b4,fp32,tile_skip,24.03582,0.63829,0.17804
-A100,yolov8m_b4,fp32,gather_scatter,24.64067,0.65435,0.17804
-A100,yolov8m_b4,fp32,wiseconv,6.74255,0.17905,0.17804
-A100,yolov8m_b4,fp16,dense,5.12084,1.00000,0.17741
-A100,yolov8m_b4,fp16,wiseconv,2.41310,0.47123,0.17741
-A100,dynconv,fp32,dense,9.59181,1.00000,0.15557
-A100,dynconv,fp32,tile_skip,8.90266,0.92815,0.15557
-A100,dynconv,fp32,gather_scatter,68.77133,7.16980,0.15557
-A100,dynconv,fp32,wiseconv,3.31878,0.34600,0.15557
-A100,dynconv,fp16,dense,3.67104,1.00000,0.15558
-A100,dynconv,fp16,wiseconv,2.59891,0.70795,0.15558
-RTX 4090,fireflownet,fp32,dense,0.35448,1.00000,0.25320
-RTX 4090,fireflownet,fp32,tile_skip,0.34411,0.97075,0.25320
-RTX 4090,fireflownet,fp32,gather_scatter,2.30110,6.49148,0.25320
-RTX 4090,fireflownet,fp32,wiseconv,0.22050,0.62204,0.25320
-RTX 4090,fireflownet,fp16,dense,0.17840,1.00000,0.24959
-RTX 4090,fireflownet,fp16,wiseconv,0.13765,0.77155,0.24959
-RTX 4090,yolov8m_b1,fp32,dense,5.52218,1.00000,0.14094
-RTX 4090,yolov8m_b1,fp32,tile_skip,8.54807,1.54795,0.14094
-RTX 4090,yolov8m_b1,fp32,gather_scatter,14.46945,2.62024,0.14094
-RTX 4090,yolov8m_b1,fp32,wiseconv,1.68147,0.30449,0.14094
-RTX 4090,yolov8m_b1,fp16,dense,2.21601,1.00000,0.14025
-RTX 4090,yolov8m_b1,fp16,wiseconv,0.98199,0.44313,0.14025
-RTX 4090,yolov8m_b4,fp32,dense,18.25885,1.00000,0.17804
-RTX 4090,yolov8m_b4,fp32,tile_skip,11.95738,0.65488,0.17804
-RTX 4090,yolov8m_b4,fp32,gather_scatter,18.18415,0.99591,0.17804
-RTX 4090,yolov8m_b4,fp32,wiseconv,3.70750,0.20305,0.17804
-RTX 4090,yolov8m_b4,fp16,dense,5.40414,1.00000,0.17741
-RTX 4090,yolov8m_b4,fp16,wiseconv,1.67790,0.31048,0.17741
-RTX 4090,dynconv,fp32,dense,5.41798,1.00000,0.15557
-RTX 4090,dynconv,fp32,tile_skip,4.73088,0.87318,0.15557
-RTX 4090,dynconv,fp32,gather_scatter,65.63122,12.11359,0.15557
-RTX 4090,dynconv,fp32,wiseconv,1.91181,0.35286,0.15557
-RTX 4090,dynconv,fp16,dense,2.17498,1.00000,0.15558
-RTX 4090,dynconv,fp16,wiseconv,1.38035,0.63465,0.15558
-RTX 3080,fireflownet,fp32,dense,1.06705,1.00000,0.25320
-RTX 3080,fireflownet,fp32,tile_skip,0.64919,0.60840,0.25320
-RTX 3080,fireflownet,fp32,gather_scatter,2.18801,2.05053,0.25320
-RTX 3080,fireflownet,fp32,wiseconv,0.40737,0.38177,0.25320
-RTX 3080,fireflownet,fp16,dense,0.36051,1.00000,0.24959
-RTX 3080,fireflownet,fp16,wiseconv,0.22188,0.61545,0.24959
-RTX 3080,yolov8m_b1,fp32,dense,10.76459,1.00000,0.14094
-RTX 3080,yolov8m_b1,fp32,tile_skip,12.50770,1.16193,0.14094
-RTX 3080,yolov8m_b1,fp32,gather_scatter,12.73547,1.18309,0.14094
-RTX 3080,yolov8m_b1,fp32,wiseconv,2.99771,0.27848,0.14094
-RTX 3080,yolov8m_b1,fp16,dense,3.79557,1.00000,0.14025
-RTX 3080,yolov8m_b1,fp16,wiseconv,1.44443,0.38056,0.14025
-RTX 3080,yolov8m_b4,fp32,dense,44.17158,1.00000,0.17804
-RTX 3080,yolov8m_b4,fp32,tile_skip,20.17655,0.45678,0.17804
-RTX 3080,yolov8m_b4,fp32,gather_scatter,17.98022,0.40705,0.17804
-RTX 3080,yolov8m_b4,fp32,wiseconv,7.52022,0.17025,0.17804
-RTX 3080,yolov8m_b4,fp16,dense,12.26677,1.00000,0.17741
-RTX 3080,yolov8m_b4,fp16,wiseconv,3.05209,0.24881,0.17741
-RTX 3080,dynconv,fp32,dense,9.35526,1.00000,0.15557
-RTX 3080,dynconv,fp32,tile_skip,7.22330,0.77211,0.15557
-RTX 3080,dynconv,fp32,gather_scatter,57.04816,6.09797,0.15557
-RTX 3080,dynconv,fp32,wiseconv,2.93171,0.31338,0.15557
-RTX 3080,dynconv,fp16,dense,3.51539,1.00000,0.15558
-RTX 3080,dynconv,fp16,wiseconv,2.02547,0.57617,0.15558
-RTX 4070 Laptop,fireflownet,fp32,dense,1.28439,1.00000,0.25320
-RTX 4070 Laptop,fireflownet,fp32,tile_skip,1.00118,0.77950,0.25320
-RTX 4070 Laptop,fireflownet,fp32,gather_scatter,2.50952,1.95386,0.25320
-RTX 4070 Laptop,fireflownet,fp32,wiseconv,0.69373,0.54012,0.25320
-RTX 4070 Laptop,fireflownet,fp16,dense,0.55622,1.00000,0.24959
-RTX 4070 Laptop,fireflownet,fp16,wiseconv,0.33330,0.59923,0.24959
-RTX 4070 Laptop,yolov8m_b1,fp32,dense,15.32563,1.00000,0.14094
-RTX 4070 Laptop,yolov8m_b1,fp32,tile_skip,14.89330,0.97179,0.14094
-RTX 4070 Laptop,yolov8m_b1,fp32,gather_scatter,9.88146,0.64477,0.14094
-RTX 4070 Laptop,yolov8m_b1,fp32,wiseconv,4.52888,0.29551,0.14094
-RTX 4070 Laptop,yolov8m_b1,fp16,dense,6.36432,1.00000,0.14025
-RTX 4070 Laptop,yolov8m_b1,fp16,wiseconv,1.96727,0.30911,0.14025
-RTX 4070 Laptop,yolov8m_b4,fp32,dense,78.04794,1.00000,0.17804
-RTX 4070 Laptop,yolov8m_b4,fp32,tile_skip,29.36478,0.37624,0.17804
-RTX 4070 Laptop,yolov8m_b4,fp32,gather_scatter,23.21849,0.29749,0.17804
-RTX 4070 Laptop,yolov8m_b4,fp32,wiseconv,12.79801,0.16398,0.17804
-RTX 4070 Laptop,yolov8m_b4,fp16,dense,21.77733,1.00000,0.17741
-RTX 4070 Laptop,yolov8m_b4,fp16,wiseconv,4.63915,0.21303,0.17741
-RTX 4070 Laptop,dynconv,fp32,dense,10.15501,1.00000,0.15557
-RTX 4070 Laptop,dynconv,fp32,tile_skip,7.88890,0.77685,0.15557
-RTX 4070 Laptop,dynconv,fp32,gather_scatter,33.35885,3.28497,0.15557
-RTX 4070 Laptop,dynconv,fp32,wiseconv,3.40992,0.33579,0.15557
-RTX 4070 Laptop,dynconv,fp16,dense,4.03558,1.00000,0.15558
-RTX 4070 Laptop,dynconv,fp16,wiseconv,2.34496,0.58107,0.15558
-AGX Orin,fireflownet,fp32,dense,7.39396,1.00000,0.25320
-AGX Orin,fireflownet,fp32,tile_skip,4.87127,0.65882,0.25320
-AGX Orin,fireflownet,fp32,gather_scatter,10.15422,1.37331,0.25320
-AGX Orin,fireflownet,fp32,wiseconv,2.89012,0.39088,0.25320
-AGX Orin,fireflownet,fp16,dense,2.68834,1.00000,0.24959
-AGX Orin,fireflownet,fp16,wiseconv,1.27179,0.47308,0.24959
-AGX Orin,yolov8m_b1,fp32,dense,98.45261,1.00000,0.14094
-AGX Orin,yolov8m_b1,fp32,tile_skip,47.45569,0.48202,0.14094
-AGX Orin,yolov8m_b1,fp32,gather_scatter,43.00677,0.43683,0.14094
-AGX Orin,yolov8m_b1,fp32,wiseconv,18.93622,0.19234,0.14094
-AGX Orin,yolov8m_b1,fp16,dense,19.62611,1.00000,0.14025
-AGX Orin,yolov8m_b1,fp16,wiseconv,5.64788,0.28777,0.14025
-AGX Orin,yolov8m_b4,fp32,dense,383.84840,1.00000,0.17804
-AGX Orin,yolov8m_b4,fp32,tile_skip,130.85722,0.34091,0.17804
-AGX Orin,yolov8m_b4,fp32,gather_scatter,102.80379,0.26782,0.17804
-AGX Orin,yolov8m_b4,fp32,wiseconv,58.41513,0.15218,0.17804
-AGX Orin,yolov8m_b4,fp16,dense,64.06000,1.00000,0.17741
-AGX Orin,yolov8m_b4,fp16,wiseconv,14.06801,0.21961,0.17741
-AGX Orin,dynconv,fp32,dense,46.74614,1.00000,0.15557
-AGX Orin,dynconv,fp32,tile_skip,26.82386,0.57382,0.15557
-AGX Orin,dynconv,fp32,gather_scatter,191.37669,4.09396,0.15557
-AGX Orin,dynconv,fp32,wiseconv,13.35459,0.28568,0.15557
-AGX Orin,dynconv,fp16,dense,14.81008,1.00000,0.15558
-AGX Orin,dynconv,fp16,wiseconv,7.24848,0.48943,0.15558
-Xavier NX,fireflownet,fp32,dense,14.29304,1.00000,0.25320
-Xavier NX,fireflownet,fp32,tile_skip,9.42742,0.65958,0.25320
-Xavier NX,fireflownet,fp32,gather_scatter,23.27467,1.62839,0.25320
-Xavier NX,fireflownet,fp32,wiseconv,5.87120,0.41077,0.25320
-Xavier NX,yolov8m_b1,fp32,dense,123.08554,1.00000,0.14094
-Xavier NX,yolov8m_b1,fp32,tile_skip,62.39467,0.50692,0.14094
-Xavier NX,yolov8m_b1,fp32,gather_scatter,64.51082,0.52411,0.14094
-Xavier NX,yolov8m_b1,fp32,wiseconv,35.10928,0.28524,0.14094
-Xavier NX,yolov8m_b4,fp32,dense,475.13312,1.00000,0.17804
-Xavier NX,yolov8m_b4,fp32,tile_skip,239.89240,0.50490,0.17804
-Xavier NX,yolov8m_b4,fp32,gather_scatter,206.25998,0.43411,0.17804
-Xavier NX,yolov8m_b4,fp32,wiseconv,122.21811,0.25723,0.17804
-Xavier NX,dynconv,fp32,dense,56.65014,1.00000,0.15557
-Xavier NX,dynconv,fp32,tile_skip,33.44198,0.59032,0.15557
-Xavier NX,dynconv,fp32,gather_scatter,294.59784,5.20030,0.15557
-Xavier NX,dynconv,fp32,wiseconv,21.13962,0.37316,0.15557
+A100,fireflownet,fp32,dense,0.57073,1.00000,0.26123
+A100,fireflownet,fp32,tile_skip,0.67183,1.17713,0.26123
+A100,fireflownet,fp32,gather_scatter,3.14166,5.50461,0.26123
+A100,fireflownet,fp32,wiseconv,0.38152,0.66848,0.26123
+A100,fireflownet,fp16,dense,0.27079,1.00000,0.26123
+A100,fireflownet,fp16,wiseconv,0.21323,0.78743,0.26123
+A100,yolov8m_b1,fp32,dense,12.80937,1.00000,0.17517
+A100,yolov8m_b1,fp32,tile_skip,15.56808,1.21537,0.17517
+A100,yolov8m_b1,fp32,gather_scatter,17.05891,1.33175,0.17517
+A100,yolov8m_b1,fp32,wiseconv,2.96982,0.23185,0.17517
+A100,yolov8m_b1,fp16,dense,2.15305,1.00000,0.17517
+A100,yolov8m_b1,fp16,wiseconv,1.52983,0.71054,0.17517
+A100,yolov8m_b4,fp32,dense,37.65670,1.00000,0.17511
+A100,yolov8m_b4,fp32,tile_skip,24.03582,0.63829,0.17511
+A100,yolov8m_b4,fp32,gather_scatter,24.64067,0.65435,0.17511
+A100,yolov8m_b4,fp32,wiseconv,6.74255,0.17905,0.17511
+A100,yolov8m_b4,fp16,dense,5.12084,1.00000,0.17511
+A100,yolov8m_b4,fp16,wiseconv,2.41310,0.47123,0.17511
+A100,dynconv,fp32,dense,9.59181,1.00000,0.15560
+A100,dynconv,fp32,tile_skip,8.90266,0.92815,0.15560
+A100,dynconv,fp32,gather_scatter,68.77133,7.16980,0.15560
+A100,dynconv,fp32,wiseconv,3.31878,0.34600,0.15560
+A100,dynconv,fp16,dense,3.67104,1.00000,0.15560
+A100,dynconv,fp16,wiseconv,2.59891,0.70795,0.15560
+RTX 4090,fireflownet,fp32,dense,0.35445,1.00000,0.26123
+RTX 4090,fireflownet,fp32,tile_skip,0.33720,0.95134,0.26123
+RTX 4090,fireflownet,fp32,gather_scatter,2.27508,6.41856,0.26123
+RTX 4090,fireflownet,fp32,wiseconv,0.21207,0.59829,0.26123
+RTX 4090,fireflownet,fp16,dense,0.17845,1.00000,0.26123
+RTX 4090,fireflownet,fp16,wiseconv,0.13488,0.75587,0.26123
+RTX 4090,yolov8m_b1,fp32,dense,5.52218,1.00000,0.17517
+RTX 4090,yolov8m_b1,fp32,tile_skip,8.54807,1.54795,0.17517
+RTX 4090,yolov8m_b1,fp32,gather_scatter,14.46945,2.62024,0.17517
+RTX 4090,yolov8m_b1,fp32,wiseconv,1.68147,0.30449,0.17517
+RTX 4090,yolov8m_b1,fp16,dense,2.21601,1.00000,0.17517
+RTX 4090,yolov8m_b1,fp16,wiseconv,0.98199,0.44313,0.17517
+RTX 4090,yolov8m_b4,fp32,dense,18.25885,1.00000,0.17511
+RTX 4090,yolov8m_b4,fp32,tile_skip,11.95738,0.65488,0.17511
+RTX 4090,yolov8m_b4,fp32,gather_scatter,18.18415,0.99591,0.17511
+RTX 4090,yolov8m_b4,fp32,wiseconv,3.70750,0.20305,0.17511
+RTX 4090,yolov8m_b4,fp16,dense,5.40414,1.00000,0.17511
+RTX 4090,yolov8m_b4,fp16,wiseconv,1.67790,0.31048,0.17511
+RTX 4090,dynconv,fp32,dense,5.41798,1.00000,0.15560
+RTX 4090,dynconv,fp32,tile_skip,4.73088,0.87318,0.15560
+RTX 4090,dynconv,fp32,gather_scatter,65.63122,12.11359,0.15560
+RTX 4090,dynconv,fp32,wiseconv,1.91181,0.35286,0.15560
+RTX 4090,dynconv,fp16,dense,2.17498,1.00000,0.15560
+RTX 4090,dynconv,fp16,wiseconv,1.38035,0.63465,0.15560
+RTX 3080,fireflownet,fp32,dense,1.06709,1.00000,0.26123
+RTX 3080,fireflownet,fp32,tile_skip,0.63028,0.59065,0.26123
+RTX 3080,fireflownet,fp32,gather_scatter,2.13511,2.00087,0.26123
+RTX 3080,fireflownet,fp32,wiseconv,0.39001,0.36548,0.26123
+RTX 3080,fireflownet,fp16,dense,0.36057,1.00000,0.26123
+RTX 3080,fireflownet,fp16,wiseconv,0.21444,0.59474,0.26123
+RTX 3080,yolov8m_b1,fp32,dense,10.76459,1.00000,0.17517
+RTX 3080,yolov8m_b1,fp32,tile_skip,12.50770,1.16193,0.17517
+RTX 3080,yolov8m_b1,fp32,gather_scatter,12.73547,1.18309,0.17517
+RTX 3080,yolov8m_b1,fp32,wiseconv,2.99771,0.27848,0.17517
+RTX 3080,yolov8m_b1,fp16,dense,3.79557,1.00000,0.17517
+RTX 3080,yolov8m_b1,fp16,wiseconv,1.44443,0.38056,0.17517
+RTX 3080,yolov8m_b4,fp32,dense,44.17158,1.00000,0.17511
+RTX 3080,yolov8m_b4,fp32,tile_skip,20.17655,0.45678,0.17511
+RTX 3080,yolov8m_b4,fp32,gather_scatter,17.98022,0.40705,0.17511
+RTX 3080,yolov8m_b4,fp32,wiseconv,7.52022,0.17025,0.17511
+RTX 3080,yolov8m_b4,fp16,dense,12.26677,1.00000,0.17511
+RTX 3080,yolov8m_b4,fp16,wiseconv,3.05209,0.24881,0.17511
+RTX 3080,dynconv,fp32,dense,9.35526,1.00000,0.15560
+RTX 3080,dynconv,fp32,tile_skip,7.22330,0.77211,0.15560
+RTX 3080,dynconv,fp32,gather_scatter,57.04816,6.09797,0.15560
+RTX 3080,dynconv,fp32,wiseconv,2.93171,0.31338,0.15560
+RTX 3080,dynconv,fp16,dense,3.51539,1.00000,0.15560
+RTX 3080,dynconv,fp16,wiseconv,2.02547,0.57617,0.15560
+RTX 4070 Laptop,fireflownet,fp32,dense,1.28448,1.00000,0.26123
+RTX 4070 Laptop,fireflownet,fp32,tile_skip,0.97760,0.76108,0.26123
+RTX 4070 Laptop,fireflownet,fp32,gather_scatter,2.38271,1.85501,0.26123
+RTX 4070 Laptop,fireflownet,fp32,wiseconv,0.65826,0.51248,0.26123
+RTX 4070 Laptop,fireflownet,fp16,dense,0.55624,1.00000,0.26123
+RTX 4070 Laptop,fireflownet,fp16,wiseconv,0.31643,0.56888,0.26123
+RTX 4070 Laptop,yolov8m_b1,fp32,dense,15.32563,1.00000,0.17517
+RTX 4070 Laptop,yolov8m_b1,fp32,tile_skip,14.89330,0.97179,0.17517
+RTX 4070 Laptop,yolov8m_b1,fp32,gather_scatter,9.88146,0.64477,0.17517
+RTX 4070 Laptop,yolov8m_b1,fp32,wiseconv,4.52888,0.29551,0.17517
+RTX 4070 Laptop,yolov8m_b1,fp16,dense,6.36432,1.00000,0.17517
+RTX 4070 Laptop,yolov8m_b1,fp16,wiseconv,1.96727,0.30911,0.17517
+RTX 4070 Laptop,yolov8m_b4,fp32,dense,78.04794,1.00000,0.17511
+RTX 4070 Laptop,yolov8m_b4,fp32,tile_skip,29.36478,0.37624,0.17511
+RTX 4070 Laptop,yolov8m_b4,fp32,gather_scatter,23.21849,0.29749,0.17511
+RTX 4070 Laptop,yolov8m_b4,fp32,wiseconv,12.79801,0.16398,0.17511
+RTX 4070 Laptop,yolov8m_b4,fp16,dense,21.77733,1.00000,0.17511
+RTX 4070 Laptop,yolov8m_b4,fp16,wiseconv,4.63915,0.21303,0.17511
+RTX 4070 Laptop,dynconv,fp32,dense,10.15501,1.00000,0.15560
+RTX 4070 Laptop,dynconv,fp32,tile_skip,7.88890,0.77685,0.15560
+RTX 4070 Laptop,dynconv,fp32,gather_scatter,33.35885,3.28497,0.15560
+RTX 4070 Laptop,dynconv,fp32,wiseconv,3.40992,0.33579,0.15560
+RTX 4070 Laptop,dynconv,fp16,dense,4.03558,1.00000,0.15560
+RTX 4070 Laptop,dynconv,fp16,wiseconv,2.34496,0.58107,0.15560
+AGX Orin,fireflownet,fp32,dense,7.38741,1.00000,0.26123
+AGX Orin,fireflownet,fp32,tile_skip,4.77120,0.64586,0.26123
+AGX Orin,fireflownet,fp32,gather_scatter,9.62158,1.30243,0.26123
+AGX Orin,fireflownet,fp32,wiseconv,2.75484,0.37291,0.26123
+AGX Orin,fireflownet,fp16,dense,2.68785,1.00000,0.26123
+AGX Orin,fireflownet,fp16,wiseconv,1.21787,0.45310,0.26123
+AGX Orin,yolov8m_b1,fp32,dense,98.45261,1.00000,0.17517
+AGX Orin,yolov8m_b1,fp32,tile_skip,47.45569,0.48202,0.17517
+AGX Orin,yolov8m_b1,fp32,gather_scatter,43.00677,0.43683,0.17517
+AGX Orin,yolov8m_b1,fp32,wiseconv,18.93622,0.19234,0.17517
+AGX Orin,yolov8m_b1,fp16,dense,19.62611,1.00000,0.17517
+AGX Orin,yolov8m_b1,fp16,wiseconv,5.64788,0.28777,0.17517
+AGX Orin,yolov8m_b4,fp32,dense,383.84840,1.00000,0.17511
+AGX Orin,yolov8m_b4,fp32,tile_skip,130.85722,0.34091,0.17511
+AGX Orin,yolov8m_b4,fp32,gather_scatter,102.80379,0.26782,0.17511
+AGX Orin,yolov8m_b4,fp32,wiseconv,58.41513,0.15218,0.17511
+AGX Orin,yolov8m_b4,fp16,dense,64.06000,1.00000,0.17511
+AGX Orin,yolov8m_b4,fp16,wiseconv,14.06801,0.21961,0.17511
+AGX Orin,dynconv,fp32,dense,46.74614,1.00000,0.15560
+AGX Orin,dynconv,fp32,tile_skip,26.82386,0.57382,0.15560
+AGX Orin,dynconv,fp32,gather_scatter,191.37669,4.09396,0.15560
+AGX Orin,dynconv,fp32,wiseconv,13.35459,0.28568,0.15560
+AGX Orin,dynconv,fp16,dense,14.81008,1.00000,0.15560
+AGX Orin,dynconv,fp16,wiseconv,7.24848,0.48943,0.15560
+Xavier NX,fireflownet,fp32,dense,14.30403,1.00000,0.26123
+Xavier NX,fireflownet,fp32,tile_skip,9.20248,0.64335,0.26123
+Xavier NX,fireflownet,fp32,gather_scatter,22.22165,1.55352,0.26123
+Xavier NX,fireflownet,fp32,wiseconv,5.56291,0.38891,0.26123
+Xavier NX,yolov8m_b1,fp32,dense,123.08554,1.00000,0.17517
+Xavier NX,yolov8m_b1,fp32,tile_skip,62.39467,0.50692,0.17517
+Xavier NX,yolov8m_b1,fp32,gather_scatter,64.51082,0.52411,0.17517
+Xavier NX,yolov8m_b1,fp32,wiseconv,35.10928,0.28524,0.17517
+Xavier NX,yolov8m_b4,fp32,dense,475.13312,1.00000,0.17511
+Xavier NX,yolov8m_b4,fp32,tile_skip,239.89240,0.50490,0.17511
+Xavier NX,yolov8m_b4,fp32,gather_scatter,206.25998,0.43411,0.17511
+Xavier NX,yolov8m_b4,fp32,wiseconv,122.21811,0.25723,0.17511
+Xavier NX,dynconv,fp32,dense,56.65014,1.00000,0.15560
+Xavier NX,dynconv,fp32,tile_skip,33.44198,0.59032,0.15560
+Xavier NX,dynconv,fp32,gather_scatter,294.59784,5.20030,0.15560
+Xavier NX,dynconv,fp32,wiseconv,21.13962,0.37316,0.15560

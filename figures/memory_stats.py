@@ -26,7 +26,7 @@ PATHS = ("dense", "tile_skip", "gather_scatter", "wiseconv")
 # (key, label, source kind, source)
 WORKLOADS = (
     ("fireflownet", "FireFlowNet", "run", "fireflownet"),
-    ("yolov8m", "YOLOv8m", "breakdown", "wildtrack640_yolov8m_select"),
+    ("yolov8m", "YOLOv8m b1", "breakdown", "wildtrack640_yolov8m_select"),
     ("yolov8m_b4", "YOLOv8m b4", "breakdown", "wildtrack640_yolov8m_b4_select"),
     ("dynconv", "DynConv", "run", "dynconv_pose"),
 )

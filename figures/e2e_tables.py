@@ -3,8 +3,8 @@
 e2e_accuracy_table.tex.
 
 Same sources as e2e_stats.py (the loaders of experiments/wise2/report/eval_tables.py), so the numbers match
-logs/wise2_eval/TABLES.md.  The two WildTrack cameras are one dataset: YOLOv8m energy is merged frame-weighted, accuracy
-weighted by each camera's ground-truth boxes.
+logs/wise2_eval/TABLES.md.  YOLOv8m energy is measured on the C3 video (the protocol of the
+registered abstract); accuracy merges the two cameras weighted by each camera's ground-truth boxes.
 
   * Energy: board energy per frame (mJ) on AGX Orin and Xavier NX.  YOLOv8m b4 is divided by the batch, so every column
     is per frame.  FireFlowNet: per-sequence energy blocks summed; DynConv: the run's energy block.
@@ -46,11 +46,10 @@ def yolo_energy(dev, task, dtype, batch):
             for d in (et.EV / dev / task / "e2e_energy", et.yolo_dir(dev, task)):
                 j = et.load(d / f)
                 E = (j or {}).get("backends", {}).get(path, {}).get("energy", {})
-                if all(c in E for c in ("C3", "C6")):
-                    frames = [E[c]["frames"] for c in ("C3", "C6")]
-                    joules = [E[c]["energy_j"] for c in ("C3", "C6")]
+                if "C3" in E:  # energy on the C3 video (the protocol of the registered abstract)
+                    frames, joules = E["C3"]["frames"], E["C3"]["energy_j"]
         assert frames, (dev, task, dtype, path)
-        res[path] = 1e3 * sum(joules) / sum(frames) / batch
+        res[path] = 1e3 * joules / frames / batch
     return res
 
 

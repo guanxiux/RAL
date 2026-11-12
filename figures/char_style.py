@@ -30,7 +30,7 @@ for directory in ("/usr/share/texmf/fonts/opentype/public/tex-gyre", "/usr/share
         fm.fontManager.addfont(path)
 
 FIG_W = 3.334  # acmart sigplan \columnwidth (240.945 pt)
-FS_TICK, FS_LAB, FS_CAP, FS_NOTE, FS_LEG = 6.5, 7.0, 7.5, 6.0, 6.5
+FS_TICK, FS_LAB, FS_CAP, FS_NOTE, FS_LEG = 7.0, 7.5, 8.0, 6.8, 8.0  # floor: ticks 7 pt, notes 6.8 pt; legends 8 pt
 GRID = "#e6e6e3"
 REF = "#b9b9b5"  # reference lines (proportional diagonal)
 

@@ -6,8 +6,10 @@ Reads ``logs/wise2_eval/`` (collected by ``experiments/wise2/report/collect.py``
 
   * YOLOv8m (batch 1 and batch 4): the whole-video runs; the two WildTrack cameras are one dataset, so their means are
     merged frame-weighted.
-  * FireFlowNet: per-sequence means merged frame-weighted.  DynConv: the median of rounds (one MPII split).
+  * FireFlowNet: the mean of the per-sequence means (every held-out MVSEC sequence counts equally).  DynConv: the median of rounds (one MPII split).
   * alpha (the Ideal reference, latency normalized to Dense = alpha): required / dense MACs of the RTX 3080 work replay
+    over the whole evaluation set (work_full_fp32.json, work_counts.py --split full), one per workload: the masks do
+    not depend on the precision
     of each workload and precision; all platforms run the same masks.
 """
 
@@ -66,22 +68,17 @@ def runs(dev, wl, dtype, gs):
         if not s:
             continue
         seqs = s["sequences"].values()
-        if wl == "fireflownet":
-            n = [v["frame_count"] for v in seqs]
-            res[path] = sum(v["all_frames_gpu_ms"]["mean"] * k for v, k in zip(seqs, n)) / sum(n)
+        if wl == "fireflownet":  # each MVSEC sequence counts equally (the protocol of the registered abstract)
+            res[path] = sum(v["all_frames_gpu_ms"]["mean"] for v in seqs) / len(seqs)
         else:
             vals = [v["all_frames_gpu_ms"]["median"] for v in seqs]
             res[path] = sum(vals) / len(vals)
     return res
 
 
-def alpha(task, dtype):
-    for sub in ("micro_upd", "micro"):
-        w = et.load(et.EV / "rtx_3080_sm86" / task / sub / f"work_{dtype}.json")
-        if w:
-            p = w["paths"]
-            return p["wiseconv"]["required_macs"] / p["dense"]["dense_macs"]
-    return None
+def alpha(task):
+    w = et.load(et.EV / "rtx_3080_sm86" / task / "micro_upd" / "work_full_fp32.json")
+    return w["paths"]["wiseconv"]["required_macs"] / w["paths"]["dense"]["dense_macs"] if w else None
 
 
 def main():
@@ -92,7 +89,7 @@ def main():
                 lat = yolo(dev, task, dtype) if wl is None else runs(dev, wl, dtype, gs)
                 if "dense" not in lat:
                     continue
-                a = alpha(task, dtype)
+                a = alpha(task)
                 for path, ms in lat.items():
                     rows.append({"platform": et.DEV_NAMES[dev], "workload": key, "dtype": dtype, "path": path,
                                  "latency_ms": f"{ms:.5f}", "norm": f"{ms / lat['dense']:.5f}",

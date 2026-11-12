@@ -63,6 +63,6 @@ for i, (title, fn) in enumerate(PANELS):
     ax.set_title(title, fontsize=FS_NOTE + 0.5, linespacing=1.0, pad=2.5)
     tidy(ax, grid_axis="x")
 fig.text(L - 0.012, T + 0.015, "input, $C_{in}$→$C_{out}$, kernel", ha="right", va="bottom", fontsize=FS_NOTE,
-         color=MUTED)
+         color=INK)
 fig.text((L + R) / 2, 0.01, "Worklist tile / dense tile", ha="center", va="bottom", fontsize=FS_CAP)
 save(fig, "char_reduction.pdf")

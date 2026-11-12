@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
 """fig:effective-throughput data: useful-compute ratio eta and relative throughput T of every path -> effective_throughput.csv.
 
-Work counts come from the work replays (logs/wise2_eval/<device>/<task>/micro[_upd]/work_<dtype>.json: required,
-issued, and dense MACs per path on the same masks); latencies from e2e_stats.csv (the E2E figure's numbers).
+Work counts come from the RTX 3080 work replay over the whole evaluation set (logs/wise2_eval/rtx_3080_sm86/<task>/
+micro_upd/work_full_fp32.json, work_counts.py --split full: required, issued, and dense MACs per path), shared by every
+platform and precision (the masks do not depend on either); FP16 WISEConv issues the FP16 plan's tiles on the same
+worklists (path wiseconv_fp16, --issued-for fp16); latencies from e2e_stats.csv (the E2E figure's numbers).
 
   eta    = required / issued MACs (tile skipping: its MAC-level eta_mac)
   T      = (issued / dense MACs) * (t_dense / t_path)   raw throughput relative to Dense of the same precision
@@ -24,11 +26,13 @@ TASKS = [("fireflownet", "mvsec_fireflownet_select"), ("yolov8m_b1", "wildtrack6
 
 
 def work(dev, task, dtype):
-    for sub in ("micro_upd", "micro"):
-        f = EV / dev / task / sub / f"work_{dtype}.json"
-        if f.exists():
-            return json.loads(f.read_text())["paths"], f
-    return None, None
+    f = EV / "rtx_3080_sm86" / task / "micro_upd" / "work_full_fp32.json"
+    if not f.exists():
+        return None, None
+    paths = json.loads(f.read_text())["paths"]
+    if dtype == "fp16":
+        paths = {"dense": paths["dense"], "wiseconv": paths["wiseconv_fp16"]}
+    return paths, f
 
 
 def main():

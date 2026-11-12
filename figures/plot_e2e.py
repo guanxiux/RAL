@@ -28,7 +28,7 @@ GGAP = 2.3         # between workloads
 FP16_BAND = "#f3f1ec"
 OURS_INK = "#a8521a"  # WISEConv labels: a darker step of the WISEConv orange
 TRUNC = "#c62828"     # the truncation mark
-FS_IN = 5.4        # numbers inside / above bars
+FS_IN = 6.0        # numbers inside / above bars
 
 data = defaultdict(dict)
 alpha = {}
@@ -61,7 +61,7 @@ def panel(ax, platform, left, bottom_row):
                 ax.axvspan(c0 - 0.5, c0 + len(paths) - 0.5, color=FP16_BAND, lw=0, zorder=0.5)
             if not cell:
                 ax.text(c0 + (len(paths) - 1) / 2, 0.06, "no FP16", rotation=90, ha="center", va="bottom",
-                        fontsize=FS_IN, color=MUTED)
+                        fontsize=FS_IN, color=INK)
             else:
                 fastest = min(v[1] for p, v in cell.items() if p != "wiseconv")
                 a = alpha[(platform, wl, dtype)]
@@ -101,7 +101,7 @@ def panel(ax, platform, left, bottom_row):
 
 
 fig = plt.figure(figsize=(FIG_W, FIG_H))
-L, R, T, B = 0.058, 0.995, 0.90, 0.115
+L, R, T, B = 0.058, 0.995, 0.875, 0.115
 HG, VG = 0.035, 0.085
 pw = (R - L - HG) / 2
 ph = (T - B - 2 * VG) / 3
