@@ -6,13 +6,11 @@
 \cmidrule(lr){2-3}\cmidrule(l){4-5}
  & FP32 & FP16 & FP32 & FP16 \\
 \midrule
-No work ($\mu$s) & 1.2 & 1.2 & 3.0 & 2.6 \\
-1 tile ($\mu$s) & 5.4 & 3.5 & 23.5 & 9.6 \\
+Launch, no work ($\mu$s) & 1.2 & 1.2 & 3.0 & 2.6 \\
+Launch, one tile ($\mu$s) & 5.4 & 3.5 & 23.5 & 9.6 \\
 \quad range & 4.6--9.2 & 3.0--4.3 & 11.1--37.1 & 7.8--15.2 \\
-Top stall & barrier & const.\ miss & short sb. & wait \\
-\quad share (\%) & 19.9 & 29.3 & 19.2 & 27.5 \\
-Second stall & const.\ miss & wait & long sb. & long sb. \\
-\quad share (\%) & 18.5 & 26.8 & 14.4 & 22.6 \\
-$b/t_{\mathrm{dense}}$ & 10.0\% & 14.9\% & 5.6\% & 17.4\% \\
+Intercept $b$ ($\mu$s) & 7.8 & 4.4 & 29.5 & 12.2 \\
+\quad range & 5.2--11.1 & 3.4--6.9 & 12.5--50.2 & 6.4--17.3 \\
+$b/t_{\mathrm{dense}}$, all layers & 10.0\% & 14.9\% & 5.6\% & 17.4\% \\
 \bottomrule
 \end{tabular}

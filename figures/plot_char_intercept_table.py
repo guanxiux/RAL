@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """tab:char-intercept (Insight 4): what the intercept is made of, per GPU and precision (columns).  Time per launch
 of the compute kernel with no work and with a single tile (graph timing; median over the representative layers, with
-the range for the single tile), the two largest stall reasons of the single tile (median share, Nsight Compute), and
-the intercept of i1's per-layer affine fit as a share of dense time (median over all layers).  Writes
+the range), against the intercept b of i1's per-layer affine fit on the same layers (median and range), and b as a
+share of dense time (median over all layers).  The stall reasons are in fig:char-bound.  Writes
 char_intercept_table.tex from char_intercept.csv and char_affine.csv (char_stats.py)."""
 from __future__ import annotations
 
@@ -22,15 +22,12 @@ cell = {}
 for dev, prec in COLS:
     sel = lambda pt: [r for r in ic if r["device"] == dev and r["dtype"] == prec and r["point"] == pt]
     t0, t1 = [float(r["us"]) for r in sel("nw0")], [float(r["us"]) for r in sel("nw1")]
-    share = {k: np.median([float(r[k]) for r in sel("nw1")]) for k in KEYS}
-    top = sorted(share, key=share.get, reverse=True)[:2]
+    bi = [float(r["intercept_us"]) for r in sel("nw1")]
     b = float(next(r for r in af if r["device"] == dev and r["dtype"] == prec)["intercept_share_median"])
     cell[(dev, prec)] = [f"{np.median(t0):.1f}", f"{np.median(t1):.1f}", f"{min(t1):.1f}--{max(t1):.1f}",
-                         SHORT[top[0]], f"{100 * share[top[0]]:.1f}", SHORT[top[1]], f"{100 * share[top[1]]:.1f}",
-                         f"{100 * b:.1f}\\%"]
-ROWS = ("No work ($\\mu$s)", "1 tile ($\\mu$s)", "\\quad range", "Top stall", "\\quad share (\\%)", "Second stall",
-        "\\quad share (\\%)",
-        "$b/t_{\\mathrm{dense}}$")
+                         f"{np.median(bi):.1f}", f"{min(bi):.1f}--{max(bi):.1f}", f"{100 * b:.1f}\\%"]
+ROWS = ("Launch, no work ($\\mu$s)", "Launch, one tile ($\\mu$s)", "\\quad range", "Intercept $b$ ($\\mu$s)",
+        "\\quad range", "$b/t_{\\mathrm{dense}}$, all layers")
 lines = [r"\setlength{\tabcolsep}{4pt}", r"\begin{tabular}{@{}lcccc@{}}", r"\toprule",
          r" & \multicolumn{2}{c}{RTX 3080} & \multicolumn{2}{c}{AGX Orin} \\",
          r"\cmidrule(lr){2-3}\cmidrule(l){4-5}", r" & FP32 & FP16 & FP32 & FP16 \\", r"\midrule"]

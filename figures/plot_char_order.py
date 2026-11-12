@@ -12,16 +12,16 @@ from char_style import FIG_W, FS_CAP, FS_LEG, FS_NOTE, INK, MUTED, plt, read, sa
 
 ORDERS = ("sorted", "shuffled", "uniform")
 OC = {"sorted": "#2a78d6", "shuffled": "#eb6834", "uniform": "#1baf7a"}  # dataviz reference slots 1-3 (all pairs)
-OLABEL = {"sorted": "globally sorted", "shuffled": "shuffled", "uniform": "uniform positions"}
+OLABEL = {"sorted": "sorted globally", "shuffled": "shuffled", "uniform": "uniform positions (control)"}
 GROUPS = (("RTX 3080", "FP32"), ("RTX 3080", "FP16"), ("AGX Orin", "FP32"), ("AGX Orin", "FP16"))
 
 t = read("char_order.csv")
 c = read("char_order_counters.csv")
-fig = plt.figure(figsize=(FIG_W, 1.55))
-B, T = 0.25, 0.86
-ax = fig.add_axes([0.105, B, 0.47, T - B])
-axd = fig.add_axes([0.655, B, 0.12, T - B])
-axl = fig.add_axes([0.88, B, 0.115, T - B])
+fig = plt.figure(figsize=(FIG_W, 1.62))
+B, T = 0.26, 0.84
+ax = fig.add_axes([0.105, B, 0.50, T - B])
+axd = fig.add_axes([0.675, B, 0.12, T - B])
+axl = fig.add_axes([0.875, B, 0.12, T - B])
 
 bw = 0.24
 for gi, (dev, prec) in enumerate(GROUPS):
@@ -41,8 +41,8 @@ ax.set_xticklabels([f"{'3080' if d == 'RTX 3080' else 'Orin'}\n{p}" for d, p in 
 ax.tick_params(axis="x", length=0)
 ax.set_ylim(0.96, 1.34)
 ax.set_yticks([1.0, 1.1, 1.2, 1.3])
-ax.set_ylabel("Time vs. construction order")
-ax.set_xlabel("(a) Every layer × frame", fontsize=FS_CAP)
+ax.set_ylabel("Time (×)")
+ax.set_xlabel("(a) Time, every layer × frame", fontsize=FS_CAP)
 tidy(ax)
 
 
@@ -56,16 +56,16 @@ def strip(axis, key, transform, ylabel, ylim, yticks, label):
     axis.set_xticks([])
     axis.set_ylim(*ylim)
     axis.set_yticks(yticks)
-    axis.set_ylabel(ylabel, labelpad=1.0)
-    axis.set_xlabel(label, fontsize=FS_CAP)
+    axis.set_xlabel(label, fontsize=FS_CAP, linespacing=1.0)
     tidy(axis)
 
 
-strip(axd, "dram", lambda v, b: v, "DRAM bytes (rel.)", (0.8, 4.4), [1, 2, 3, 4], "(b)")
+strip(axd, "dram", lambda v, b: v, None, (0.8, 4.4), [1, 2, 3, 4], "(b) DRAM\nbytes (×)")
 axd.axhline(1.0, color=MUTED, lw=0.6, zorder=2)
-strip(axl, "l1_hit", lambda v, b: v - b, "L1 hit (pp)", (-36, 10), [-30, -20, -10, 0], "(c)")
+strip(axl, "l1_hit", lambda v, b: v - b, None, (-36, 10), [-30, -20, -10, 0], "(c) L1 hit\nrate (Δ pp)")
 axl.axhline(0.0, color=MUTED, lw=0.6, zorder=2)
-fig.legend([plt.Rectangle((0, 0), 1, 1, color=OC[o]) for o in ORDERS], [OLABEL[o] for o in ORDERS], loc="upper center",
-           bbox_to_anchor=(0.55, 1.0), ncol=3, frameon=False, fontsize=FS_LEG, handlelength=0.9, handleheight=0.8, columnspacing=1.4,
+fig.text(0.01, 0.985, "vs. construction order:", ha="left", va="top", fontsize=FS_LEG, color=MUTED)
+fig.legend([plt.Rectangle((0, 0), 1, 1, color=OC[o]) for o in ORDERS], [OLABEL[o] for o in ORDERS], loc="upper left",
+           bbox_to_anchor=(0.24, 1.035), ncol=3, frameon=False, fontsize=FS_LEG, handlelength=0.9, handleheight=0.8, columnspacing=0.9,
            handletextpad=0.4)
 save(fig, "char_order.pdf")

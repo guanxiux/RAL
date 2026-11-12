@@ -68,6 +68,15 @@ def reduction():
                                  inst=r["vs_dense"]["inst"], dram_feature=r["vs_dense"]["dram_feature_bytes"],
                                  l2=r["vs_dense"]["l2_sectors"], cycles=r["vs_dense"]["cycles"]))
     write("char_reduction.csv", rows)
+    marg = []
+    for dev, dname in DEVICES:
+        for p in DTYPES:
+            for m in load(dev, f"i2_summary_{p}.json").get("marginal", []):
+                marg.append(dict(device=dname, dtype=p.upper(), layer=m["layer"], short=short(m["label"]),
+                                 tiles_min=m["tiles"][0], tiles_max=m["tiles"][-1],
+                                 **{k: m[k] for k in ("inst", "cycles", "l2_sectors", "dram_bytes")},
+                                 r2_min=min(min(m[k + "_r2"]) for k in ("inst", "cycles", "l2_sectors", "dram_bytes"))))
+    write("char_reduction_marginal.csv", marg)
 
 
 def order():

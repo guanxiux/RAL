@@ -28,15 +28,15 @@ and cuDNN non-Winograd.
 \begin{figure}[t]
   \centering
   \includegraphics[width=\columnwidth]{figures/char_affine.pdf}
-  \caption{Convolution time averaged across the layers of YOLOv8m at batch~1,
-  normalized to dense, against the active ratio, per GPU and precision. The
-  per-length best (markers) takes the fastest configuration at each worklist
-  length, with its affine fit dotted; the best single configuration minimizes
-  the expected time over a uniform active ratio; the dense-tuned configuration
-  is the fastest at $\alpha = 1$. Gray: proportional.}
-  \Description{Four line charts of normalized latency versus active ratio:
-  the per-length best is a straight line above the proportional diagonal,
-  the dense-tuned configuration flattens at low activity.}
+  \caption{Convolution time over dense time, averaged over the layers of
+  YOLOv8m, against the active ratio. A configuration is a tile shape with its
+  split-K. The per-length best takes the fastest configuration at each worklist
+  length; the two other curves keep one configuration for every length, chosen
+  for the lowest expected time over a uniform $\alpha$ or for the lowest time
+  at $\alpha = 1$.}
+  \Description{Four line charts of normalized time against active ratio: the
+  per-length best is a straight line above the proportional diagonal; a
+  configuration fixed at its alpha = 1 optimum flattens at low activity.}
   \label{fig:char-affine}
 \end{figure}
 
@@ -44,22 +44,23 @@ A worklist kernel issues only active outputs ($\eta \approx 1$), so
 proportional speedup means keeping dense throughput. When we grant the kernel
 its best configuration at every worklist length, its latency averaged across
 layers is affine in $\alpha$, well fitted by $t/t_{\mathrm{dense}} = a\alpha + b$.
-On RTX~3080, $a = 0.794,\, b = 0.258$ (FP32) and $a = 0.643,\, b = 0.417$
-(FP16); on AGX Orin, $a = 0.917,\, b = 0.085$ (FP32) and $a = 0.830,\,
-b = 0.267$ (FP16), with per-layer $R^2$ medians of 0.97--0.995
+On RTX~3080, $a = 0.89,\, b = 0.15$ (FP32) and $a = 0.83,\, b = 0.23$
+(FP16); on AGX Orin, $a = 0.94,\, b = 0.07$ (FP32) and $a = 0.87,\,
+b = 0.18$ (FP16), with per-layer $R^2$ medians of 0.985--0.995
 (Figure~\ref{fig:char-affine}). The slope $a$ matches the dense
 marginal cost; the entire departure from proportional is the intercept $b$, a
 per-layer fixed cost analyzed in \S\ref{sec:char:bound}.
 
 This affine behavior holds only when the configuration follows the worklist
-length. The dense-tuned
-configuration runs 2.3$\times$ (FP32) and 1.6$\times$ (FP16) slower than
-the per-length best at low activity on RTX~3080, and 4.0$\times$ and
-1.9$\times$ on AGX Orin (Figure~\ref{fig:char-affine}): large tiles
-amortize weight loads over many rows, but when rows are few, smaller tiles
-and split-K shorten the chain each SM executes. The best single
-configuration under a uniform worklist-length assumption narrows the gap but
-remains \tbd{XX--XX}\% slower than the per-length oracle.
+length. At $\alpha \le 0.05$, the configuration fastest at $\alpha = 1$ runs
+6.8$\times$ (FP32) and 4.4$\times$ (FP16) slower than the per-length best on
+RTX~3080, and 6.2$\times$ and 3.6$\times$ on AGX Orin
+(Figure~\ref{fig:char-affine}): large tiles amortize weight loads over many
+rows, but when rows are few, smaller tiles and split-K shorten the chain each
+SM executes. The best single configuration for a uniform $\alpha$ narrows the
+gap to 2.0--2.6$\times$ at $\alpha \le 0.05$, at the price of running
+9.2--18.7\% slower than dense at $\alpha = 1$, and remains 11.2--16.5\% slower
+than the per-length best in expected time.
 
 \insight{1}{The latency of worklist-driven tiled convolution is affine in the
 active ratio at dense marginal cost only when the tile configuration
@@ -73,30 +74,33 @@ follows the worklist length.}
   \centering
   \includegraphics[width=\columnwidth]{figures/char_reduction.pdf}
   \caption{A worklist tile against a dense tile of the same configuration on
-  representative layers (RTX~3080, Nsight Compute, cold L2). (a)~Global-load
-  sectors per request of the dense tile and of the worklist tiles of real
-  frames (dot: median frame; bar: 25th to 75th percentile frames).
-  (b)~Per-tile instructions, L2 read sectors, and DRAM bytes of the features
-  (weights excluded, as they are read once per launch), relative to the dense
-  tile (FP32).}
-  \Description{Dot plots per layer: sectors per request of worklist and dense
-  tiles coincide; per-tile instructions equal dense, memory traffic varies
-  around it.}
+  representative layers (Nsight Compute, cold L2; bar: range over the two GPUs
+  and two precisions, dot: median). (a)~Global-load sectors per request of the
+  median frame. (b)--(d)~Cost of one more tile: the slope over the tile count
+  of six worklist prefixes over that of six dense prefixes, so per-launch costs
+  such as the cold weight reads cancel.}
+  \Description{Four dot-and-range panels, one row per layer: sectors per
+  request, instructions, and SM cycles sit at one; DRAM bytes lie between one
+  and 1.4 on 3x3 layers and at one on the 1x1 layer.}
   \label{fig:char-reduction}
 \end{figure}
 
 The worklist changes only the base address of each row; under a
 channels-last layout, the reduction loop over $k^2$ taps and channel slices
 keeps the dense kernel's addressing, so channel coalescing and weight-tile
-reuse are untouched. Counters confirm it:
-a worklist tile executes the same instructions as a dense tile (within 0.5\%),
-with sectors per request matching dense
-(Figure~\ref{fig:char-reduction}a). DRAM traffic does not increase
-significantly over dense: neighboring active positions share overlapping
-receptive fields, and L2 absorbs the redundant accesses. L2 traffic is
-higher than dense because the worklist's spatial scattering reduces tile-local
-reuse, but this does not surface at DRAM
-(Figure~\ref{fig:char-reduction}b).
+reuse are untouched. Counters confirm it
+(Figure~\ref{fig:char-reduction}). We compare the cost of one more tile, the
+slope over the tile count, because a single launch also carries fixed costs
+(cold weight reads, first misses) that a dense launch spreads over hundreds of
+tiles and a worklist launch over a few; those costs form the intercept of
+\S\ref{sec:char:bound}. Per added tile, a worklist tile executes the same
+instructions as a dense tile on every layer, GPU, and precision, and spends
+0.98--1.04$\times$ its SM cycles; sectors per request stay within
+0.92--1.03$\times$ of dense. It reads more DRAM bytes, up to 1.39$\times$
+(median 1.07$\times$), because scattered positions share fewer receptive
+fields with their neighbors; the $1\times1$ layer, whose receptive fields do
+not overlap, reads exactly as much as dense. The extra bytes do not appear in
+the cycles.
 
 \insight{2}{Irregularity is confined to row-level indirection outside the
 reduction loop, leaving channel-contiguous access and weight-tile reuse
@@ -109,50 +113,16 @@ identical to dense execution.}
 \begin{figure}[t]
   \centering
   \includegraphics[width=\columnwidth]{figures/char_order.pdf}
-  \caption{The same worklist in four orders with the same length and tile.
-  (a)~Time relative to the construction order over every layer and captured
-  frame (box: 25th to 75th percentile; whiskers: 5th to 95th; line: median).
-  (b)~DRAM read bytes and (c)~L1 hit rate change on representative layers
-  (one dot per layer, GPU, and precision; cold L2). Uniform positions draw
-  the same number of positions uniformly over the grid, without the spatial
-  clustering of the mask.}
-  \Description{Box plots of relative time close to one, wider on FP16; strip
-  plots showing that only uniform positions change DRAM bytes.}
+  \caption{The worklist in other orders, relative to the construction order
+  (same length and tile). Uniform positions are a control: as many positions
+  drawn uniformly over the grid, without the spatial clustering of the mask.
+  (a)~Every layer and captured frame (box: 25th--75th percentile, whiskers:
+  5th--95th, line: median). (b), (c)~Representative layers, one dot per layer,
+  GPU, and precision (Nsight Compute, cold L2).}
+  \Description{Box plots of relative time near one, wider on FP16; strip
+  plots: only uniform positions raise DRAM bytes, while shuffling lowers the
+  L1 hit rate by up to 27 points.}
   \label{fig:char-order}
-\end{figure}
-
-Scattered worklist entries could hurt L1 reuse by placing positions with
-non-overlapping receptive fields into the same tile. We test this by comparing
-three orderings of the same worklist: tile-local (dense traversal order within
-each spatial tile, arbitrary order across tiles),
-globally sorted in dense traversal order, and randomly shuffled. Across
-3{,}560 layer-frame samples on RTX~3080, global sorting runs at
-0.999$\times$ the tile-local order (median) and shuffling at
-1.004--1.007$\times$; model-level totals are within 2.2\%. All three move
-identical DRAM bytes; the difference is only in L1 hit rate. On AGX Orin, shuffling slows wide
-early layers by up to 1.33$\times$ because the extra L1-to-L2 traffic is
-exposed by the lower L2 bandwidth, but the tile-local order already recovers
-everything a global order would (0.993--0.999$\times$).
-
-\insight{3}{Worklist order has negligible impact on DRAM traffic; a tile-local
-order recovers all of a global order's benefit.}
-
-% ===========================================================================
-\subsection{The Residual Gap Is a Per-Layer Fixed Cost}
-\label{sec:char:bound}
-
-\begin{figure}[t]
-  \centering
-  \includegraphics[width=\columnwidth]{figures/char_bound.pdf}
-  \caption{The two per-layer fixed costs. (a)~Warp stall reasons of one
-  launch of the compute kernel with no work and with a single tile (median
-  share over representative layers, Nsight Compute), and its time per launch.
-  (b)~Construction time over the per-length-best convolution time of the whole
-  model, against the active ratio of the masks.}
-  \Description{Stacked bars of stall reasons, dominated by constant-cache
-  misses without work; line chart of construction share rising as activity
-  falls.}
-  \label{fig:char-bound}
 \end{figure}
 % fig:overview (Design) is defined here so that it reaches the page where Design starts.
 \begin{figure*}[t]
@@ -183,48 +153,85 @@ order recovers all of a global order's benefit.}
   \label{fig:overview}
 \end{figure*}
 
-The intercept $b$ consists of launch latency and a single-tile dependent chain.
-An empty kernel spends 92\% of its stall cycles on constant-cache misses (the
-parameters are cold); a single tile adds barriers and, with split-K, memory
-fences, with long-scoreboard stalls at only 6--27\% (Table~\ref{tab:char-intercept}). The
-intercept is 10--17\% of a median YOLOv8m layer's dense time on RTX~3080,
-smaller on AGX Orin where each layer is larger relative to the device.
+Scattered worklist entries could hurt L1 reuse by placing positions with
+non-overlapping receptive fields into the same tile. We compare the
+construction order (tile-local: dense traversal order within each construction
+tile, arrival order across tiles) with the same worklist sorted globally in
+dense traversal order and randomly shuffled. Across about 7{,}900 layer--frame
+samples per GPU and precision, global sorting runs at 0.997--1.000$\times$ the
+construction order (median) and saves at most 1.1\% of model time; shuffling
+runs at 1.002--1.015$\times$ (Figure~\ref{fig:char-order}a). All three orders
+read the same DRAM bytes (within 0.1\%); shuffling only lowers the L1 hit rate,
+by up to 27 points (Figure~\ref{fig:char-order}b, c). This costs little on
+RTX~3080 FP32 but up to 1.31$\times$ (95th percentile) on AGX Orin FP16, where
+the low-intensity early layers expose the extra L1-to-L2 traffic to Orin's
+lower L2 bandwidth. Spatial clustering, not order, sets DRAM traffic: the same
+number of positions drawn uniformly reads up to 4.1$\times$ the bytes.
 
-\begin{table}[t]
-  \centering\small
-  \caption{Composition of the intercept: time per launch with no work and with
-  a single tile (median and range over representative layers), the two largest
-  stall reasons of the single tile, and the intercept of the per-layer affine
-  fit relative to dense time (median over layers).}
-  \label{tab:char-intercept}
-  \input{figures/char_intercept_table.tex}
-\end{table}
+\insight{3}{Worklist order leaves DRAM traffic unchanged; a tile-local order is
+within 1.1\% of a global order.}
 
-Construction adds a second fixed cost. Each mask-to-worklist pass takes
-1.7--3.2\,$\mu$s on RTX~3080 and 4.2--23.6\,$\mu$s on AGX Orin, nearly
-independent of activity (Figure~\ref{fig:char-bound}b, right axis). As the
-oracle convolution time shrinks with $\alpha$, construction's share rises
-(Figure~\ref{fig:char-bound}b, left axis): from \tbd{XX}\% at $\alpha = 0.5$
-to \tbd{XX}\% at $\alpha = 0.1$ on RTX~3080 FP32.
+% ===========================================================================
+\subsection{The Residual Gap Is a Per-Layer Fixed Cost}
+\label{sec:char:bound}
+
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=\columnwidth]{figures/char_bound.pdf}
+  \caption{The two per-layer fixed costs. (a)~Warp stall cycles of one
+  compute launch with no work and with a single tile, grouped by cause (median
+  over representative layers, Nsight Compute; on-chip latency is short
+  scoreboard and fixed-latency waits), the time per launch, and the intercept
+$b$ of the per-layer affine fit on the same layers. (b)~Model-wide
+  construction time over convolution time with the per-length best
+  configuration, against the active ratio.}
+  \Description{Stacked bars: without work, constant-cache misses dominate;
+  with one tile, DRAM/L2 latency is a small part. Lines: construction share
+  rises from below 7\% at alpha 1 to 15--40\% at alpha 0.01.}
+  \label{fig:char-bound}
+\end{figure}
+
+The intercept $b$ is the time of a launch that computes almost nothing. A
+launch with a single tile takes 69--80\% of $b$ (Figure~\ref{fig:char-bound}a).
+Without work, a launch spends 65--81\% of its stall cycles on constant-cache
+misses (the kernel parameters are cold); one tile adds barriers and on-chip
+latency, while DRAM/L2 latency stays at 6--23\% (median;
+Figure~\ref{fig:char-bound}a). The intercept is 10.0--17.4\% of a median
+layer's dense time, except 5.6\% on AGX Orin FP32, where each layer is longer
+relative to the launch.
+
+
+Construction adds a second fixed cost. Each construction pass takes
+1.6--4.4\,$\mu$s on RTX~3080 and 3.8--27.2\,$\mu$s on AGX Orin, almost
+independent of activity, while the convolution it feeds shrinks with $\alpha$.
+Its share of model time therefore rises as activity falls
+(Figure~\ref{fig:char-bound}b). On RTX~3080 FP32 the share grows from 3.8\% at
+$\alpha = 0.5$ to 11.4\% at $\alpha = 0.1$; on the faster FP16 path it reaches
+39.3\% at $\alpha = 0.01$.
 
 \insight{4}{The residual gap comes from per-layer fixed costs independent of
 activity: launch latency in the compute intercept, and near-constant
 construction time.}
 
 % ===========================================================================
+
 \subsection{Following the Length Is Not Free}
 \label{sec:char:cost}
 
+
 Insight~1 requires the configuration to follow the worklist length, but the
 length exists only on the device and changes at every layer of every frame.
-Every mechanism that selects a kernel from it pays per decision point: reading
-the length back to the host stalls the per-frame path; a device-updatable
-kernel node costs \tbd{1.9}\,$\mu$s per layer on RTX~3080; a conditional
-graph node costs 9.5\,$\mu$s (RTX~3080) and 17--19\,$\mu$s (AGX Orin).
-These costs are comparable to the median per-layer gain from
-per-length selection (Figure~\ref{fig:char-cost}), so the number of candidates
-and selection points a frame can afford is bounded by the mechanism, not by
-the oracle.
+Every mechanism that selects a kernel from it pays per decision point.
+Measured in isolation, reading the length back to the host costs
+7.5\,$\mu$s per layer on RTX~3080 and 20.8\,$\mu$s on AGX Orin, and an IF
+conditional graph node 9.5 and 32.4\,$\mu$s; a device-updatable kernel node
+costs 0.8\,$\mu$s per layer plus 0.8\,$\mu$s per candidate switch (1.7 plus
+2.0\,$\mu$s on AGX Orin). The median per-layer gain of following the length
+is 1.3--2.7\,$\mu$s on RTX~3080 and 5.0--12.3\,$\mu$s on AGX Orin
+(Figure~\ref{fig:char-cost}). Readback and conditional nodes exceed the gain
+on 89--100\% of layers, the updatable node on 7--25\% without switching and on
+up to 71\% when it switches every frame. The mechanism, not the oracle,
+bounds how many candidates and selection points a frame can afford.
 
 \insight{5}{Every mechanism for following the worklist length incurs a
 per-decision-point cost often comparable to the per-layer gain from adaptation.}
@@ -234,16 +241,18 @@ affine line without trading selection cost against adaptation gain;
 \S\ref{sec:eval:discussion} discusses the hardware support that would remove
 this trade-off.
 
-% fig:char-cost sits at the end of the section so that its column space goes to the text and Design starts on the
-% page of fig:overview.
+% fig:char-cost is defined at the end of the section so that its column space goes to the text and Design starts on
+% the page of fig:overview.
 \begin{figure}[t]
   \centering
   \includegraphics[width=\columnwidth]{figures/char_cost.pdf}
-  \caption{Per-layer gain of selecting the configuration per worklist length
-  over the best single configuration on the real trace (CDF over layers),
-  against the per-layer cost of each selection mechanism on the same GPU.}
-  \Description{Cumulative distributions of per-layer gain, with vertical
-  lines at the cost of a device-updatable node, host readback, and a
-  conditional node.}
+  \caption{Per-layer gain of following the worklist length (per-length best
+  over the best single configuration, real trace; CDF over the layers of
+  YOLOv8m) against the per-layer cost of each selection mechanism on the same
+  GPU. The band spans the updatable node from no switch to a switch every
+  frame.}
+  \Description{Cumulative distributions of per-layer gain; a gray band for the
+  updatable node lies inside the gain distributions, while the readback and
+  conditional-node lines lie to the right of nearly all layers.}
   \label{fig:char-cost}
 \end{figure}
