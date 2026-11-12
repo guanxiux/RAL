@@ -4,83 +4,69 @@
 \subsection{Experimental Setup}
 \label{sec:eval:setup}
 
+We ask three questions: whether \sysname turns spatial sparsity into
+end-to-end latency and energy reduction across GPU classes
+(\S\ref{sec:eval:end-to-end}), where its remaining time goes
+(\S\ref{sec:eval:microbenchmarks}), and whether each co-designed component is
+necessary (\S\ref{sec:eval:ablation-sensitivity}).
+
 \paragraph{Platforms.}
+We evaluate six NVIDIA GPUs that span datacenter, desktop, laptop, and
+embedded classes: A100, RTX~4090, RTX~3080, RTX~4070 Laptop, Jetson AGX Orin,
+and Jetson Xavier NX. GPU clocks are locked on every platform so that
+latencies are stable across runs. On the two Jetson boards, where the energy
+budget constrains deployment, we also report per-frame energy from the board's
+input power.
 
-We evaluate six GPU platforms. The four discrete GPUs are NVIDIA A100,
-RTX~4090, RTX~3080, and RTX~4070 Laptop. The embedded platforms are Jetson
-Xavier NX and AGX Orin; we also measure board energy on both. The discrete
-platforms use PyTorch 2.1.2, CUDA 12.1, and cuDNN 8.9.2; both Jetson platforms
-use PyTorch 2.1.0, CUDA 11.4, and cuDNN 8.6. All paths in the full workload
-comparison use FP32 (SIMT) with TF32 disabled. Sensitivity studies additionally
-evaluate FP16 (tensor core) on selected platforms. On each platform, all backends run under the same fixed clock and
-power configuration.
+\paragraph{Workloads.}
+The three workloads (Table~\ref{tab:workloads}) cover the three mask sources
+of \S\ref{sec:bg:masked}: event masks, temporal-difference masks, and learned
+spatial gates. Each mask policy follows its upstream method; where it needs
+thresholds, they are tuned on data disjoint from the evaluation set.
 
-\paragraph{Models, tasks, and mask sources.}
-Our workloads (Table~\ref{tab:models}) span three vision tasks:
-FireFlowNet~\cite{fireflownet} for event-based optical flow on
-MVSEC~\cite{mvsec} with Ev-Conv~\cite{evconv} masks,
-YOLOv8n and YOLOv8m~\cite{yolov8} for detection on MOT16~\cite{mot16} with
-DeltaCNN's~\cite{deltacnn} temporal masks, and
-DynConv~\cite{dynconv} for human pose on MPII~\cite{mpii} with learned spatial
-gates. For every workload, calibration uses the training split, while all
-reported results use a disjoint test split with the authors' released
-weights~\cite{fireflownet,yolov8,dynconv}. Within each workload, we fix
-inputs, weights, and upstream mask policy; every sparse path receives the same
-layer masks, isolating the masked-convolution backend.
-
-\begin{table}[htb]
+\begin{table}[t]
 \centering
-\caption{Evaluation workloads.}
-\label{tab:models}
+\caption{Workloads.}
+\label{tab:workloads}
 \footnotesize
-\setlength{\tabcolsep}{3pt}
-\renewcommand{\arraystretch}{1.08}
-\begin{tabular}{@{}
-  >{\raggedright\arraybackslash}p{0.19\columnwidth}
-  >{\centering\arraybackslash}p{0.22\columnwidth}
-  >{\centering\arraybackslash}p{0.22\columnwidth}
-  >{\centering\arraybackslash}p{0.22\columnwidth}@{}}
-\hline
- & \textbf{FireFlowNet} \cite{fireflownet}
- & \textbf{YOLOv8n/m} \cite{yolov8}
- & \textbf{DynConv} \cite{dynconv} \\
-\hline
+\setlength{\tabcolsep}{4pt}
+\begin{tabular}{@{}lccc@{}}
+\toprule
+ & \textbf{FireFlowNet}~\cite{fireflownet} & \textbf{YOLOv8m}~\cite{yolov8} & \textbf{DynConv}~\cite{dynconv} \\
+\midrule
 Task & Optical flow & Detection & Human pose \\
-Mask source & Ev-Conv~\cite{evconv} & DeltaCNN~\cite{deltacnn}
-            & DynConv~\cite{dynconv} \\
-Dataset & MVSEC~\cite{mvsec} & MOT16~\cite{mot16} & MPII~\cite{mpii} \\
-Input size & $256{\times}256$ & $640{\times}640$ & $256{\times}256$ \\
-Parameters & 0.056M & 3.16M~/~25.9M & 6.89M \\
-Eval. samples & 196.8K & 2,572 & 2,958 \\
-\hline
+Mask source & Ev-Conv~\cite{evconv} & DeltaCNN~\cite{deltacnn} & Learned gates~\cite{dynconv} \\
+Dataset & MVSEC~\cite{mvsec} & WildTrack~\cite{wildtrack} & MPII~\cite{mpii} \\
+Input & $256{\times}256$ & $640{\times}640$ & $256{\times}256$ \\
+Parameters & 0.056M & 25.9M & 6.89M \\
+Eval.\ frames & 196.8K & 251.7K & 2,958 \\
+\bottomrule
 \end{tabular}
 \end{table}
 
 \paragraph{Baselines.}
-We compare \sysname against three FP32 (SIMT) execution paths:
-\textbf{Dense} (PyTorch/cuDNN~\cite{cudnn} with autotuning),
-\textbf{Tile skipping} (DeltaCNN~\cite{deltacnn} for FireFlowNet and YOLO;
-DynConv supplies output masks directly), and
-\textbf{Gather-scatter} (DynConv's~\cite{dynconv} CUDA backend for pose;
-MMCV's~\cite{mmcv} MaskedConv2d for FireFlowNet and YOLO).
+\emph{Dense} runs the original model with PyTorch and cuDNN~\cite{cudnn}
+autotuning: it computes every position and carries none of the masking
+machinery (no mask generation, propagation, or temporal state).
+\emph{Tile skipping} uses DeltaCNN's kernels~\cite{deltacnn}, and
+\emph{gather-scatter} uses MMCV's masked convolution~\cite{mmcv} (DynConv's
+own CUDA backend~\cite{dynconv} for pose). All paths run the same weights and
+inputs, and the three masked paths the same layer masks, so they differ only
+in the masked-convolution backend. Every path except gather-scatter replays as
+a CUDA graph; gather-scatter reads each layer's active count on the host to
+size its buffers, so it must run eagerly. The baselines implement only FP32, so
+FP16 compares \sysname with Dense alone. We report \sysname's speedup over the
+fastest baseline on each workload and platform.
 
-\paragraph{Measurements.}
-
-We measure per-frame full-model GPU latency over the complete evaluation
-datasets. CUDA events bracket each frame's inference; after warm-up we run
-three complete rounds and average per-frame latency across all frames and
-rounds. The interval includes mask propagation, worklist construction, all
-network operators, and output update; it excludes input transfer, offline
-calibration, and one-time initialization. We report $\eta$, $T$, and
-$T_{\mathrm{eff}}$ at the model level by accumulating required and issued
-work across layers per frame (Eq.~\ref{eq:efficiency-framework}), then
-averaging across frames. On the Jetson platforms, we integrate board-level
-\texttt{VDD\_IN} power over each frame interval to obtain per-frame energy.
-For accuracy, we follow the original protocols: AEE for optical
-flow~\cite{evconv}, AP for detection~\cite{deltacnn}, and PCKh for
-pose~\cite{dynconv}. MOT16 AP uses fixed pseudo-labels from a dense YOLO26x
-teacher~\cite{yolo26} because ground-truth detections cover only the training
-split.
+\paragraph{Protocol.}
+Latency is the GPU time of one frame measured with CUDA events; it includes
+worklist construction and all non-convolution operators. YOLOv8m processes whole videos continuously, so its
+temporal masks evolve as in deployment, at batch~1 (YOLOv8m b1: a single
+latency-bound camera, our primary setting) and batch~4 (YOLOv8m b4: four
+concurrent camera streams).
+\sysname's per-device tuning (\S\ref{sec:design:select}) runs once offline
+and is excluded. Task accuracy is reported to confirm that the sparse paths
+agree.
 
 \subsection{End-to-End Performance}
 \label{sec:eval:end-to-end}
@@ -88,18 +74,18 @@ split.
 \begin{figure*}[htb]
   \centering
   \includegraphics[width=\textwidth]{figures/e2e_latency.pdf}
-  \caption{Full-model mean per-frame latency across GPU platforms. Each
-  workload uses an independent y-axis. Labels report the model-level active
-  ratio $\hat{\alpha}$, aggregated as described in
-  \S\ref{sec:eval:setup} and averaged across evaluation sequences. Red dashed
-  lines mark ideal proportional scaling, computed by applying each sequence's
-  model-level active ratio to its dense latency before aggregation.}
-  \Description{Grouped bar charts of full-model latency. Six platform panels
-  each contain four workload groups comparing Dense, Tile skipping,
-  Gather-scatter, and WISEConv. Selected workload groups use broken y-axes for
-  a much slower gather-scatter path. Red dashed lines show the ideal
-  proportional-scaling reference for each workload and platform, and workload
-  labels report their aggregated active ratios.}
+  \caption{Full-model latency on six GPUs, normalized to Dense of the same
+  precision (lower is better). Each workload has an FP32 group with all four
+  paths and an FP16 group with Dense and \sysname, since the baselines have no
+  FP16 path. Dense bars give the absolute latency (per frame; per batch of four
+  for YOLOv8m b4), \sysname bars give its speedup over the fastest other path
+  of the group, and a red cross marks bars that extend beyond the axis. The dashed line
+  is ideal proportional scaling, the mean active ratio $\hat{\alpha}$ given
+  under each workload.}
+  \Description{Six panels, one per GPU. In each, four workloads each show an
+  FP32 group of Dense, Tile skipping, Gather-scatter, and WISEConv bars and an
+  FP16 group of Dense and WISEConv bars, normalized to Dense. WISEConv is the
+  lowest bar in every group; a dashed line marks the active ratio.}
   \label{fig:e2e-latency}
 \end{figure*}
 
@@ -133,119 +119,96 @@ workloads \sysname runs at 1.36$\times$ ideal, while on DynConv
 
 \paragraph{Energy.}
 \sysname is the lowest-energy path for every workload on both Jetson
-platforms (Table~\ref{tab:e2e-energy}), reducing energy by
-9.3--36.1\% relative to the lowest-energy competing path in each pair and by
-29.9--67.8\% relative to dense execution.
+platforms (Table~\ref{tab:e2e-energy}). In FP32 it uses 32.8--51.8\% less
+energy per frame than the lowest-energy baseline, and in FP16 60.8--83.6\% less
+than Dense.
 
 \input{figures/e2e_energy_table}
 
 \paragraph{Accuracy.}
-\begin{figure}[htb]
-  \centering
-  \includegraphics[width=\columnwidth]{figures/e2e_accuracy.pdf}
-  \caption{Task accuracy on RTX~3080 under the evaluated upstream sparsity
-  policies, measured by AEE~($\downarrow$), AP~($\uparrow$), and
-  PCKh~($\uparrow$).}
-  \Description{Four grouped bar charts compare Dense, Tile skipping,
-  Gather-scatter, and WISEConv task accuracy. FireFlowNet reports average
-  endpoint error, YOLOv8n and YOLOv8m report AP, and DynConv reports
-  PCKh. The three sparse execution paths have closely matching task accuracy in
-  every workload.}
-  \label{fig:e2e-accuracy}
-\end{figure}
-\sysname's latency and energy gains do not alter accuracy.
-\sysname matches the other sparse paths on every workload: AEE and PCKh are
-identical and YOLOv8 AP differs by at most 0.14 points, a residual of
-floating-point reduction order rather than any difference in covered positions
-(Figure~\ref{fig:e2e-accuracy}); even where worklist reuse computes a superset
-of the required positions, the output mask gates writeback so the extra
-slots do not reach downstream layers. The remaining accuracy gap between
-sparse and dense, within 4\% across all workloads, is set by the upstream
-mask policy, which \sysname consumes without modification.
+\sysname's latency and energy gains do not change accuracy
+(Table~\ref{tab:e2e-accuracy}). Given the same layer masks, the three masked
+paths agree: AEE and PCKh are identical, and YOLOv8m AP differs by at most 0.1
+points, a residual of floating-point reduction order rather than of covered
+positions. Where worklist reuse computes a superset of the required positions,
+the output mask gates writeback, so the extra positions never reach downstream
+layers. The remaining gap to Dense (1.4 PCKh points lower on DynConv, slightly
+better AEE and AP on the other two) is set by the upstream mask policy, which
+\sysname consumes without modification.
 
+\input{figures/e2e_accuracy_table}
 
 \subsection{Microbenchmarks}
 \label{sec:eval:microbenchmarks}
 
-\input{figures/worklist_efficiency_table}
-
-\paragraph{Effective throughput.}
-A sparse path lowers latency only if it is both selective, captured by the
-useful-compute ratio $\eta$, and fast, captured by raw throughput $T$
-(Eq.~\ref{eq:efficiency-framework-throughput}). Figure~\ref{fig:effective-throughput}
-reports both, normalized to Dense, on RTX~3080 and AGX~Orin, and the two existing
-paths fail on opposite axes. Tile skipping retains the dense tile schedule and so
-keeps 41--65\% of Dense raw throughput, but an active tile computes every
-position it covers: its useful-compute ratio falls to 0.45--0.72, wasting
-28--55\% of the slots it issues. Gather-scatter issues exactly the required
-positions, giving $\eta=1$, but extraction and writeback collapse its
-throughput to 2--47\% of Dense. \sysname is the only path that is high on both
-axes, sustaining $\eta=0.90$--$1.00$ and the highest raw throughput among the
-sparse paths in every workload---42.0--85.1\% of Dense on RTX~3080 and
-51.3--86.8\% on AGX~Orin. The two YOLO workloads lie at the upper end because
-their higher active ratios expose more parallelism and amortize fixed costs;
-DeltaCNN's throughput on FireFlowNet and DynConv reflects routing very sparse
-tiles through its fused selective path~\cite{deltacnn}. Because effective
-throughput is the product of the two axes, \sysname reaches 1.38--2.06$\times$
-the strongest competing effective throughput on RTX~3080 and 1.47--1.87$\times$
-on AGX~Orin.
-
-% TODO(user): Table~\ref{tab:worklist-efficiency} now reports wise2 (updatable plan) FireFlowNet, YOLOv8m b1 / b4
-% (WildTrack) and DynConv; eta_compute 99.8 / 92.4 / 98.1 / 92.1%. The prose below is still first-generation.
-Table~\ref{tab:worklist-efficiency} localizes \sysname's own loss on RTX~3080
-through the decomposition of Eq.~\ref{eq:eta-decomp}. $\eta_{\mathrm{construct}}$,
-the fraction of worklist entries that are required positions, stays at
-98.6--100.0\%: tile-local compaction emits each active coordinate exactly once,
-and only reuse of a superset worklist gives up the remainder.
-$\eta_{\mathrm{compute}}$, the fraction of issued slots that are worklist
-entries, exceeds 99.5\% for FireFlowNet and the two YOLO workloads. DynConv is
-the exception at 90.6\%: its low active ratio and small spatial grids yield
-exceptionally short worklists (P10, P50, and P90 lengths of 3, 43, and 389), so
-$B_M$-sized final tiles are mostly padding. Because its inputs are temporally
-unrelated, DynConv uses the same exact-length device policy without a temporal
-activity selector. Even at this worst case the total $\eta$ is more than double
-tile skipping's 44.8\% on the same workload.
-\begin{figure}[h]
+\begin{figure}[t]
   \centering
   \includegraphics[width=\columnwidth]{figures/effective_throughput.pdf}
-  \caption{Full-model effective throughput $\eta T$ and wasted throughput
-  $(1-\eta)T$ on RTX~3080 and AGX Orin, normalized within each platform to
-  Dense raw throughput.}
-  \Description{Two vertically stacked platform panels compare Dense, Tile
-  skipping, Gather-scatter, and WISEConv across four workloads. Each bar is
-  divided into effective and wasted throughput, normalized to Dense raw
-  throughput on the same platform.}
+  \caption{Effective throughput $\eta T$ (colored) and wasted throughput
+  $(1-\eta)T$ (dotted) of every path, relative to the raw throughput of Dense
+  of the same precision. \sysname bars give its effective throughput.}
+  \Description{Two panels (RTX 3080 and AGX Orin). For four workloads, an FP32
+  group of Dense, Tile skipping, Gather-scatter, and WISEConv bars and an FP16
+  group of Dense and WISEConv bars; each bar stacks effective and wasted
+  throughput. WISEConv has the highest effective throughput in every group.}
   \label{fig:effective-throughput}
 \end{figure}
 
-\input{figures/cost_decomposition_table}
+\paragraph{Effective throughput.}
+A masked path lowers latency only if it is both selective, captured by the
+useful-compute ratio $\eta$, and fast, captured by raw throughput $T$
+(Eq.~\ref{eq:efficiency-framework-throughput}).
+Figure~\ref{fig:effective-throughput} reports both, and the two baselines fail
+on opposite axes. Tile skipping keeps the dense tile schedule but computes
+every position of an active tile, so its $\eta$ is only 0.49--0.74 while its
+raw throughput reaches 19.0--77.5\% of Dense. Gather-scatter issues exactly the
+required positions ($\eta=1$), but extraction and writeback hold its raw
+throughput to 2.6--66.5\% of Dense. \sysname keeps $\eta$ at 0.91--1.00 and
+sustains 50.8--120.2\% of Dense raw throughput in FP32 (29.6--83.6\% in FP16),
+the highest of the masked paths in every case. On YOLOv8m b4 its effective
+throughput exceeds even Dense's raw throughput, because cuDNN runs this
+configuration slower than \sysname's kernels.
 
-% TODO(user): Table~\ref{tab:cost-decomposition} now reports wise2 YOLOv8m batch 1 on RTX~3080 (FP32 four paths,
-% FP16 Dense / WISEConv; whole-video aligned; figures/cost_decomposition_stats.py); this paragraph still describes the
-% first-generation YOLOv8n table (RTX~3080 + AGX~Orin) and needs rewriting.
-\paragraph{Latency cost decomposition.}
-We decompose full-model YOLOv8n latency by execution stage on RTX~3080 and AGX
-Orin (Table~\ref{tab:cost-decomposition}). On RTX~3080, \sysname reduces the
-convolution share from 2.32 to 0.99\,ms (2.3$\times$, close to the
-$1/\alpha\approx2.2$ proportional target) while adding 0.12\,ms of
-construction, lowering the total from 2.82 to 1.66\,ms. On AGX~Orin the
-convolution reduction is 2.0$\times$ (11.91 to 6.06\,ms) at 0.51\,ms of
-construction, and the total falls from 15.45 to 10.22\,ms.
+\input{figures/worklist_efficiency_table}
 
-Gather-scatter is the exception: it issues exactly the required positions, so its
-convolution is the smallest share of any path (30\% of its total), but extraction,
-scatter, and buffer setup cost 7.48\,ms, 59\% of its total, on RTX~3080. Exact
-selection alone does not lower latency without a fused datapath.
+Table~\ref{tab:worklist-efficiency} localizes \sysname's own loss through the
+decomposition of Eq.~\ref{eq:eta-decomp}. $\eta_{\mathrm{construct}}$ is
+100.0\% on every workload: tile-local compaction emits each active coordinate
+exactly once. All of the loss is in $\eta_{\mathrm{compute}}$, the fraction of
+issued slots that are worklist entries, and it tracks worklist length.
+FireFlowNet and YOLOv8m b4, whose median worklists hold thousands of entries,
+reach 99.8\% and 98.1\%; YOLOv8m b1 and DynConv, whose worklists are often
+shorter than a few tiles (P10 of 24 and 3 entries), lose 7.6\% and 7.9\% to the
+padding of their final tiles.
 
-% Optional CUDA-level diagnostics are not a third required microbenchmark.
-% If the two figures leave a concrete locality question, the useful diagnostic
-% is whether tile-local worklists preserve dense-like cache behavior on the
-% same real frames: collect L2 hit rate together with L2/DRAM traffic per
-% required FLOP for Dense, WISEConv, and a sparse comparator.  L2 hit rate alone
-% is insufficient because a path may issue fewer requests or transfer more
-% bytes per useful output; report it only with traffic and the measured
-% throughput, and keep the result as a small diagnostic rather than a
-% standalone counter survey.
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=\columnwidth]{figures/decomposition.pdf}
+  \caption{YOLOv8m latency per frame by stage on RTX~3080, at batch~1 (b1)
+  and~4 (b4), with FP32 and FP16 on separate axes.
+  Stages are each path's kernel shares of GPU busy time, scaled to its
+  end-to-end latency; GPU idle is the remaining time in the frame.
+  Gather-scatter's gather/scatter includes compacting the mask into the index
+  list it gathers by.}
+  \Description{Two panels, FP32 and FP16, of horizontal stacked bars, one per
+  path, grouped by batch 1 and batch 4, splitting per-frame latency into construction,
+  convolution, gather and scatter, other operators, and GPU idle time.}
+  \label{fig:decomposition}
+\end{figure}
+
+\paragraph{Latency decomposition.}
+Figure~\ref{fig:decomposition} splits YOLOv8m latency by stage. At batch~1 in
+FP32, \sysname cuts convolution from 9.68 to 2.27\,ms (4.3$\times$) at the cost
+of 0.17\,ms of construction, and the frame falls from 10.76 to 3.00\,ms.
+Gather-scatter issues the least convolution of any masked path (1.68\,ms), but
+its per-layer host synchronization leaves the GPU idle for 8.26\,ms, 64.8\% of
+its frame. Batching four streams hides most of that idle time (0.87\,ms per
+frame) and lets both baselines fill the GPU, so tile skipping and
+gather-scatter fall to 5.04 and 4.50\,ms per frame; \sysname still leads at
+1.88\,ms because its batch-1 grid already keeps the GPU busy. In FP16, tensor
+cores shrink convolution more than the rest of the frame: construction and
+other operators grow from 24.3\% of \sysname's FP32 frame to 39.6\%, and the
+speedup over Dense narrows from 3.59$\times$ to 2.63$\times$.
 
 \paragraph{Memory overhead.}
 % TODO(user): Table~\ref{tab:memory} now reports wise2 FP32 (FireFlowNet, YOLOv8m b1 / b4, DynConv; peak from before
@@ -266,7 +229,7 @@ stay in the gathered compact representation~\cite{dynconv}.
 
 \input{figures/memory_table}
 
-\subsection{Ablation Study and Sensitivity Analysis}
+\subsection{Ablation Study}
 \label{sec:eval:ablation-sensitivity}
 
 \input{figures/ablation_table}
@@ -296,51 +259,6 @@ launch runs the same kernels as Ours but adds per-operator host
 synchronization, inflating the total from 1.66 to 7.61\,ms (4.58$\times$
 Ours). On AGX~Orin, DP only adds 1.5\% end-to-end latency over Ours and
 readback inflates it to 2.38$\times$ Ours.
-
-\begin{figure}[htb]
-  \centering
-  \includegraphics[width=\columnwidth]{figures/dtype_sensitivity.pdf}
-  \caption{FP32 (SIMT) vs.\ FP16 (tensor core) full-model latency for
-  Dense and \sysname across all four workloads on RTX~3080 and AGX~Orin.}
-  \Description{Two panels (RTX 3080 and AGX Orin) each show four workload
-  groups comparing Dense and WISEConv in FP32 and FP16.}
-  \label{fig:dtype-sensitivity}
-\end{figure}
-
-\paragraph{Tensor core sensitivity.}
-Figure~\ref{fig:dtype-sensitivity} compares FP32 and FP16 execution on
-RTX~3080 and AGX~Orin. The evaluated sparse
-baselines~\cite{deltacnn,dynconv,mmcv} provide only FP32 paths, so this
-study compares Dense and \sysname only. \sysname retains a 1.07--1.99$\times$
-speedup over Dense under FP16 tensor cores across all eight workload-platform
-pairs, narrowing from 1.51--3.04$\times$ under FP32. The narrowing is
-expected: tensor cores reduce the convolution time that \sysname saves by
-skipping, shrinking the absolute saving while non-convolution costs
-(construction, elementwise, mask processing) do not shrink proportionally. The two YOLO
-workloads narrow the most (1.51--1.70$\times$ under FP32 to
-1.07--1.37$\times$ under FP16) because their high active ratio
-($\alpha\approx48$--$49\%$) already limits the sparsity gain; within the two,
-YOLOv8n narrows further because its smaller model makes non-convolution costs
-a larger share of the total under FP16.
-
-\input{figures/batch_cost_decomposition_table}
-
-\paragraph{Stream-level batching.}
-% TODO(user): Table~\ref{tab:batch-cost-decomposition} now reports wise2 YOLOv8m b1 / b4 (FP32; b8 not rerun on the
-% new mainline). Gather-scatter b4: the whole-video E2E is 1.15x its clip latency (eager path), scaled like the rest.
-% The prose below is still first-generation (YOLOv8n, b8).
-Table~\ref{tab:batch-cost-decomposition} reports per-frame latency
-decomposition for YOLOv8n on RTX~3080 at batch sizes 1, 4, and~8. \sysname
-remains fastest at every batch size, but its lead over the fastest competing
-path narrows from 1.70$\times$ at batch~1 to 1.59$\times$ at batch~8. Tile
-skipping benefits most: from batch~1 to~8, its per-frame convolution drops from
-2.89 to 0.92\,ms, compared with 0.99 to 0.49\,ms for \sysname, because batching adds
-independent tiles that fill otherwise idle SMs~\cite{deltacnn}, the same
-occupancy that \sysname's adaptive decomposition already provides at batch~1.
-Tile skipping accordingly overtakes dense at batch~4 and stays the fastest
-competing path at batch~8. Gather-scatter's extraction overhead does not
-amortize: \emph{Other} still accounts for 59.4\% of its per-frame latency at
-batch~8.
 
 \subsection{Discussion}
 \label{sec:eval:discussion}

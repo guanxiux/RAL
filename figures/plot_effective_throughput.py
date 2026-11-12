@@ -1,204 +1,76 @@
 #!/usr/bin/env python3
-"""Render the two-platform effective-throughput figure from the paper CSV."""
+"""fig:effective-throughput: effective (eta*T) and wasted ((1-eta)*T) throughput of every path, relative to Dense raw
+throughput of the same precision (reads effective_throughput.csv).
 
+One panel per platform; each workload has an FP32 cluster (four paths) and an FP16 cluster (Dense, WISEConv), styled
+as fig:e2e-latency.  The effective share is the path's color, the wasted share the dotted gray of fig:gap; WISEConv
+bars carry their effective throughput.
+"""
 from __future__ import annotations
 
-import csv
-import glob
-import os
-from pathlib import Path
+from collections import defaultdict
 
-import matplotlib
+from bar_patterns import add_bar, add_wasted, legend_handles, wasted_handle
+from char_style import FIG_W, FS_CAP, FS_LEG, FS_NOTE, FS_TICK, INK, MUTED, plt, read, save, tidy
 
-matplotlib.use("Agg")
-import matplotlib.font_manager as fm
-import matplotlib.pyplot as plt
-from matplotlib.patches import Patch
-from matplotlib.ticker import FuncFormatter
+PLATFORMS = ["RTX 3080", "AGX Orin"]
+WORKLOADS = [("fireflownet", "FireFlowNet"), ("yolov8m_b1", "YOLOv8m b1"), ("yolov8m_b4", "YOLOv8m b4"),
+             ("dynconv", "DynConv")]
+CLUSTERS = [("fp32", ("dense", "tile_skip", "gather_scatter", "wiseconv")), ("fp16", ("dense", "wiseconv"))]
+NAMES = {"dense": "Dense", "tile_skip": "Tile skipping", "gather_scatter": "Gather-scatter", "wiseconv": "WISEConv"}
+CGAP, GGAP, YMAX = 0.4, 1.6, 1.25
+BW = 0.84  # bar width (slot = 1): a small gap between bars
+FP16_BAND = "#f3f1ec"
+OURS_INK = "#a8521a"
+FS_IN = 5.0
 
-from bar_patterns import COLORS, EDGE, HATCHES, legend_handles
+data = defaultdict(dict)
+for r in read("effective_throughput.csv"):
+    data[(r["platform"], r["workload"], r["dtype"])][r["path"]] = (float(r["effective"]), float(r["wasted"]))
 
-
-HERE = Path(__file__).resolve().parent
-CSV_PATH = HERE / "effective_throughput.csv"
-OUT_PDF = HERE / "effective_throughput.pdf"
-
-for directory in (
-    "/usr/share/texmf/fonts/opentype/public/tex-gyre",
-    "/usr/share/fonts/opentype/public/tex-gyre",
-    "/usr/local/texlive",
-):
-    for path in glob.glob(
-        os.path.join(directory, "**", "texgyretermes-*.otf"), recursive=True
-    ):
-        fm.fontManager.addfont(path)
-
-plt.rcParams.update({
-    "font.family": "serif",
-    "font.serif": ["TeX Gyre Termes", "Nimbus Roman", "DejaVu Serif"],
-    "mathtext.fontset": "custom",
-    "mathtext.rm": "TeX Gyre Termes",
-    "mathtext.it": "TeX Gyre Termes:italic",
-    "mathtext.bf": "TeX Gyre Termes:bold",
-    "pdf.fonttype": 42,
-    "ps.fonttype": 42,
-    "axes.linewidth": 0.65,
-    "hatch.linewidth": 0.36,
-})
-
-DEVICES = ("rtx3080", "agx_orin")
-DEVICE_LABELS = {"rtx3080": "RTX 3080", "agx_orin": "AGX Orin"}
-SYSTEMS = ("dense", "tile_skip", "gather_scatter", "wiseconv")
-SYSTEM_LABELS = {
-    "dense": "Dense",
-    "tile_skip": "Tile skipping",
-    "gather_scatter": "Gather-scatter",
-    "wiseconv": "WISEConv",
-}
-WORKLOADS = ("fireflownet", "yolov8n", "yolov8m", "dynconv_pose")
-WORKLOAD_LABELS = {
-    "fireflownet": "FireFlowNet",
-    "yolov8n": "YOLOv8n",
-    "yolov8m": "YOLOv8m",
-    "dynconv_pose": "DynConv",
-}
-
-# The 192 pt canvas is 80% of the measured 240 pt acmart column width and is
-# included at that physical size. Both panels are deliberately shallow.
-FIG_W, FIG_H = 3.334, 1.85
-FS_TICK, FS_AXIS, FS_WORKLOAD, FS_PANEL, FS_LEG = 6.1, 7.2, 6.9, 7.0, 7.2
-WASTED_COLOR = "#e3e3e3"
-WASTED_HATCH = "...."
-
-
-def read_rows() -> dict[tuple[str, str, str], dict]:
-    rows = list(csv.DictReader(CSV_PATH.open(encoding="utf-8")))
-    expected = len(DEVICES) * len(WORKLOADS) * len(SYSTEMS)
-    if len(rows) != expected:
-        raise ValueError(f"expected {expected} rows, found {len(rows)}")
-    by_key = {}
-    for row in rows:
-        key = (row["device"], row["workload"], row["system"])
-        if key in by_key:
-            raise ValueError(f"duplicate row {key}")
-        by_key[key] = row
-    required = {
-        (device, workload, system)
-        for device in DEVICES
-        for workload in WORKLOADS
-        for system in SYSTEMS
-    }
-    if set(by_key) != required:
-        raise ValueError("effective-throughput CSV has unexpected keys")
-    return by_key
-
-
-def relative_tick(value: float, _: int) -> str:
-    if abs(value) < 1e-12:
-        return "0"
-    return f"{value:.1f}".rstrip("0").rstrip(".")
-
-
-def plot_panel(ax, rows, device, show_xlabels):
-    group_step = 0.85
-    within_step = 0.170
-    bar_width = 0.130
-    centers = {
-        workload: index * group_step
-        for index, workload in enumerate(WORKLOADS)
-    }
-    midpoint = (len(SYSTEMS) - 1) / 2.0
-    for workload in WORKLOADS:
-        for system_index, system in enumerate(SYSTEMS):
-            row = rows[(device, workload, system)]
-            effective = float(row["effective_throughput_vs_dense"])
-            wasted = float(row["wasted_throughput_vs_dense"])
-            raw = float(row["raw_throughput_vs_dense"])
-            if abs(raw - effective - wasted) > 1e-9:
-                raise ValueError(
-                    f"stack does not close for {device}/{workload}/{system}"
-                )
-            x = centers[workload] + (system_index - midpoint) * within_step
-            ax.bar(
-                x, effective, bar_width, color=COLORS[system], edgecolor=EDGE,
-                hatch=HATCHES[system], linewidth=0.62, zorder=3,
-            )
-            if wasted > 1e-12:
-                ax.bar(
-                    x, wasted, bar_width, bottom=effective,
-                    color=WASTED_COLOR, edgecolor=EDGE, hatch=WASTED_HATCH,
-                    linewidth=0.62, zorder=3,
-                )
-
-    half_group = midpoint * within_step + bar_width / 2.0
-    ax.set_xlim(
-        centers[WORKLOADS[0]] - half_group - 0.04,
-        centers[WORKLOADS[-1]] + half_group + 0.04,
-    )
-    ax.set_ylim(0.0, 1.05)
-    ax.set_yticks((0.0, 0.5, 1.0))
-    ax.yaxis.set_major_formatter(FuncFormatter(relative_tick))
-    ax.set_xticks([centers[workload] for workload in WORKLOADS])
-    ax.set_xticklabels(
-        [WORKLOAD_LABELS[workload] for workload in WORKLOADS]
-        if show_xlabels else []
-    )
-    ax.tick_params(axis="x", length=0, pad=2.0, labelsize=FS_WORKLOAD)
-    ax.tick_params(axis="y", labelsize=FS_TICK, pad=1.0, length=1.8, width=0.6)
-    ax.set_axisbelow(True)
-    ax.yaxis.grid(True, color="#bcbcbc", alpha=0.28, linewidth=0.35)
-    ax.spines["top"].set_visible(False)
-    ax.spines["right"].set_visible(False)
-
-
-def main() -> None:
-    rows = read_rows()
-    fig = plt.figure(figsize=(FIG_W, FIG_H))
-    axes = (
-        fig.add_axes([0.08, 0.60, 0.91, 0.27]),
-        fig.add_axes([0.08, 0.18, 0.91, 0.27]),
-    )
-    for ax, device in zip(axes, DEVICES, strict=True):
-        plot_panel(ax, rows, device, show_xlabels=True)
-    fig.text(
-        0.535, 0.50, f"(a) {DEVICE_LABELS[DEVICES[0]]}",
-        ha="center", va="center", fontsize=FS_PANEL,
-    )
-    fig.text(
-        0.535, 0.08, f"(b) {DEVICE_LABELS[DEVICES[1]]}",
-        ha="center", va="center", fontsize=FS_PANEL,
-    )
-    fig.text(
-        0.015, 0.52, "Relative throughput", rotation=90,
-        ha="center", va="center", fontsize=FS_AXIS,
-    )
-
-    handles_by_label = dict(zip(
-        [SYSTEM_LABELS[system] for system in SYSTEMS],
-        legend_handles(SYSTEMS), strict=True,
-    ))
-    handles_by_label["Wasted"] = Patch(
-        facecolor=WASTED_COLOR, edgecolor=EDGE, hatch=WASTED_HATCH,
-        linewidth=0.52,
-    )
-    labels = [
-        "Dense", "WISEConv", "Tile skipping", "Wasted", "Gather-scatter"
-    ]
-    legend = fig.legend(
-        handles=[handles_by_label[label] for label in labels], labels=labels,
-        loc="upper center", bbox_to_anchor=(0.535, 0.97), ncol=3,
-        frameon=False, fontsize=FS_LEG, handlelength=0.75,
-        handletextpad=0.22, columnspacing=0.40, labelspacing=0.22,
-        borderaxespad=0.0, borderpad=0.0,
-    )
-    for label in legend.get_texts():
-        if label.get_text() == "WISEConv":
-            label.set_fontweight("bold")
-
-    fig.savefig(OUT_PDF)
-    plt.close(fig)
-    print(f"wrote {OUT_PDF}")
-
-
-if __name__ == "__main__":
-    main()
+fig = plt.figure(figsize=(FIG_W, 2.55))
+L, R, T, B, VG = 0.075, 0.995, 0.865, 0.105, 0.115
+ph = (T - B - VG) / 2
+for i, plat in enumerate(PLATFORMS):
+    ax = fig.add_axes([L, T - (i + 1) * ph - i * VG, R - L, ph])
+    tidy(ax)
+    x, centers, marks = 0.0, [], []
+    for wl, _ in WORKLOADS:
+        start = x
+        for ci, (dtype, paths) in enumerate(CLUSTERS):
+            if ci:
+                x += CGAP
+            c0 = x
+            if dtype == "fp16":
+                ax.axvspan(c0 - 0.5, c0 + len(paths) - 0.5, color=FP16_BAND, lw=0, zorder=0.5)
+            cell = data.get((plat, wl, dtype), {})
+            for k, p in enumerate(paths):
+                if p not in cell:
+                    continue
+                eff, wasted = cell[p]
+                add_bar(ax, c0 + k, eff, BW, p)
+                if wasted > 0:
+                    add_wasted(ax, c0 + k, min(wasted, YMAX - eff), BW, bottom=eff)
+                if p == "wiseconv":
+                    ax.text(c0 + k, eff + wasted + 0.03, f"{eff:.2f}", rotation=90, rotation_mode="anchor", ha="left",
+                            va="center_baseline", fontsize=FS_IN, color=OURS_INK, fontweight="bold", zorder=6)
+            marks.append((c0 + (len(paths) - 1) / 2, dtype.upper()))
+            x += len(paths)
+        centers.append((start + x - 1) / 2)
+        x += GGAP
+    ax.set_xlim(-0.8, x - GGAP - 0.2)
+    ax.set_ylim(0, YMAX)
+    ax.set_yticks([0, 0.5, 1.0])
+    ax.set_yticklabels(["0", "0.5", "1"])
+    ax.tick_params(axis="x", length=0)
+    ax.set_xticks([c for c, _ in marks])
+    ax.set_xticklabels([t for _, t in marks], fontsize=FS_NOTE - 0.5, color=INK)
+    ax.text(0.0, 1.04, plat, transform=ax.transAxes, ha="left", va="bottom", fontsize=FS_CAP - 0.5, fontweight="bold")
+    if i == len(PLATFORMS) - 1:
+        for c, (_, name) in zip(centers, WORKLOADS):
+            ax.text(c, -0.21, name, transform=ax.get_xaxis_transform(), ha="center", va="top", fontsize=FS_TICK)
+fig.text(0.012, (T + B) / 2, "Throughput relative to Dense", rotation=90, ha="center", va="center", fontsize=FS_TICK)
+handles = legend_handles(["dense", "tile_skip", "gather_scatter", "wiseconv"]) + [wasted_handle()]
+fig.legend(handles, [NAMES[k] for k in NAMES] + ["wasted"], loc="upper center", ncol=5, frameon=False,
+           bbox_to_anchor=(0.54, 1.0), fontsize=FS_LEG - 0.5, handlelength=1.2, columnspacing=0.8, handletextpad=0.35)
+save(fig, "effective_throughput.pdf")

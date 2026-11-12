@@ -25,7 +25,7 @@ import matplotlib.pyplot as plt
 from matplotlib.patheffects import withStroke
 from matplotlib.ticker import FuncFormatter, MultipleLocator
 
-from bar_patterns import INK, MUTED, WASTED_COLOR, add_bar, add_wasted, wasted_handle
+from bar_patterns import IDEAL, IDEAL_LS, INK, MUTED, WASTED_COLOR, add_bar, add_wasted, wasted_handle
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 CSV = os.path.join(HERE, "gap_stats.csv")
@@ -82,9 +82,9 @@ def draw_latency(fig):
         add_bar(ax, x, t, BW, b)
         ax.text(x, t + 1.0, f"{t:.1f}", ha="center", va="bottom", fontsize=FS_NOTE, color=INK)
     # the proportional reference: a dashed line, labeled in the free margin right of the last bar
-    ax.axhline(reference_ms, color=MUTED, linestyle=(0, (3.5, 2)), linewidth=0.8, zorder=4)
+    ax.axhline(reference_ms, color=IDEAL, linestyle=IDEAL_LS, linewidth=1.2, zorder=4)
     ax.text(3.08, reference_ms + 0.9, f"Ideal\n{reference_ms:.1f}", ha="right", va="bottom", fontsize=FS_NOTE,
-            color=MUTED, linespacing=0.95)
+            color=INK, linespacing=0.95)
     ax.set_ylim(0, 50)
     ax.yaxis.set_major_locator(MultipleLocator(10))
     style_axes(ax, "Latency (ms)", xmax=3.1)

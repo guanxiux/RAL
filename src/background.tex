@@ -47,7 +47,7 @@ feature grid, so a single masked-convolution runtime serves them all.
 \begin{figure}[b]
   \centering
   \includegraphics[width=\columnwidth]{figures/tikz/bg_conv.pdf}
-  \caption{Baseline: dense convolution under an output mask. Each output $y_p$ aggregates its receptive
+  \caption{Masked convolution and its dense execution. Each output $y_p$ aggregates its receptive
   field $\mathcal{N}(p)$ in $\mathbf{x}$ with the weights $\mathbf{f}$.
   Dense convolution computes every output in tiles of contiguous positions,
   which keeps loads coalesced and each weight tile reused across the tile, so
@@ -134,7 +134,7 @@ and required work.
 \begin{figure}[t]
   \centering
   \includegraphics[width=\columnwidth]{figures/tikz/bg_tileskip.pdf}
-  \caption{Baseline: tile skipping on the example of Figure~\ref{fig:masked-conv}.
+  \caption{Tile skipping on the example of Figure~\ref{fig:masked-conv}.
   It keeps the dense tiled pipeline, so each issued tile runs at dense
   throughput without extra passes, and skips only tiles with no active
   position. A partially active tile still runs in full, so its inactive
@@ -147,7 +147,7 @@ and required work.
 \begin{figure}[t]
   \centering
   \includegraphics[width=\columnwidth]{figures/tikz/bg_gather.pdf}
-  \caption{Baseline: gather-scatter on the example of
+  \caption{Gather-scatter on the example of
   Figure~\ref{fig:masked-conv}. To compute only active outputs, it copies their
   receptive fields into a packed buffer (gather) so that a GEMM can process
   them as contiguous rows, then writes the packed results back into

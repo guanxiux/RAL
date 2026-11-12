@@ -1,0 +1,13 @@
+batch,dtype,path,total_ms,construction_ms,conv_ms,gather_ms,other_ms,idle_ms,alignment,source
+1,fp32,dense,10.76459,0.00000,9.67996,0.00000,1.08463,0.00000,1.0009,logs/wise2_eval/rtx_3080_sm86/wildtrack640_yolov8m_select/micro_upd
+1,fp32,tile_skip,12.50770,0.00000,11.69672,0.00000,0.81098,0.00000,0.9995,logs/wise2_eval/rtx_3080_sm86/wildtrack640_yolov8m_select/micro_upd
+1,fp32,gather_scatter,12.73547,0.00000,1.68413,1.94916,0.84431,8.25787,0.9669,logs/wise2_eval/rtx_3080_sm86/wildtrack640_yolov8m_select/micro_upd
+1,fp32,wiseconv,2.99771,0.16978,2.26884,0.00000,0.55908,0.00000,0.9989,logs/wise2_eval/rtx_3080_sm86/wildtrack640_yolov8m_select/micro_upd
+1,fp16,dense,3.79557,0.00000,2.68672,0.00000,1.10885,0.00000,1.0044,logs/wise2_eval/rtx_3080_sm86/wildtrack640_yolov8m_select/micro_upd
+1,fp16,wiseconv,1.44443,0.14509,0.88088,0.00000,0.41846,0.00000,0.9749,logs/wise2_eval/rtx_3080_sm86/wildtrack640_yolov8m_select/micro_upd
+4,fp32,dense,11.04289,0.00000,9.90198,0.00000,1.12114,0.01978,0.9914,logs/wise2_eval/rtx_3080_sm86/wildtrack640_yolov8m_b4_select/micro_upd
+4,fp32,tile_skip,5.04414,0.00000,4.45861,0.00000,0.58552,0.00000,0.9822,logs/wise2_eval/rtx_3080_sm86/wildtrack640_yolov8m_b4_select/micro_upd
+4,fp32,gather_scatter,4.49505,0.00000,1.42501,1.63512,0.56424,0.87069,1.1564,logs/wise2_eval/rtx_3080_sm86/wildtrack640_yolov8m_b4_select/micro_upd
+4,fp32,wiseconv,1.88006,0.05129,1.48904,0.00000,0.33036,0.00935,0.9373,logs/wise2_eval/rtx_3080_sm86/wildtrack640_yolov8m_b4_select/micro_upd
+4,fp16,dense,3.06669,0.00000,2.13820,0.00000,0.92849,0.00000,1.0000,logs/wise2_eval/rtx_3080_sm86/wildtrack640_yolov8m_b4_select/micro_upd
+4,fp16,wiseconv,0.76302,0.04900,0.50078,0.00000,0.20690,0.00634,0.9676,logs/wise2_eval/rtx_3080_sm86/wildtrack640_yolov8m_b4_select/micro_upd

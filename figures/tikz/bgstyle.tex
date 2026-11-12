@@ -1,6 +1,6 @@
 % Shared style of the Background schematics (bg_*.tex).  Colors follow figures/bar_patterns.py: each hue keeps one
-% meaning across the paper (orange = required output / WISEConv, teal = tile skipping, violet = gather-scatter extra
-% data, dotted gray = wasted computation, as in fig:gap).  Drawn at \columnwidth (241 pt), included unscaled.  Cell fills and
+% meaning across the paper (orange = required output / WISEConv, slate steps = the baselines (tile skipping, gather-scatter
+% extra data), dotted gray = wasted computation, as in fig:gap).  Drawn at \columnwidth (241 pt), included unscaled.  Cell fills and
 % the dark-navy rules come from the authors' original schematics (input C1E5F5, weights F2CFEE, required FBE3D6);
 % the SM fill is a lighter step of their D9D9D9 so that it stays apart from the wasted gray.
 \usepackage[T1]{fontenc}
@@ -13,10 +13,11 @@
 \definecolor{muted}{HTML}{6B6B68}
 \definecolor{rule}{HTML}{2A4552}
 \definecolor{wiseconv}{HTML}{DD7428}
-\definecolor{tileskip}{HTML}{26A08F}
-\definecolor{gather}{HTML}{9877CC}
+\definecolor{tileskip}{HTML}{5F7C97}
+\definecolor{gather}{HTML}{7F98AF}
 \definecolor{wasted}{HTML}{DDDDDD}
 \definecolor{wastedink}{HTML}{9A9A9A}
+\definecolor{baseline}{HTML}{6A86A0}  % the slate of the baseline bars (bar_patterns.py tile_skip)
 \definecolor{infill}{HTML}{C1E5F5}
 \definecolor{wfill}{HTML}{F2CFEE}
 \definecolor{smfill}{HTML}{EAEAEA}
@@ -46,12 +47,13 @@
   \node[cell=#3, #4] at (#1, #2) {};}
 
 % \figframe{baseline|ours}{tag}: an outer frame around the whole schematic, placed last in the tikzpicture.  Baselines
-% (fig:masked-conv, fig:tile-skip, fig:gather-scatter) get a dashed gray frame, WISEConv (fig:overview) a solid orange one,
+% (fig:masked-conv, fig:tile-skip, fig:gather-scatter) get a dashed slate frame (the baselines' bar color), WISEConv
+% (fig:overview) a solid orange one,
 % each with its tag on the top edge.
 \tikzset{
-  baselineframe/.style={draw=muted!80, line width=0.6pt, dash pattern=on 2.4pt off 1.4pt, rounded corners=3pt},
+  baselineframe/.style={draw=baseline, line width=0.6pt, dash pattern=on 2.4pt off 1.4pt, rounded corners=3pt},
   oursframe/.style={draw=wiseconv!85!black, line width=0.9pt, rounded corners=3pt},
-  baselinetag/.style={fill=white, inner xsep=1.4pt, inner ysep=0.6pt, anchor=west, text=muted,
+  baselinetag/.style={fill=white, inner xsep=1.4pt, inner ysep=0.6pt, anchor=west, text=baseline!80!black,
                       font=\fontsize{7.4}{8}\selectfont\bfseries},
   ourstag/.style={baselinetag, text=wiseconv!85!black},
 }

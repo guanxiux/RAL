@@ -37,7 +37,7 @@ REF = "#b9b9b5"  # reference lines (proportional diagonal)
 PREC = {"FP32": "#1f7fa3", "FP16": "#c4553a"}
 DEV_LS = {"RTX 3080": "-", "AGX Orin": (0, (3.2, 1.6))}
 DEV_MK = {"RTX 3080": "o", "AGX Orin": "s"}
-CFG = {"best": COLORS["wiseconv"], "single": COLORS["gather_scatter"], "tuned": "#6f7680"}
+CFG = {"best": COLORS["wiseconv"], "single": COLORS["tile_skip"], "tuned": "#a9a9a4"}
 STALL = {"imc_miss": "#2a78d6", "barrier": "#eb6834", "long_scoreboard": "#1baf7a", "short_scoreboard": "#eda100",
          "wait": "#e87ba4", "membar": "#008300", "other": "#cfcfcb"}
 STALL_LABEL = {"imc_miss": "const. cache miss", "barrier": "barrier", "long_scoreboard": "long scoreboard",
