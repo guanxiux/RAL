@@ -44,3 +44,19 @@
 % \grid{x}{y}{cols}{rows}{size}{style of cell i (macro taking the index)}{first index label or empty}
 \newcommand{\cellat}[4]{% x, y (top-left), size, style
   \node[cell=#3, #4] at (#1, #2) {};}
+
+% \figframe{baseline|ours}{tag}: an outer frame around the whole schematic, placed last in the tikzpicture.  Baselines
+% (fig:masked-conv, fig:tile-skip, fig:gather-scatter) get a dashed gray frame, WISEConv (fig:overview) a solid orange one,
+% each with its tag on the top edge.
+\tikzset{
+  baselineframe/.style={draw=muted!80, line width=0.6pt, dash pattern=on 2.4pt off 1.4pt, rounded corners=3pt},
+  oursframe/.style={draw=wiseconv!85!black, line width=0.9pt, rounded corners=3pt},
+  baselinetag/.style={fill=white, inner xsep=1.4pt, inner ysep=0.6pt, anchor=west, text=muted,
+                      font=\fontsize{7.4}{8}\selectfont\bfseries},
+  ourstag/.style={baselinetag, text=wiseconv!85!black},
+}
+\newcommand{\figframe}[2]{%
+  \coordinate (ff-sw) at ($(current bounding box.south west)+(-0.9,-0.9)$);
+  \coordinate (ff-ne) at ($(current bounding box.north east)+(0.9,2.0)$);
+  \draw[#1frame] (ff-sw) rectangle (ff-ne);
+  \node[#1tag] at ($(ff-sw|-ff-ne)+(3.0,0)$) {#2};}
