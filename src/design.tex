@@ -30,15 +30,39 @@ layer's configuration without host involvement (\S\ref{sec:design:select}).
 
 Construction turns $M_{in}$ into $M_{out}$ and the worklist $\mathcal{W}$ in
 one pass over the layer's output grid, reading and writing only mask metadata,
-never features or weights. The pass partitions the grid into construction
-tiles. Each CTA derives its tile's entries of $M_{out}$ by
-Eq.~\ref{eq:mask}, or reads them when a learned gate supplies the mask,
-compacts the tile's active coordinates in dense traversal order, and reserves
-a contiguous segment of $\mathcal{W}$ with one atomic add on a device-resident
-length counter. The buffer holds $|\mathcal{G}|$ entries, the static upper
-bound on $n_{\mathcal{W}}$, so construction allocates nothing at run time and
-$n_{\mathcal{W}}$ never leaves the device. Every active coordinate lands in
+never features or weights (Algorithm~\ref{alg:construct}). The pass partitions
+the grid into construction tiles, one per CTA. Each CTA derives its tile's
+entries of $M_{out}$ by Eq.~\ref{eq:mask} (lines~3--6; a learned gate supplies
+them directly), compacts the tile's active positions in dense traversal order
+(line~7), and reserves a contiguous segment of $\mathcal{W}$ with one atomic
+add on a device-resident length counter $n_{\mathcal{W}}$ (line~9). The buffer holds $|\mathcal{G}|$ entries, the static
+upper bound on $n_{\mathcal{W}}$, so construction allocates nothing at run time
+and $n_{\mathcal{W}}$ never leaves the device. Every active position lands in
 exactly one segment, so the worklist is exact: $n_{\mathcal{W}}=\|M_{out}\|_0$.
+
+\begin{algorithm}[t]
+\caption{Tile-Local Worklist Construction}
+\label{alg:construct}
+\begin{algorithmic}[1]
+\REQUIRE Input mask $M_{in}$, output grid $\mathcal{G}$
+\ENSURE Mask $M_{out}$, worklist $\mathcal{W}$, length
+        $n_{\mathcal{W}}=|\mathcal{W}|$
+\STATE $n_{\mathcal{W}} \leftarrow 0$
+\FOR{each construction tile $\tau\subset\mathcal{G}$ \textbf{in parallel}}
+  \FOR{each position $p \in \tau$ \textbf{in parallel}}
+    \STATE $\mathrm{active}(p) \leftarrow \exists\, r \in \mathcal{N}(p): M_{in}[r] = 1$
+    \STATE $M_{out}[p] \leftarrow \mathrm{active}(p)$
+  \ENDFOR
+  \STATE $\mathcal{P}_\tau \leftarrow \textsc{Compact}(\tau,\,M_{out})$
+  \STATE $n_\tau \leftarrow |\mathcal{P}_\tau|$
+  \STATE $\mathrm{base} \leftarrow
+         \operatorname{AtomicAdd}(n_{\mathcal{W}},n_\tau)$
+  \FOR{each $0\le j<n_\tau$ \textbf{in parallel}}
+    \STATE $\mathcal{W}[\mathrm{base}+j] \leftarrow \mathcal{P}_\tau[j]$
+  \ENDFOR
+\ENDFOR
+\end{algorithmic}
+\end{algorithm}
 
 The resulting order is tile-local: dense within each segment, arrival order
 across segments. A globally ordered worklist would need a device-wide prefix
@@ -99,20 +123,20 @@ parameter to this space.
 \caption{Worklist-Driven Tiled Compute (configuration $q$)}
 \label{alg:compute}
 \begin{algorithmic}[1]
-\REQUIRE Input $\mathbf{x}$ on the dense grid, weights $\mathbf{w}$, output
+\REQUIRE Input $\mathbf{x}$ on the dense grid, weights $\mathbf{f}$, output
   mask $M_{out}$, worklist $\mathcal{W}$ and length $n_{\mathcal{W}}$ in device
   memory; tile count
-  $T=\lceil n_{\mathcal{W}}/B_M\rceil\lceil C_{out}/B_N\rceil$
+  $N_t=\lceil n_{\mathcal{W}}/B_M\rceil\lceil C_{out}/B_N\rceil$; $P$ CTAs
 \ENSURE Output $\mathbf{y}$ at every active position
-\FOR{each CTA $c=0,\dots,P-1$ \textbf{in parallel}}
-  \FOR{$t=c,\,c+P,\,c+2P,\dots$ while $t<T$}
+\FOR{each CTA $g=0,\dots,P-1$ \textbf{in parallel}}
+  \FOR{$t=g,\,g+P,\,g+2P,\dots$ while $t<N_t$}
     \STATE $(b_m,b_n)\leftarrow$ output tile $t$
     \STATE $R\leftarrow\mathcal{W}[b_mB_M:(b_m+1)B_M]$ \COMMENT{active positions}
     \STATE $\mathbf{Y}\leftarrow\mathbf{0}_{B_M\times B_N}$
-    \FOR{each kernel offset $d_j$, $j=1,\dots,k^2$}
+    \FOR{each receptive-field offset $i=1,\dots,k^2$}
       \FOR{each channel slice $s=1,\dots,\lceil C_{in}/B_K\rceil$}
-        \STATE $\mathbf{X}\leftarrow$ load $\mathbf{x}$ at positions $R+d_j$, slice $s$
-        \STATE $\mathbf{B}\leftarrow$ load $\mathbf{w}$ at offset $d_j$, slice $s$, columns $b_n$
+        \STATE $\mathbf{X}\leftarrow$ load $\mathbf{x}[\mathcal{N}_i(p)]$ for $p\in R$, slice $s$
+        \STATE $\mathbf{B}\leftarrow$ load $\mathbf{f}_i$, slice $s$, column block $b_n$
         \STATE $\mathbf{Y}\leftarrow\mathbf{Y}+\mathbf{X}\mathbf{B}$
       \ENDFOR
     \ENDFOR
@@ -154,17 +178,33 @@ finely, to follow the length, by weighing the expected gain of each additional
 candidate configuration against its cost.
 
 For layer $l$, an offline sweep on the target GPU measures the time $t_q(n)$
-of every configuration $q$ across worklist lengths $n$. Given $K$ candidates
-and $K-1$ length thresholds, each length $n$ uses the candidate whose interval
-contains it; the GPU's per-layer cost of choosing among $K$
-candidates, $c(K)$ with $c(1)=0$, is measured once on the same GPU. Without a
-prior on the deployment's activity, the selection assumes $n$ uniform over the
-grid and maximizes the expected (geometric-mean) speedup, with $c(K)$ added to
-every length's time. Because $n$ is a scalar, candidates and thresholds
-partition a single range, and dynamic programming over that range finds the
-optimal selection exactly. The gain of each added candidate shrinks while
-$c(K)$ grows, so $K$ is an output of the trade-off rather than a design
-constant.
+of every configuration $q$ in the space $\mathcal{Q}$ across worklist lengths
+$n$; $t^{*}(n)=\min_{q\in\mathcal{Q}}t_q(n)$ is the per-length best. A
+selection $S$ with $K$ candidates $q_1,\dots,q_K$ and thresholds
+$0=\theta_0<\theta_1<\dots<\theta_K=|\mathcal{G}|+1$ runs $q_S(n)=q_k$ for
+$\theta_{k-1}\le n<\theta_k$ and pays the GPU's per-layer cost of choosing
+among $K$ candidates, $c(K)$ with $c(1)=0$, measured once on the same GPU.
+Without a prior on the deployment's activity, the selection assumes $n$
+uniform over $[1,|\mathcal{G}|]$ and maximizes the geometric-mean speedup, that
+is, minimizes the expected log-slowdown relative to the per-length best:
+\begin{equation}
+  \hat{S}=\arg\min_{K,\,S}\ \mathbb{E}_{n}\!\left[\log
+  \frac{t_{q_S(n)}(n)+c(K)}{t^{*}(n)}\right].
+  \label{eq:select}
+\end{equation}
+Because $n$ is a scalar, the candidates partition a single range. On the
+sweep's lengths $n_1<\dots<n_J$, with $L_q(u)$ the log term of
+Eq.~\ref{eq:select} at $n_u$ and $w_u$ the probability mass of $n_u$'s
+interval, the best expected cost $F_k(j)$ of covering the first $j$ lengths with
+$k$ candidates obeys
+\begin{equation}
+  F_k(j)=\min_{i<j}\Big[F_{k-1}(i)+\min_{q\in\mathcal{Q}}\sum_{u=i+1}^{j}w_uL_q(u)\Big],
+  \qquad F_0(0)=0,
+  \label{eq:select-dp}
+\end{equation}
+and evaluating $F_K(J)$ for each $K$ yields $\hat{S}$ exactly. The gain of each
+added candidate shrinks while $c(K)$ grows, so $K$ is an output of the
+trade-off rather than a design constant.
 
 At run time the decision must happen where $n_{\mathcal{W}}$ first exists,
 without host involvement. The kernel that writes a layer's worklist learns

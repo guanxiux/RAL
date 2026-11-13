@@ -42,12 +42,14 @@ def yolo_energy(dev, task, dtype, batch):
             continue
         frames = None
         for f in (f"{dtype}_static.json", f"{dtype}_updatable.json", f"{dtype}_baselines.json",
-                  f"{dtype}_baselines_tile_skip.json", f"{dtype}_baselines_gather_scatter.json"):
+                  f"{dtype}_baselines_tile_skip.json", f"{dtype}_baselines_gather_scatter.json",
+                  f"{dtype}_dense.json"):  # (last: the dense re-measurement replaces <p>_static.json's)
             for d in (et.EV / dev / task / "e2e_energy", et.yolo_dir(dev, task)):
                 j = et.load(d / f)
                 E = (j or {}).get("backends", {}).get(path, {}).get("energy", {})
-                if "C3" in E:  # energy on the C3 video (the protocol of the registered abstract)
-                    frames, joules = E["C3"]["frames"], E["C3"]["energy_j"]
+                if all(c in E for c in ("C3", "C6")):  # both WildTrack videos, frames summed
+                    frames = sum(E[c]["frames"] for c in ("C3", "C6"))
+                    joules = sum(E[c]["energy_j"] for c in ("C3", "C6"))
         assert frames, (dev, task, dtype, path)
         res[path] = 1e3 * joules / frames / batch
     return res

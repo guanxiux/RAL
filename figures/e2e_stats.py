@@ -46,7 +46,10 @@ def yolo(dev, task, dtype):
             continue
         # frame-weighted over the cameras: the per-camera frame counts sit next to the means in the result files
         frames = None
-        for f in (f"{dtype}_static.json", f"{dtype}_updatable.json", f"{dtype}_baselines.json"):
+        files = (f"{dtype}_static.json", f"{dtype}_updatable.json", f"{dtype}_baselines.json")
+        if path == "dense" and (d / f"{dtype}_dense.json").exists():  # the dense re-measurement (eval_tables.yolo_rows)
+            files = (f"{dtype}_dense.json",)
+        for f in files:
             j = et.load(d / f)
             if j and path in j.get("backends", {}):
                 L = j["backends"][path]["latency_ms"]
