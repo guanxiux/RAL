@@ -14,10 +14,10 @@ from char_style import FIG_W, FS_CAP, FS_LEG, FS_NOTE, INK, PREC, plt, read, sav
 gain = read("char_gain.csv")
 cost = read("char_cost.csv")
 ROWS = ("Updatable node", "  + switch every frame", "Host readback", "Conditional node")
-H = 0.36  # bar height (a row is 1)
+H = 0.42  # bar height (a row is 1)
 
-fig = plt.figure(figsize=(FIG_W, 1.55))
-B, T = 0.22, 0.83
+fig = plt.figure(figsize=(FIG_W, 1.45))
+B, T = 0.215, 0.86
 axes = [fig.add_axes([0.335, B, 0.30, T - B]), fig.add_axes([0.685, B, 0.30, T - B])]
 for ax, dev in zip(axes, ("RTX 3080", "AGX Orin")):
     c = {r["mechanism"]: (float(r["us"]), float(r["per_switch_us"])) for r in cost if r["device"] == dev}
@@ -30,18 +30,18 @@ for ax, dev in zip(axes, ("RTX 3080", "AGX Orin")):
             y = i + (k - 0.5) * H
             ax.barh(y, share, H, color=PREC[prec], lw=0, zorder=3)
             ax.text(share + 2.0, y, (f"{share:.1f}" if share < 99.95 else "100"), ha="left", va="center", fontsize=FS_NOTE - 0.3, color=INK)
-    ax.set_ylim(len(ROWS) - 0.4, -0.6)
+    ax.set_ylim(len(ROWS) - 0.5, -0.5)
     ax.set_yticks(range(len(ROWS)))
     ax.set_yticklabels(ROWS if dev == "RTX 3080" else [])
     ax.tick_params(axis="y", length=0)
     ax.set_xlim(0, 122)
     ax.set_xticks([0, 50, 100])
-    ax.set_xlabel(f"{'(a)' if dev == 'RTX 3080' else '(b)'} {dev}", fontsize=FS_CAP)
+    ax.set_title(f"{'(a)' if dev == 'RTX 3080' else '(b)'} {dev}", fontsize=FS_CAP, pad=2.0)
     ax.spines["left"].set_visible(False)
     tidy(ax, grid_axis="x")
-fig.text((0.335 + 0.985) / 2, 0.985, "Layers where the cost exceeds the gain (%)", ha="center", va="top",
+fig.text((0.335 + 0.985) / 2, 0.0, "Layers where the cost exceeds the gain (%)", ha="center", va="bottom",
          fontsize=FS_CAP)
 fig.legend([plt.Rectangle((0, 0), 1, 1, color=PREC[p]) for p in ("FP32", "FP16")], ["FP32", "FP16"],
-           loc="lower left", bbox_to_anchor=(0.0, 0.0), ncol=2, frameon=False, fontsize=FS_LEG, handlelength=0.9,
+           loc="upper left", bbox_to_anchor=(0.0, 1.0), ncol=2, frameon=False, fontsize=FS_LEG, handlelength=0.9,
            handleheight=0.8, columnspacing=0.8, handletextpad=0.35)
 save(fig, "char_cost.pdf")

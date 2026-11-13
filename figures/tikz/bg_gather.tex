@@ -40,7 +40,7 @@
   \draw[mem] (\ox, 0.4) rectangle ++(\ow, -26.0);
   \node[smlabel, text=gather!70!black] at (\ox, 0.4) {packed};
   \foreach \yy/\p in {-3.6/0, -7.0/5, -10.4/9, -17.0/12, -20.4/14} {
-    \fill[actfill] (\ox+1.6, \yy) rectangle ++(\ow-3.2, -\rh);
+    \actbox (\ox+1.6, \yy) rectangle ++(\ow-3.2, -\rh);
     \draw[rule, line width=0.35pt] (\ox+1.6, \yy) rectangle ++(\ow-3.2, -\rh);
     \node[idx] at (\ox+\ow/2, \yy-\rh/2) {$y_{\p}$};}
   \draw[flow] (\cx+\cw+0.4, -7.4) -- (\ox-0.4, -7.4);
@@ -50,7 +50,7 @@
   \foreach \i in {0,...,15} {
     \pgfmathtruncatemacro\r{\i/4}\pgfmathtruncatemacro\q{mod(\i,4)}
     \isact{\i}
-    \ifnum\pgfmathresult=1 \fill[actfill] (\yx+\q*\s, \gy-\r*\s) rectangle ++(\s, -\s); \fi
+    \ifnum\pgfmathresult=1 \actbox (\yx+\q*\s, \gy-\r*\s) rectangle ++(\s, -\s); \fi
   }
   \foreach \k in {0,...,4} \draw[rule, line width=0.35pt] (\yx+\k*\s, \gy) -- ++(0, -4*\s) (\yx, \gy-\k*\s) -- ++(4*\s, 0);
   \node[title] at (\yx+2*\s, \gy-4*\s-1.2) {Output $\mathbf{y}$};

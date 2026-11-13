@@ -8,11 +8,11 @@ from __future__ import annotations
 
 import numpy as np
 
-from char_style import CFG, DEV_LS, DEV_MK, FIG_W, FS_CAP, FS_LEG, FS_NOTE, INK, MUTED, PREC, plt, read, save, tidy
+from char_style import CFG, FS_LAB, DEV_LS, DEV_MK, FIG_W, FS_CAP, FS_LEG, FS_NOTE, INK, MUTED, PREC, plt, read, save, tidy
 
 # stall reasons grouped by cause; only memory latency (the cost a worklist could add) is drawn in a strong color
 CAUSE = (("param", ("imc_miss",), "constant-cache miss", "#a9c8e8"),
-         ("sync", ("barrier", "membar"), "barrier, memory barrier", "#f2b98f"),
+         ("sync", ("barrier", "membar"), "barrier, memory fence", "#f2b98f"),
          ("pipe", ("short_scoreboard", "wait"), "on-chip latency", "#f0d98a"),
          ("mem", ("long_scoreboard",), "DRAM/L2 latency", "#127a55"),
          ("other", ("other",), "other", "#e2e2de"))
@@ -22,12 +22,13 @@ POINTS = (("nw0", "no work"), ("nw1", "1 tile"))
 
 ic = read("char_intercept.csv")
 cs = read("char_construction.csv")
-fig = plt.figure(figsize=(FIG_W, 2.10))
-B, T = 0.15, 0.78
-ax = fig.add_axes([0.235, B, 0.37, T - B])
+fig = plt.figure(figsize=(FIG_W, 2.25))
+B, T = 0.13, 0.80
+ax = fig.add_axes([0.225, B, 0.38, T - B])
 axb = fig.add_axes([0.75, B, 0.235, T - B])
 
 ys, labels, y = [], [], 0.0
+
 for dev, prec in GROUPS:
     for pt, plabel in POINTS:
         rows = [r for r in ic if r["device"] == dev and r["dtype"] == prec and r["point"] == pt]
@@ -38,19 +39,22 @@ for dev, prec in GROUPS:
             w = sum(share[k] for k in keys) / tot
             ax.barh(y, w, 0.78, left=left, color=color, edgecolor="white", linewidth=0.4, zorder=3)
             left += w
+        us = float(np.median([float(r["us"]) for r in rows]))
         ys.append(y)
-        labels.append(plabel)
+        labels.append(f"{plabel}, {us:.1f} µs")
         y -= 1.0
-    ax.text(-0.40, y + 1.5, f"{'3080' if dev == 'RTX 3080' else 'Orin'}\n{prec}", transform=ax.get_yaxis_transform(),
-            ha="right", va="center", fontsize=FS_NOTE, color=INK, linespacing=0.95)
-    y -= 0.35
+    b = float(np.median([float(r["intercept_us"]) for r in ic
+                         if r["device"] == dev and r["dtype"] == prec and r["point"] == "nw1"]))
+    ax.text(-0.52, y + 2.8, f"{'RTX 3080' if dev == 'RTX 3080' else 'AGX Orin'} {prec}:  intercept $b$ = {b:.1f} µs",
+            transform=ax.get_yaxis_transform(), ha="left", va="center", fontsize=FS_LAB, color=INK)
+    y -= 1.5
 ax.set_yticks(ys)
-ax.set_yticklabels(labels, fontsize=FS_NOTE)
+ax.set_yticklabels(labels, fontsize=FS_LAB)
 ax.tick_params(axis="y", length=0)
 ax.set_xlim(0, 1)
 ax.set_xticks([0, 0.5, 1])
 ax.set_xticklabels(["0", "50", "100"])
-ax.set_ylim(y + 0.6, 0.6)
+ax.set_ylim(y + 1.95, 1.2)
 ax.set_xlabel("(a) Share of stall cycles (%)", fontsize=FS_CAP)
 for side in ("top", "right", "left"):
     ax.spines[side].set_visible(False)

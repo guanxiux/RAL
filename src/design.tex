@@ -12,16 +12,25 @@ Replacing the dense coordinate sequence with an active-output worklist
 introduces position-level selectivity into the tiled pipeline without altering
 the reduction datapath (Figure~\ref{fig:overview}).
 
-Turning this selectivity into end-to-end latency reduction means meeting the two
-challenges of \S\ref{sec:intro}, worklist construction cost and worklist
-consumption efficiency. The construction stage
-builds the worklist from the mask in one pass over mask metadata
-(\S\ref{sec:design:construct}), and compatible operators reuse it so that the
-pass is not repeated at every layer (\S\ref{sec:design:reuse}). The compute
-stage consumes the worklist through a persistent grid that reads its length
-from device memory (\S\ref{sec:design:compute}). The length varies per frame
-and is visible only on the device, so a cost-aware selection chooses each
-layer's configuration without host involvement (\S\ref{sec:design:select}).
+The characterization shows that a worklist tile keeps the per-tile throughput
+of dense execution (\S\ref{sec:char:reduction}). What remains between this
+selectivity and end-to-end latency reduction are the costs isolated by
+Insights~4 and~5: each construction pass costs nearly constant time whatever
+the activity (\S\ref{sec:char:bound}), and following the worklist length requires a choice
+of configuration that only the device can make (\S\ref{sec:char:cost}).
+Figure~\ref{fig:overview} shows how \sysname handles both on the running
+example. Construction (\ding{192}, \S\ref{sec:design:construct}) builds the
+worklist from $M_{out}$ in one pass over mask metadata, and the same pass
+selects the tile configuration of every layer that reads the worklist
+(\S\ref{sec:design:select}). Later operators with the same geometry reuse the
+worklist (\ding{193}, \S\ref{sec:design:reuse}), so neither construction
+nor selection repeats at every layer. The compute stage (\ding{194}, \S\ref{sec:design:compute})
+consumes the worklist in a persistent grid that reads its length from device
+memory. All stages run in one per-frame CUDA graph (bottom of
+Figure~\ref{fig:overview}): construction enables, on the device, the selected
+candidate of every layer that reads the worklist (the small-tile nodes of
+$\ell$ and $\ell{+}1$), so the frame needs no host synchronization between
+layers.
 
 %% ================================================================
 \subsection{Tile-Local Worklist Construction}
@@ -208,9 +217,10 @@ trade-off rather than a design constant.
 
 At run time the decision must happen where $n_{\mathcal{W}}$ first exists,
 without host involvement. The kernel that writes a layer's worklist learns
-$n_{\mathcal{W}}$ when its last CTA finishes, compares it with the layer's
-thresholds, and switches to the selected candidate, when it differs from the
-current one, before the compute launch. The design does not depend on how the
+$n_{\mathcal{W}}$ when its last CTA finishes, compares it with the thresholds
+of every layer that reads this worklist (the layer and the operators that
+reuse it), and switches each to its selected candidate, when it differs from
+the current one, before the compute launches. The design does not depend on how the
 switch is performed: $c(K)$ is the cost of the cheapest device-side mechanism
 the GPU offers (\S\ref{sec:impl}). As a result, $K$ differs across layers,
 GPUs, and precisions: layers whose optimum shifts little keep one

@@ -1,7 +1,7 @@
 % Shared style of the Background schematics (bg_*.tex).  Colors follow figures/bar_patterns.py: each hue keeps one
-% meaning across the paper (orange = required output / WISEConv, slate steps = the baselines (tile skipping, gather-scatter
+% meaning across the paper (light red with a red outline = active / required position (as in the intro figure), orange = WISEConv, slate steps = the baselines (tile skipping, gather-scatter
 % extra data), dotted gray = wasted computation, as in fig:gap).  Drawn at \columnwidth (241 pt), included unscaled.  Cell fills and
-% the dark-navy rules come from the authors' original schematics (input C1E5F5, weights F2CFEE, required FBE3D6);
+% the dark-navy rules come from the authors' original schematics (input C1E5F5; weights now a light yellow F6E2A6 and required a light red F9CDCD);
 % the SM fill is a lighter step of their D9D9D9 so that it stays apart from the wasted gray.
 \usepackage[T1]{fontenc}
 \usepackage[tt=false,type1=true]{libertine}
@@ -19,9 +19,10 @@
 \definecolor{wastedink}{HTML}{9A9A9A}
 \definecolor{baseline}{HTML}{6A86A0}  % the slate of the baseline bars (bar_patterns.py tile_skip)
 \definecolor{infill}{HTML}{C1E5F5}
-\definecolor{wfill}{HTML}{F2CFEE}
+\definecolor{wfill}{HTML}{F6E2A6}
 \definecolor{smfill}{HTML}{EAEAEA}
-\definecolor{actfill}{HTML}{FBE3D6}
+\definecolor{actfill}{HTML}{F9CDCD}
+\definecolor{actred}{HTML}{D62728}  % active positions: light red fill, red outline (as in the intro figure)
 \colorlet{gsfill}{gather!45!white}
 
 \tikzset{
@@ -43,6 +44,11 @@
 }
 
 % \grid{x}{y}{cols}{rows}{size}{style of cell i (macro taking the index)}{first index label or empty}
+% \actbox <path>; fills an active cell and outlines it in red on a layer above the grid lines
+\pgfdeclarelayer{actlayer}
+\pgfsetlayers{background,main,actlayer}
+\def\actbox#1;{\fill[actfill] #1;\begin{pgfonlayer}{actlayer}\draw[actred, line width=0.6pt] #1;\end{pgfonlayer}}
+
 \newcommand{\cellat}[4]{% x, y (top-left), size, style
   \node[cell=#3, #4] at (#1, #2) {};}
 

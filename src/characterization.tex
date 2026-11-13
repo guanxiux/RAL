@@ -18,8 +18,9 @@ FP16 uses \texttt{mma.sync} tensor cores; FP32 is a SIMT kernel of the same
 structure. Each configuration is timed in isolation inside CUDA graphs on
 RTX~3080 (68~SMs) and Jetson AGX Orin (16~SMs) at locked clocks, using
 YOLOv8m~\cite{yolov8} at batch~1 on WildTrack~\cite{wildtrack} unless noted
-otherwise. Dense reference: the faster of the same kernel on the full grid
-and cuDNN non-Winograd.
+otherwise. Dense time is the faster of our compute kernel with every position
+in the worklist (best configuration) and cuDNN's fastest non-Winograd,
+non-FFT algorithm.
 
 % ===========================================================================
 \subsection{Affine Latency Requires Following the Length}
@@ -102,8 +103,9 @@ instructions as a dense tile on every layer, GPU, and precision, and spends
 0.92--1.03$\times$ of dense. It reads more DRAM bytes, up to 1.39$\times$
 (median 1.07$\times$), because scattered positions share fewer receptive
 fields with their neighbors; the $1\times1$ layer, whose receptive fields do
-not overlap, reads exactly as much as dense. The extra bytes do not appear in
-the cycles.
+not overlap, reads exactly as much as dense. The extra reads do not lengthen
+the tile: its SM cycles stay at dense, so they are hidden behind its
+computation.
 
 \insight{2}{Irregularity is confined to row-level indirection outside the
 reduction loop, leaving channel-contiguous access and weight-tile reuse
@@ -132,18 +134,15 @@ identical to dense execution.}
   \centering
   \includegraphics[width=0.98\textwidth]{figures/tikz/overview.pdf}
   \caption{\sysname on the running example of Figure~\ref{fig:masked-conv}.
-  \ding{192}~One pass over the output mask $M_{out}$ compacts each construction
-  tile into a segment of its active positions and appends the segments to the
-  worklist $\mathcal{W}$ in arrival order; the same pass compares the worklist
-  length $n_\mathcal{W}$ with the layer's offline thresholds and selects the tile
-  configuration. \ding{193}~Later operators with the same geometry reuse
-  $\mathcal{W}$; an operator that changes the geometry (here a stride-2
-  convolution) gets a new worklist from \ding{192}. \ding{194}~A persistent grid
-  loops over $\mathcal{W}$ in tiles of the selected size; each tile reads its
-  receptive fields from $\mathbf{x}$ in place and runs the dense reduction, so
-  only the padding of the last tile is wasted. Bottom: the host launches the
-  per-frame CUDA graph once, and construction enables one of the layer's
-  candidate compute nodes on the device, so nothing is read back to the host.}
+  \ding{192}~One pass over $M_{out}$ compacts each construction tile into a
+  segment, appends the segments to $\mathcal{W}$ in arrival order, and selects
+  from $n_\mathcal{W}$ the tile configuration of every layer that reads
+  $\mathcal{W}$. \ding{193}~Operators with the
+  same geometry reuse $\mathcal{W}$; a stride-2 convolution gets a new one.
+  \ding{194}~A persistent grid loops over $\mathcal{W}$ in tiles of the
+  selected size, reading receptive fields from $\mathbf{x}$ in place. Bottom:
+  one host launch per frame; on the device, construction enables the selected
+  candidates of layer $\ell$ and of the reusing layer $\ell{+}1$ together.}
   \Description{Three panels and a timeline. Construction: four 2x2 mask tiles
   produce segments [0,5], none, [9,12], [14], appended to the worklist as
   9, 12, 0, 5, 14; a ruler marks the length against small-tile and large-tile
@@ -182,19 +181,19 @@ within 1.1\% of a global order.}
 \begin{figure}[t]
   \centering
   \includegraphics[width=\columnwidth]{figures/char_bound.pdf}
-  \caption{The two per-layer fixed costs. (a)~Warp stall cycles of a compute
-  launch with no work and with one tile by cause (median over representative
-  layers; on-chip latency is short scoreboard and fixed-latency waits).
-  (b)~Construction time over
-  convolution time with the per-length best configuration.}
+  \caption{The two per-layer fixed costs. (a)~Stall cycles by cause and time of a
+  compute launch with no work or one tile, against the intercept $b$ (medians
+  over representative layers; on-chip latency: short scoreboard and
+  fixed-latency waits). (b)~Construction over convolution time.}
   \Description{Stacked bars: without work, constant-cache misses dominate;
   with one tile, DRAM/L2 latency is a small part. Lines: construction share
   rises from below 7\% at alpha 1 to 15--40\% at alpha 0.01.}
   \label{fig:char-bound}
 \end{figure}
 
-The intercept $b$ is the time of a launch that computes almost nothing. A
-launch with a single tile takes 69--80\% of $b$.
+The intercept $b$ is the time of a launch that computes almost nothing: a
+launch that computes a single tile already takes 69--80\% of $b$ (Figure~\ref{fig:char-bound}a), so $b$ is
+mostly the time to launch the kernel and finish one tile.
 Without work, a launch spends 65--81\% of its stall cycles on constant-cache
 misses (the kernel parameters are cold); one tile adds barriers and on-chip
 latency, while DRAM/L2 latency stays at 6--23\% (median;
@@ -233,8 +232,9 @@ costs 0.8\,$\mu$s per layer plus 0.8\,$\mu$s per candidate switch (1.7 plus
 is 1.3--2.7\,$\mu$s on RTX~3080 and 5.0--12.3\,$\mu$s on AGX Orin. Readback
 and conditional nodes exceed the gain on 89--100\% of layers
 (Figure~\ref{fig:char-cost}), the updatable node on 7--25\% without switching and on
-up to 71\% when it switches every frame. The mechanism, not the oracle,
-bounds how many candidates and selection points a frame can afford.
+up to 71\% when it switches every frame. A candidate pays off only where the gain
+exceeds this cost, so the mechanism's cost, not the oracle's gain, limits
+adaptation.
 
 \insight{5}{Every mechanism for following the worklist length incurs a
 per-decision-point cost often comparable to the per-layer gain from adaptation.}
@@ -249,12 +249,11 @@ this trade-off.
 \begin{figure}[t]
   \centering
   \includegraphics[width=\columnwidth]{figures/char_cost.pdf}
-  \caption{Share of the layers of YOLOv8m on which following the worklist
-  length costs more than it saves. Per layer, the saving is the mean time per
-  frame that the per-length best configuration saves over the latency-optimal
-  configuration on the layer's traced worklist lengths; the cost is the
-  selection mechanism's per-layer cost on the same GPU, for the updatable node
-  both without a candidate switch and with a switch every frame.}
+  \caption{Share of the layers of YOLOv8m on which a selection mechanism costs
+  more than it saves. A layer's saving is how much faster per frame the
+  per-length best configuration runs than the best single configuration, on
+  the layer's traced worklist lengths. The updatable node is shown without and
+  with a candidate switch in every frame.}
   \Description{Horizontal bars per mechanism and precision on RTX 3080 and AGX
   Orin: the updatable node costs more than it gains on a minority of layers,
   readback and the conditional node on nearly all of them.}

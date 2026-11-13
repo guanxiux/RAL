@@ -22,7 +22,7 @@
   \foreach \i in {0,...,15} {
     \pgfmathtruncatemacro\r{\i/4}\pgfmathtruncatemacro\q{mod(\i,4)}
     \isact{\i}
-    \ifnum\pgfmathresult=1 \fill[actfill] (49+\q*\c, -\r*\c) rectangle ++(\c, -\c);
+    \ifnum\pgfmathresult=1 \actbox (49+\q*\c, -\r*\c) rectangle ++(\c, -\c);
     \else \path[waste] (49+\q*\c, -\r*\c) rectangle ++(\c, -\c); \fi
     \node[idx] at (49+\q*\c+\c/2, -\r*\c-\c/2) {$y_{\i}$};
   }
@@ -30,18 +30,18 @@
   \node[op] at (23.2, -10) {$\otimes$};
   \node[op] at (45.6, -10) {$=$};
   % receptive field of output 5
-  \draw[wiseconv!80!black, line width=0.6pt, dash pattern=on 1.6pt off 1pt, rounded corners=1.2pt]
+  \draw[actred, line width=0.6pt, dash pattern=on 1.6pt off 1pt, rounded corners=1.2pt]
     (-0.6, 0.6) rectangle (15.25, -15.25);
-  \draw[wiseconv!80!black, line width=0.8pt] (54, -5) rectangle (59, -10);
-  \draw[flow, draw=wiseconv!80!black, rounded corners=1.5pt] (7.5, 0.7) -- (7.5, 4.2) -- (56.5, 4.2) -- (56.5, -5);
-  \node[fill=white, inner sep=1pt, text=wiseconv!80!black] at (32, 4.2) {receptive field $\mathcal{N}(5)$};
+  \draw[actred, line width=0.8pt] (54, -5) rectangle (59, -10);
+  \draw[flow, draw=actred, rounded corners=1.5pt] (7.5, 0.7) -- (7.5, 4.2) -- (56.5, 4.2) -- (56.5, -5);
+  \node[fill=white, inner sep=1pt, text=actred] at (32, 4.2) {receptive field $\mathcal{N}(5)$};
   % labels
   \node[title] at (10, -21.2) {Input $\mathbf{x}$};
   \node[title] at (33.5, -21.2) {Weights $\mathbf{f}$};
   \node[title] at (59, -21.2) {Output $\mathbf{y}$};
   % legend
   \begin{scope}[shift={(-3.0, -26.6)}]
-    \fill[actfill] (0, 0) rectangle ++(2.6, -2.6); \draw[rule, line width=0.35pt] (0, 0) rectangle ++(2.6, -2.6);
+    \actbox (0, 0) rectangle ++(2.6, -2.6); \draw[rule, line width=0.35pt] (0, 0) rectangle ++(2.6, -2.6);
     \node[anchor=west] at (3.0, -1.3) {active in $M_{out}$ (required)};
     \path[waste] (40, 0) rectangle ++(2.6, -2.6); \draw[rule, line width=0.35pt] (40, 0) rectangle ++(2.6, -2.6);
     \node[anchor=west] at (43.0, -1.3) {inactive (wasted if computed)};

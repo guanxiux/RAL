@@ -52,10 +52,10 @@ feature grid, so a single masked-convolution runtime serves them all.
   Dense convolution computes every output in tiles of contiguous positions,
   which keeps loads coalesced and each weight tile reused across the tile, so
   it runs at high throughput; but only the outputs active in $M_{out}$
-  (colored) are required, and the throughput spent on the rest (dotted) is
+  (red) are required, and the throughput spent on the rest (dotted) is
   wasted.}
   \Description{An input grid, a kernel, and an output grid whose active positions
-  are colored and inactive positions dotted; a dashed box marks the receptive
+  are red and inactive positions dotted; a dashed red box marks the receptive
   field of one active output.}
   \label{fig:masked-conv}
 \end{figure}
