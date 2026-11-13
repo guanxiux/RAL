@@ -4,7 +4,8 @@
 \begin{figure}[t]
   \centering
   \includegraphics[width=\columnwidth]{figures/demo.png}
-  \caption{Only the active positions (red) of a frame need to be recomputed;
+  \caption{Perception latency decides whether a vehicle can react in time.
+  Only the active positions (red) of a frame need to be recomputed;
   dense convolution still computes all of them. \sysname collects the active
   positions into a worklist and drives the dense tiled pipeline with it, which
   keeps the throughput of dense execution, so prediction and planning start
