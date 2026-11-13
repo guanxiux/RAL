@@ -4,18 +4,17 @@
 \begin{figure}[t]
   \centering
   \includegraphics[width=\columnwidth]{figures/demo.png}
-  \caption{Perception latency decides whether a vehicle can react in time.
-  Masked convolution needs only the changed positions (blue). \sysname drives
-  the dense tiled pipeline with a worklist of these positions (the sequence of
-  their output coordinates); computing scattered positions this way keeps the
-  throughput of dense execution, so convolution shrinks with the active
-  positions and the vehicle acts earlier.}
-  \Description{Top: a street scene from a vehicle, overlaid with a grid in
-  which the cells covering a pedestrian and a car are marked as changed; the
-  dense trajectory reacts late while the WISEConv trajectory steers away
-  earlier. Bottom: two timelines from the same camera frame; the dense
-  convolution pipeline is long, while worklist construction plus WISEConv is
-  short, so prediction, planning, and control finish earlier.}
+  \caption{Only the active positions (red) of a frame need to be recomputed;
+  dense convolution still computes all of them. \sysname collects the active
+  positions into a worklist and drives the dense tiled pipeline with it, which
+  keeps the throughput of dense execution, so prediction and planning start
+  earlier and the vehicle steers away sooner.}
+  \Description{Top: a grayscale street scene seen from a vehicle, overlaid with
+  a grid whose cells around a pedestrian and a car are marked red as active;
+  the WISEConv trajectory steers away earlier than the dense one. Bottom: from
+  the camera, the dense path sends the whole grid to the GPU, while WISEConv
+  packs the red cells into a worklist for the GPU; its prediction and planning
+  finish earlier on the timeline.}
   \label{fig:teaser}
 \end{figure}
 
