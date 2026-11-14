@@ -17,7 +17,7 @@ FS_TICK, FS_NOTE, FS_LAB, FS_LEG = 7.3, 6.8, 7.5, 8.0  # larger than the shared 
 
 STAGES = [("construction", "construction", "#f2c14e", ""), ("conv", "convolution", "#2f4a68", ""),
           ("gather", "gather/scatter", "#5e9e8a", "\\\\\\\\"), ("other", "other ops", "#cfcac2", ""),
-          ("idle", "GPU idle", WASTED_COLOR, WASTED_HATCH)]
+          ("idle", "host sync", WASTED_COLOR, WASTED_HATCH)]
 INKS = {"gather": "#ffffff", "idle": WASTED_INK}
 NAMES = {"dense": "Dense", "tile_skip": "Tile skipping", "gather_scatter": "Gather-scatter", "wiseconv": "WISEConv"}
 H = 0.74  # bar height

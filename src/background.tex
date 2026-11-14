@@ -239,16 +239,22 @@ in tensor formats. DPACS~\cite{dpacs} targets the same dynamic 2D spatial
 sparsity but designs a custom dataflow accelerator to handle the resulting
 irregular access patterns.
 
-Row-indexed operand loads are an established implementation technique:
-CUTLASS fuses gather and scatter into GEMM~\cite{cutlass}, mixture-of-experts
-kernels read tokens through scattered indices inside a grouped
-GEMM~\cite{scattermoe,megablocks}, and the Blackwell TMA gathers rows by
-index~\cite{ptxisa}. These kernels use the indirection to avoid a copy, but
-do not characterize its cost against the dense kernel, nor face the
-overlapping receptive fields that scattering convolution outputs disrupts. We
-show that for convolution on a dense input grid the indirection leaves the
-reduction identical to dense, so the residual gap is a per-layer fixed cost
-rather than lost throughput (\S\ref{sec:char}).
+Coordinate-indexed implicit GEMM is not new. Systems for 3D sparse
+convolution~\cite{spconv2,torchsparsepp} redirect the position dimension of a
+tiled GEMM through an index array derived from coordinate maps, and CUTLASS
+fuses such gathers into GEMM~\cite{cutlass}. Because a point cloud is itself a
+sparse coordinate set, building the index array takes hashing, sorting, and
+global scans that often outlast the GEMM~\cite{torchsparsepp,minuet}, and
+every reduction step gathers its input rows through the array. Neither cost
+arises in masked 2D convolution. The output grid is regular and the mask is a
+bitmap, so a worklist takes one compaction pass over the mask
+(\S\ref{sec:design:construct}); the input stays a dense grid, so the
+indirection fixes only each row's base address and leaves the reduction
+identical to dense, and the residual gap is a per-layer fixed cost rather than
+lost throughput (\S\ref{sec:char}). Other kernels that load rows by index,
+such as mixture-of-experts grouped GEMM~\cite{scattermoe,megablocks} and the
+Blackwell TMA row gather~\cite{ptxisa}, use the indirection to avoid a copy
+but do not characterize its cost against the dense kernel.
 
 Selecting kernels by problem size is equally established. Compilers and
 inference engines for dynamic shapes tune kernels over shape ranges and

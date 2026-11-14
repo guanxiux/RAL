@@ -54,7 +54,7 @@ own CUDA backend~\cite{dynconv} for pose). All paths run the same weights and
 inputs, and the three masked paths the same layer masks, so they differ only
 in the masked-convolution backend. Every path except gather-scatter replays as
 a CUDA graph; gather-scatter reads each layer's active count on the host to
-size its buffers, so it must run eagerly. The baselines implement only FP32, so
+size its buffers and its GEMM, so it must run eagerly. The baselines implement only FP32, so
 FP16 compares \sysname with Dense alone. We report \sysname's speedup over the
 fastest baseline on each workload and platform.
 
@@ -105,8 +105,8 @@ amortize these costs and make it the fastest baseline on four of the six GPUs,
 where \sysname still runs 1.69--2.39$\times$ faster.
 
 The distance to the ideal line follows worklist length, as Insight~4
-predicts. Averaged over GPUs and precisions, \sysname runs at 1.61$\times$ the
-ideal latency on YOLOv8m b4, whose median worklist holds 1{,}382 entries, and
+predicts. As a geometric mean over GPUs and precisions, \sysname runs at
+1.61$\times$ the ideal latency on YOLOv8m b4, whose median worklist holds 1{,}382 entries, and
 at 2.78$\times$ on DynConv, whose median worklist holds 43
 (Table~\ref{tab:worklist-efficiency}), so per-layer fixed costs dominate its
 frame.
@@ -174,12 +174,13 @@ YOLOv8m b1 and DynConv, whose shortest worklists (P10) hold 26 and 3 entries.
   \caption{YOLOv8m latency per frame by stage on RTX~3080, at batch~1 (b1)
   and~4 (b4), with FP32 and FP16 on separate axes.
   Stages are each path's kernel shares of GPU busy time, scaled to its
-  end-to-end latency; GPU idle is the remaining time in the frame.
+  end-to-end latency; host sync is the remaining time in the frame, when the GPU
+  idles waiting for the host.
   Gather-scatter's gather/scatter includes compacting the mask into the index
   list it gathers by.}
   \Description{Two panels, FP32 and FP16, of horizontal stacked bars, one per
   path, grouped by batch 1 and batch 4, splitting per-frame latency into construction,
-  convolution, gather and scatter, other operators, and GPU idle time.}
+  convolution, gather and scatter, other operators, and host synchronization.}
   \label{fig:decomposition}
 \end{figure}
 
@@ -187,9 +188,14 @@ YOLOv8m b1 and DynConv, whose shortest worklists (P10) hold 26 and 3 entries.
 Figure~\ref{fig:decomposition} shows where each path spends a YOLOv8m frame.
 At b1 in FP32, \sysname cuts convolution from 7.21 to 2.27\,ms at the cost of
 0.17\,ms of construction, and keeps the GPU busy because the compute path never
-returns to the host. Gather-scatter spends the least time in convolution (1.68\,ms),
-but its per-layer host synchronization leaves the GPU idle for 8.26\,ms, 64.8\%
-of its frame; at b4, four streams hide most of that idle time and bring it to
+returns to the host. Gather-scatter spends the least time in convolution (1.68\,ms) because it
+multiplies compact buffers, but those buffers tie every layer to the host. The
+gathered buffer and the GEMM's row count both equal the layer's active count,
+which exists only on the device, so each layer reads the count back before it
+can allocate and launch; launching for the largest possible count would
+recompute the dense layer. These round trips leave the GPU idle for 8.26\,ms,
+64.8\% of its frame, and even its busy time alone (4.48\,ms) is 1.49$\times$
+\sysname's 3.00\,ms. At b4, four streams hide most of that idle time and bring it to
 4.50\,ms per frame, still 2.39$\times$ \sysname's 1.88\,ms. In FP16, tensor
 cores shrink convolution more than the rest of the frame: construction and
 other operators grow from 24.3\% to 39.0\% of \sysname's b1 frame, and its
@@ -223,28 +229,46 @@ allocates 0.1\,MiB more than Dense.
 \input{figures/ablation_table}
 
 Table~\ref{tab:ablation} replaces one mechanism at a time on YOLOv8m (b1,
-RTX~3080, FP16). Rebuilding the worklist at every layer (No reuse) doubles
-construction time from 0.16 to 0.30\,ms and adds 10\% to frame latency. The
-shuffled-order and full-layer-grid variants modify the speedup-optimal
-configuration and are compared against it. A shuffled worklist costs 3\%, as
+FP16) on RTX~3080 and AGX Orin. Rebuilding the worklist at every layer (No
+reuse) nearly doubles construction time (0.16 to 0.30\,ms and 0.48 to
+0.84\,ms) and adds 9.9\% and 6.2\% to frame latency. A shuffled worklist
+lengthens convolution by 4.7\% and 4.4\% and the frame by 2.8\% and 2.6\%, as
 Insight~3 predicts (\S\ref{sec:char:order}). Launching the dense layer's grid,
-whose CTAs beyond the worklist exit, raises convolution time from 0.88 to
-1.06\,ms (1.13$\times$), the cost that the persistent grid avoids
-(\S\ref{sec:design:compute}). Reading $n_W$ back to the host at every layer to
-launch the exact grid runs 6.51$\times$ slower, as Insight~5 predicts. For
-selection, the configuration fastest at $\alpha = 1$ runs 1.71$\times$ slower,
-and the single configurations with the best expected speedup
-(speedup-optimal) or the lowest expected latency (latency-optimal) over a
-uniform $n_W$ run 1.02$\times$ and 1.10$\times$ slower.
-Placing four candidates at every layer regardless of their cost
-(Cost-unaware $K_{\max}$) runs 1.07$\times$ slower: more producers take the
-selection path, raising construction time to 0.22\,ms. The trade-off instead
-sets $K$ per GPU and precision: on YOLOv8m, RTX~3080 follows the length on 5
-of 83 layers in FP16 and 30 in FP32, and AGX Orin, whose gains are larger, on
-62 in FP32. Only the zero-cost
-oracle, which runs the same candidates on a graph captured for each frame's own
-$n_W$ without any selection mechanism, beats \sysname, by 8\%; this margin is
-the selection cost that current GPUs impose (\S\ref{sec:char:cost}).
+whose CTAs beyond the worklist exit, lengthens convolution by 19.4\% and
+13.1\%, the cost that the persistent grid avoids (\S\ref{sec:design:compute}).
+Reading $n_W$ back to the host at every layer to launch the exact grid runs
+6.51$\times$ and 5.08$\times$ slower, as Insight~5 predicts.
+
+The tile-configuration variants keep \sysname's selection mechanism (the same
+layers follow the worklist length, through the same producers and candidate
+nodes) and change only the candidates, so they isolate what following $n_W$
+gains. Fixing every candidate to the configuration fastest at $\alpha = 1$
+runs 1.71$\times$ and 1.28$\times$ slower; fixing it to the configuration with
+the lowest expected latency over a uniform $n_W$ runs 1.10$\times$ slower on
+both GPUs. The
+configuration with the best expected speedup (speedup-optimal) comes within
+1.6\% of \sysname on RTX~3080 but runs 1.09$\times$ slower on AGX Orin, where
+its convolution takes 3.83 instead of 3.34\,ms. The two GPUs differ in how
+many layers follow the length: the selection (\S\ref{sec:design:select}) adds
+candidates to a layer only where the gain exceeds that GPU's per-layer
+selection cost, which holds for 5 of 83 layers on RTX~3080 and for 24 on AGX
+Orin, whose per-layer gains are larger (Insight~5). Placing four candidates at
+every layer regardless of this cost (Cost-unaware $K_{\max}$) shortens
+convolution by 1.7\% and 5.4\%, but every producer then takes the selecting
+path, raising construction from 0.16 to 0.22\,ms and from 0.48 to 0.65\,ms,
+so the frame runs 1.07$\times$ and 1.02$\times$ slower; it loses most on
+RTX~3080, where the gains that the cost model declines are smallest.
+
+The zero-cost oracle runs the same candidates as Cost-unaware $K_{\max}$ on a
+graph captured for each frame's own $n_W$, with no selection mechanism. It
+runs at 0.92$\times$ and 0.88$\times$ \sysname's latency. Because both pick
+the same tile for every layer and frame, the gap between them (0.85 vs.\ 
+0.75\,ms and 3.16 vs.\ 2.79\,ms of convolution, 0.22 vs.\ 0.15\,ms and 0.65
+vs.\ 0.41\,ms of construction) is the cost of the device-side mechanism
+itself, not of the configuration choice. Current GPUs follow a device-resident
+length only by reconfiguring the graph (\S\ref{sec:char:cost}), so this margin
+is a hardware limit that software selection cannot remove; a launch predicate
+evaluated by the hardware would recover it (\S\ref{sec:eval:discussion}).
 
 \subsection{Discussion}
 \label{sec:eval:discussion}
