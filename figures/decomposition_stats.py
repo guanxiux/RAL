@@ -31,6 +31,9 @@ def main():
         for dtype, paths in PATHS.items():
             bd = json.loads((d / f"bd_{dtype}.json").read_text())["backends"]
             mem = json.loads((d / f"memory_{dtype}.json").read_text())["backends"]
+            # the re-measured dense baseline (2026-11-13: cudnn.benchmark, --dense-layout auto; q3080_dense_bd.sh)
+            bd["dense"] = json.loads((d / f"bd_dense_{dtype}.json").read_text())["backends"]["dense"]
+            mem["dense"] = json.loads((d / f"memory_dense_{dtype}.json").read_text())["backends"]["dense"]
             for path in paths:
                 b, clip, tot = bd[path], mem[path]["latency_ms"], e2e[(key, dtype, path)]
                 s = b["stage_us_per_frame"]

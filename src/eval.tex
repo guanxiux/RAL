@@ -91,21 +91,21 @@ agree.
 
 \paragraph{Latency.}
 \sysname is the fastest path in all 44 groups of workload, platform, and
-precision (Figure~\ref{fig:e2e-latency}). In FP32 it runs 1.49--4.31$\times$
-faster than the fastest baseline of each group (geometric mean 2.18$\times$),
-and in FP16, where Dense is the only baseline, 1.27--4.69$\times$ faster
-(2.22$\times$), 2.20$\times$ over all 44 groups. No baseline is consistently
+precision (Figure~\ref{fig:e2e-latency}). In FP32 it runs 1.49--3.23$\times$
+faster than the fastest baseline of each group (geometric mean 2.06$\times$),
+and in FP16, where Dense is the only baseline, 1.27--4.25$\times$ faster
+(2.10$\times$), 2.08$\times$ over all 44 groups. No baseline is consistently
 second: tile skipping is the
-fastest baseline in 14 of the 24 FP32 groups, gather-scatter in 6, and Dense
-in 4. Gather-scatter varies most, because its per-layer extraction, scatter,
-and host synchronization do not shrink with the active ratio. In 11 FP32
-groups, mostly FireFlowNet and DynConv, it runs 1.86--12.1$\times$ slower than
+fastest baseline in 13 of the 24 FP32 groups, gather-scatter in 6, and Dense
+in 5. Gather-scatter varies most, because its per-layer extraction, scatter,
+and host synchronization do not shrink with the active ratio. In 12 FP32
+groups, mostly FireFlowNet and DynConv, it runs 1.85--12.1$\times$ slower than
 Dense and extends beyond the axis (red crosses). On YOLOv8m b4, four streams
 amortize these costs and make it the fastest baseline on four of the six GPUs,
 where \sysname still runs 1.69--2.39$\times$ faster.
 
 The distance to the ideal line follows worklist length, as Insight~4
-predicts. Averaged over GPUs and precisions, \sysname runs at 1.27$\times$ the
+predicts. Averaged over GPUs and precisions, \sysname runs at 1.61$\times$ the
 ideal latency on YOLOv8m b4, whose median worklist holds 1{,}382 entries, and
 at 2.78$\times$ on DynConv, whose median worklist holds 43
 (Table~\ref{tab:worklist-efficiency}), so per-layer fixed costs dominate its
@@ -114,8 +114,8 @@ frame.
 \paragraph{Energy.}
 Shorter frames translate into lower energy (Table~\ref{tab:e2e-energy}).
 \sysname is the lowest-energy path for every workload on both Jetson boards:
-in FP32 it uses 32.8--55.3\% less energy per frame than the lowest-energy
-baseline, and across both precisions 60.8--90.1\% less than Dense.
+in FP32 it uses 32.8--51.8\% less energy per frame than the lowest-energy
+baseline, and across both precisions 60.8--82.5\% less than Dense.
 
 \input{figures/e2e_energy_table}
 
@@ -151,14 +151,12 @@ Figure~\ref{fig:effective-throughput} explains the end-to-end result with the
 two axes of Eq.~\ref{eq:efficiency-framework-throughput}: a masked path is
 fast only if it is both selective (useful-compute ratio $\eta$) and keeps
 dense throughput ($T$). The two baselines fail on opposite axes. Tile skipping
-keeps the dense tile schedule, reaching 22.5--76.7\% of Dense raw throughput,
+keeps the dense tile schedule, reaching 17.5--59.9\% of Dense raw throughput,
 but computes every position of an active tile, so $\eta$ is 0.49--0.74.
 Gather-scatter issues only required positions ($\eta = 1$), but extraction and
-writeback hold its raw throughput to 2.6--65.4\% of Dense. \sysname keeps
-$\eta$ at 0.91--1.00 and sustains 53.9--117.3\% of Dense raw throughput in
-FP32 (29.6--81.4\% in FP16), the highest effective throughput in every group.
-On YOLOv8m b4 its effective throughput exceeds Dense's raw throughput because
-cuDNN runs this configuration slower than \sysname's kernels.
+writeback hold its raw throughput to 2.6--42.0\% of Dense. \sysname keeps
+$\eta$ at 0.91--1.00 and sustains 52.3--76.0\% of Dense raw throughput in
+FP32 (29.6--76.0\% in FP16), the highest effective throughput in every group.
 
 \input{figures/worklist_efficiency_table}
 
@@ -187,7 +185,7 @@ YOLOv8m b1 and DynConv, whose shortest worklists (P10) hold 26 and 3 entries.
 
 \paragraph{Latency decomposition.}
 Figure~\ref{fig:decomposition} shows where each path spends a YOLOv8m frame.
-At b1 in FP32, \sysname cuts convolution from 9.68 to 2.27\,ms at the cost of
+At b1 in FP32, \sysname cuts convolution from 7.21 to 2.27\,ms at the cost of
 0.17\,ms of construction, and keeps the GPU busy because the compute path never
 returns to the host. Gather-scatter spends the least time in convolution (1.68\,ms),
 but its per-layer host synchronization leaves the GPU idle for 8.26\,ms, 64.8\%
@@ -195,16 +193,16 @@ of its frame; at b4, four streams hide most of that idle time and bring it to
 4.50\,ms per frame, still 2.39$\times$ \sysname's 1.88\,ms. In FP16, tensor
 cores shrink convolution more than the rest of the frame: construction and
 other operators grow from 24.3\% to 39.0\% of \sysname's b1 frame, and its
-speedup over Dense narrows from 3.59$\times$ to 2.63$\times$.
+speedup over Dense narrows from 2.79$\times$ to 2.53$\times$.
 
 \paragraph{Speedup across activity.}
 Grouping the frames of YOLOv8m b1 on RTX~3080 by their active ratio tests the
 affine behavior end to end. \sysname's speedup over Dense falls smoothly with
-activity, from 5.90$\times$ for frames with $\alpha<0.02$ to 1.69$\times$ for
-$\alpha\ge0.4$ in FP32 (3.34$\times$ to 1.52$\times$ in FP16), as the affine
+activity, from 4.59$\times$ for frames with $\alpha<0.02$ to 1.31$\times$ for
+$\alpha\ge0.4$ in FP32 (3.14$\times$ to 1.43$\times$ in FP16), as the affine
 model with a per-layer intercept predicts (Insights~1 and~4). Neither baseline
-follows activity: tile skipping beats Dense only below $\alpha=0.02$, and
-gather-scatter never does. The selection of \S\ref{sec:design:select} places
+turns low activity into a speedup: both run slower than Dense at every active
+ratio. The selection of \S\ref{sec:design:select} places
 its gains where the uniform prior expects them: against the speedup-optimal
 configuration, \sysname is 1.13$\times$ faster on the sparsest frames and at
 most 4\% slower on the densest (FP32).

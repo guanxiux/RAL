@@ -57,7 +57,7 @@ def main() -> None:
     # cross-checks against the numbers quoted in the text (intro / background)
     r = {x["backend"]: x for x in rows}
     assert abs(r["dense"]["useful_compute_ratio"] - (1 - 0.822)) < 5e-4
-    assert abs(r["gather_scatter"]["raw_throughput_vs_dense"] - 0.437) < 5e-4
+    assert abs(r["gather_scatter"]["raw_throughput_vs_dense"] - 0.317) < 5e-4
     assert abs(r["tile_skip"]["useful_compute_ratio"] - 0.674) < 5e-4
     with OUT_CSV.open("w", newline="", encoding="utf-8") as f:
         wr = csv.DictWriter(f, fieldnames=list(rows[0]))

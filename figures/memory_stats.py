@@ -35,6 +35,8 @@ WORKLOADS = (
 def peaks(kind: str, src: str) -> dict:
     if kind == "breakdown":
         b = json.loads((EV / src / f"micro_upd/memory2_{DTYPE}.json").read_text())["backends"]
+        # the re-measured dense baseline (2026-11-13: cudnn.benchmark, --dense-layout auto)
+        b["dense"] = json.loads((EV / src / f"micro_upd/memory_dense_{DTYPE}.json").read_text())["backends"]["dense"]
         return {k: v["peak_mib"] for k, v in b.items()}
     out = {}
     for path in PATHS:

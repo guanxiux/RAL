@@ -57,9 +57,9 @@ materializing their receptive fields.
 pipeline, but wastes computation on partially active tiles.
 On an RTX~3080 running YOLOv8m~\cite{yolov8} at batch~4 under temporal
 difference masks~\cite{deltacnn}, 82.2\% of convolution work is unnecessary.
-Gather-scatter sustains only 43.7\% of the dense pipeline's throughput,
-reducing latency by just 59.3\%; tile skipping reaches higher throughput but
-wastes 32.6\% of issued operations, reducing latency by 54.3\%, slower
+Gather-scatter sustains only 31.7\% of the dense pipeline's throughput,
+reducing latency by just 43.8\%; tile skipping reaches higher throughput but
+wastes 32.6\% of issued operations, reducing latency by 36.9\%, slower
 than gather-scatter despite its throughput advantage
 (\S\ref{sec:bg:gap}).
 
@@ -116,10 +116,10 @@ This paper makes the following contributions:
         jointly sustain high useful-compute ratio and high throughput
         (\S\ref{sec:design}).
 
-  % geomean over 44 workload-device-precision cases (fastest available baseline, dense included), 2026-11-10
+  % geomean over 44 workload-device-precision cases (fastest available baseline, dense included), 2026-11-14
   \item We evaluate \sysname on four workloads across six GPUs. \sysname
-        achieves a 2.18$\times$ (FP32) and 2.22$\times$ (FP16)
+        achieves a 2.06$\times$ (FP32) and 2.10$\times$ (FP16)
         geometric-mean speedup over the fastest baseline per
-        pair, and reduces energy by 60.8--90.1\% relative to dense
+        pair, and reduces energy by 60.8--82.5\% relative to dense
         execution on embedded GPUs (\S\ref{sec:eval}).
 \end{itemize}

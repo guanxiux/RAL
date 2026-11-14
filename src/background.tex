@@ -219,9 +219,9 @@ where \(t\) denotes the latency of the execution path, including auxiliary mask 
 Figure~\ref{fig:gap} makes this concrete on RTX~3080 for YOLOv8m~\cite{yolov8}
 at batch~4 under temporal difference masks~\cite{deltacnn}, where 82.2\% of
 convolution work is unnecessary. Tile skipping holds throughput at
-57.8\% of dense but at a useful-compute ratio of only 67.4\%;
+41.9\% of dense but at a useful-compute ratio of only 67.4\%;
 gather-scatter lifts the useful-compute ratio to one, yet extraction traffic
-collapses its throughput to 43.7\% of dense. Neither path efficiently converts
+collapses its throughput to 31.7\% of dense. Neither path efficiently converts
 the GPU's capability into effective throughput.
 
 
