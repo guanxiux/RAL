@@ -6,10 +6,10 @@
   \includegraphics[width=\columnwidth]{figures/tikz/teaser.pdf}
   \caption{Dense convolution, the baseline, recomputes every position,
   including the inactive ones of the upstream mask $M$. \sysname drives the same
-  dense tiled pipeline with a worklist of only the active positions (red). Its
-  tiles compute only those outputs, yet each runs at the throughput of a dense
-  tile, and the other outputs are reused. Its convolution therefore ends
-  earlier, and planning reacts sooner.}
+  dense pipeline with a worklist of only the active positions (red), computing
+  them at nearly the per-output throughput of dense convolution and reusing the
+  other outputs. Its convolution therefore ends earlier, and planning reacts
+  sooner.}
   \Description{Top: a grayscale street scene seen from a vehicle on a grid of
   convolution positions; the cells around a crossing pedestrian and a moving car
   are red, the active positions of the upstream mask M, which is also drawn
