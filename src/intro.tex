@@ -3,21 +3,23 @@
 
 \begin{figure}[t]
   \centering
-  \includegraphics[width=\columnwidth]{figures/demo.png}
-  \caption{Dense convolution, the baseline, computes every position of every
-  frame; \sysname runs the same dense tiled pipeline but drives it with a
-  worklist of only the active positions (red), so it skips the inactive work
-  while each tile runs at the throughput of a dense tile. In this driving scene
-  only the cells around the pedestrian and the car change, so the shorter
-  convolution lets the downstream prediction and planning finish earlier and
-  the vehicle steer away sooner.}
-  \Description{Top: a grayscale street scene seen from a vehicle, overlaid with
-  a grid whose cells around a pedestrian and a car are marked red as active;
-  the WISEConv trajectory steers away earlier than the dense one. Bottom: from
-  the camera, the dense path convolves the whole input grid into the whole
-  output grid, while WISEConv collects the red cells into a worklist and
-  computes only the required outputs; its prediction and planning finish
-  earlier on the timeline.}
+  \includegraphics[width=\columnwidth]{figures/tikz/teaser.pdf}
+  \caption{Dense convolution, the baseline, recomputes every position,
+  including the inactive ones of the upstream mask $M$. \sysname drives the same
+  dense tiled pipeline with a worklist of only the active positions (red). Its
+  tiles compute only those outputs, yet each runs at the throughput of a dense
+  tile, and the other outputs are reused. Its convolution therefore ends
+  earlier, and planning reacts sooner.}
+  \Description{Top: a grayscale street scene seen from a vehicle on a grid of
+  convolution positions; the cells around a crossing pedestrian and a moving car
+  are red, the active positions of the upstream mask M, which is also drawn
+  below the scene. The WISEConv trajectory changes lane right away, while the
+  dashed Dense trajectory keeps straight until its perception finishes. Bottom:
+  Dense convolves the 3x3 receptive fields of all positions with the weights and
+  recomputes the whole output with its detections; WISEConv convolves only the
+  receptive fields of the active positions, recomputes those outputs and reuses
+  the remaining detections. Its GPU box is narrower, so its prediction and
+  planning finish earlier on the timeline.}
   \label{fig:teaser}
 \end{figure}
 
@@ -125,9 +127,9 @@ This paper makes the following contributions:
         worklist-driven compute stage, and cost-aware tile selection around
         it (\S\ref{sec:design}).
 
-  % geomean over 44 workload-device-precision cases (fastest available baseline, dense included), 2026-11-14
+  % geomean over 44 workload-device-precision cases (fastest available baseline, dense included), 2026-11-16
   \item We evaluate \sysname on four workloads across six GPUs. \sysname
-        achieves a 2.06$\times$ (FP32) and 2.10$\times$ (FP16)
+        achieves a 2.06$\times$ (FP32) and 2.09$\times$ (FP16)
         geometric-mean speedup over the fastest baseline per
         pair, and reduces energy by 60.8--82.5\% relative to dense
         execution on embedded GPUs (\S\ref{sec:eval}).
