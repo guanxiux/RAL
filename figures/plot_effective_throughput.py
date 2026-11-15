@@ -2,8 +2,8 @@
 """fig:effective-throughput: effective (eta*T) and wasted ((1-eta)*T) throughput of every path, relative to Dense raw
 throughput of the same precision (reads effective_throughput.csv).
 
-One panel per platform; each workload has an FP32 cluster (four paths) and an FP16 cluster (Dense, WISEConv), styled
-as fig:e2e-latency.  The effective share is the path's color, the wasted share the dotted gray of fig:gap; WISEConv
+One panel per platform; each workload has an FP32 and an FP16 cluster of the paths measured (DynConv FP16 has no
+gather-scatter), styled as fig:e2e-latency.  The effective share is the path's color, the wasted share the dotted gray of fig:gap; WISEConv
 bars carry their effective throughput.
 """
 from __future__ import annotations
@@ -16,9 +16,10 @@ from char_style import FIG_W, FS_CAP, FS_LEG, FS_NOTE, FS_TICK, INK, MUTED, plt,
 PLATFORMS = ["RTX 3080", "AGX Orin"]
 WORKLOADS = [("fireflownet", "FireFlowNet"), ("yolov8m_b1", "YOLOv8m b1"), ("yolov8m_b4", "YOLOv8m b4"),
              ("dynconv", "DynConv")]
-CLUSTERS = [("fp32", ("dense", "tile_skip", "gather_scatter", "wiseconv")), ("fp16", ("dense", "wiseconv"))]
+PATHS = ("dense", "tile_skip", "gather_scatter", "wiseconv")
+CLUSTERS = [("fp32", PATHS), ("fp16", PATHS)]
 NAMES = {"dense": "Dense", "tile_skip": "Tile skipping", "gather_scatter": "Gather-scatter", "wiseconv": "WISEConv"}
-CGAP, GGAP, YMAX = 0.4, 1.6, 1.25
+CGAP, GGAP, YMAX = 0.25, 0.9, 1.25
 BW = 0.84  # bar width (slot = 1): a small gap between bars
 FP16_BAND = "#f3f1ec"
 OURS_INK = "#a8521a"
@@ -41,9 +42,10 @@ for i, plat in enumerate(PLATFORMS):
             if ci:
                 x += CGAP
             c0 = x
+            cell = data.get((plat, wl, dtype), {})
+            paths = [p for p in paths if p in cell]
             if dtype == "fp16":
                 ax.axvspan(c0 - 0.5, c0 + len(paths) - 0.5, color=FP16_BAND, lw=0, zorder=0.5)
-            cell = data.get((plat, wl, dtype), {})
             for k, p in enumerate(paths):
                 if p not in cell:
                     continue

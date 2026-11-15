@@ -4,7 +4,7 @@
 Work counts come from the RTX 3080 work replay over the whole evaluation set (logs/wise2_eval/rtx_3080_sm86/<task>/
 micro_upd/work_full_fp32.json, work_counts.py --split full: required, issued, and dense MACs per path), shared by every
 platform and precision (the masks do not depend on either); FP16 WISEConv issues the FP16 plan's tiles on the same
-worklists (path wiseconv_fp16, --issued-for fp16); latencies from e2e_stats.csv (the E2E figure's numbers).
+worklists (path wiseconv_fp16, --issued-for fp16), FP16 tile skipping its own replay (work_full_fp16.json); latencies from e2e_stats.csv (the E2E figure's numbers).
 
   eta    = required / issued MACs (tile skipping: its MAC-level eta_mac)
   T      = (issued / dense MACs) * (t_dense / t_path)   raw throughput relative to Dense of the same precision
@@ -31,7 +31,14 @@ def work(dev, task, dtype):
         return None, None
     paths = json.loads(f.read_text())["paths"]
     if dtype == "fp16":
-        paths = {"dense": paths["dense"], "wiseconv": paths["wiseconv_fp16"]}
+        # tile skipping's FP16 kernels tile differently, so its issued work comes from the FP16 replay
+        # (work_full_fp16.json, work_counts.py --dtype fp16 --tile-skip, 2026-11-16); gather-scatter issues the
+        # required work in either precision
+        f16 = f.with_name("work_full_fp16.json")
+        p16 = json.loads(f16.read_text())["paths"] if f16.exists() else {}
+        assert not p16 or abs(p16["dense"]["required_macs"] / paths["dense"]["required_macs"] - 1) < 1e-6, task
+        paths = {"dense": paths["dense"], "gather_scatter": paths["gather_scatter"], "wiseconv": paths["wiseconv_fp16"],
+                 **({"tile_skip": p16["tile_skip"]} if "tile_skip" in p16 else {})}
     return paths, f
 
 

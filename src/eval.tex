@@ -28,7 +28,7 @@ thresholds, they are tuned on data disjoint from the evaluation set.
 \centering
 \caption{Workloads.}
 \label{tab:workloads}
-\footnotesize
+\small
 \setlength{\tabcolsep}{4pt}
 \begin{tabular}{@{}lccc@{}}
 \toprule
@@ -54,8 +54,10 @@ own CUDA backend~\cite{dynconv} for pose). All paths run the same weights and
 inputs, and the three masked paths the same layer masks, so they differ only
 in the masked-convolution backend. Every path except gather-scatter replays as
 a CUDA graph; gather-scatter reads each layer's active count on the host to
-size its buffers and its GEMM, so it must run eagerly. The baselines implement only FP32, so
-FP16 compares \sysname with Dense alone. We report \sysname's speedup over the
+size its buffers and its GEMM, so it must run eagerly. Every path runs in both
+precisions except gather-scatter on DynConv in FP16: DynConv's kernels support
+only FP32, and MMCV's masked convolution does not support the grouped
+convolutions of its network. We report \sysname's speedup over the
 fastest baseline on each workload and platform.
 
 \paragraph{Protocol.}
@@ -75,16 +77,15 @@ agree.
   \centering
   \includegraphics[width=\textwidth]{figures/e2e_latency.pdf}
   \caption{Full-model latency on six GPUs, normalized to Dense of the same
-  precision (lower is better). Each workload has an FP32 group with all four
-  paths and an FP16 group with Dense and \sysname, since the baselines have no
-  FP16 path. Dense bars give the absolute latency (per frame; per batch of four
+  precision (lower is better). Each workload has an FP32 and an FP16 group of
+  all paths (no FP16 gather-scatter on DynConv). Dense bars give the absolute latency (per frame; per batch of four
   for YOLOv8m b4), \sysname bars give its speedup over the fastest other path
   of the group, and a red cross marks bars that extend beyond the axis. The dashed line
   is ideal proportional scaling, the mean active ratio $\hat{\alpha}$ given
   under each workload.}
   \Description{Six panels, one per GPU. In each, four workloads each show an
-  FP32 group of Dense, Tile skipping, Gather-scatter, and WISEConv bars and an
-  FP16 group of Dense and WISEConv bars, normalized to Dense. WISEConv is the
+  FP32 and an FP16 group of Dense, Tile skipping, Gather-scatter, and WISEConv
+  bars, normalized to Dense. WISEConv is the
   lowest bar in every group; a dashed line marks the active ratio.}
   \label{fig:e2e-latency}
 \end{figure*}
@@ -93,19 +94,21 @@ agree.
 \sysname is the fastest path in all 44 groups of workload, platform, and
 precision (Figure~\ref{fig:e2e-latency}). In FP32 it runs 1.49--3.23$\times$
 faster than the fastest baseline of each group (geometric mean 2.06$\times$),
-and in FP16, where Dense is the only baseline, 1.27--4.25$\times$ faster
-(2.10$\times$), 2.08$\times$ over all 44 groups. \sysname wins every group
-because worklist-driven tiled execution is the only path whose tiles compute
-only active positions at the per-tile cost of dense tiles (Insight~2), which
-\S\ref{sec:eval:microbenchmarks} quantifies. No baseline is consistently
-second: tile skipping is the
-fastest baseline in 13 of the 24 FP32 groups, gather-scatter in 6, and Dense
-in 5. Gather-scatter varies most, because its per-layer extraction, scatter,
-and host synchronization do not shrink with the active ratio. In 12 FP32
-groups, mostly FireFlowNet and DynConv, it runs 1.85--12.1$\times$ slower than
-Dense and extends beyond the axis (red crosses). On YOLOv8m b4, four streams
-amortize these costs and make it the fastest baseline on four of the six GPUs,
-where \sysname still runs 1.69--2.39$\times$ faster.
+and in FP16 1.27--4.25$\times$ faster (2.09$\times$), 2.07$\times$ over all
+44 groups. \sysname wins every group because worklist-driven tiled execution
+is the only path whose tiles compute only active positions at the per-tile
+cost of dense tiles (Insight~2), which \S\ref{sec:eval:microbenchmarks}
+quantifies. No baseline is consistently second in FP32: tile skipping is the
+fastest baseline in 13 of the 24 groups, gather-scatter in 6, and Dense in 5.
+In FP16, Dense is the fastest baseline in 19 of the 20 groups, because tensor
+cores shorten its convolution while DeltaCNN's FP16 kernels run on CUDA cores
+and gather-scatter's host synchronization does not depend on precision.
+Gather-scatter varies most, because its per-layer extraction, scatter, and host
+synchronization do not shrink with the active ratio. In 23 groups, mostly
+FireFlowNet, DynConv, and YOLOv8m b1, it runs 1.85--12.4$\times$ slower than
+Dense and extends beyond the axis. On YOLOv8m b4, four streams amortize these
+costs and make it the fastest baseline on four of the six GPUs in FP32, where
+\sysname still runs 1.69--2.39$\times$ faster.
 
 The distance to the ideal line follows worklist length, as Insight~4
 predicts. As a geometric mean over GPUs and precisions, \sysname runs at
@@ -117,15 +120,17 @@ frame.
 \paragraph{Energy.}
 Shorter frames translate into lower energy (Table~\ref{tab:e2e-energy}).
 \sysname is the lowest-energy path for every workload on both Jetson boards:
-in FP32 it uses 32.8--51.8\% less energy per frame than the lowest-energy
-baseline, and across both precisions 60.8--82.5\% less than Dense.
+it uses 32.8--51.8\% less energy per frame than the lowest-energy baseline in
+FP32 and 60.8--79.9\% less in FP16, and across both precisions 60.8--82.5\%
+less than Dense.
 
 \input{figures/e2e_energy_table}
 
 \paragraph{Accuracy.}
 Given the same layer masks, the three masked paths reach the same accuracy
-(Table~\ref{tab:e2e-accuracy}): AEE and PCKh are identical, and YOLOv8m AP
-differs by at most 0.1 points, a residual of floating-point reduction order.
+(Table~\ref{tab:e2e-accuracy}): AEE is identical, PCKh differs by at most
+0.01 points, and YOLOv8m AP by at most 0.3 points, residuals of
+floating-point reduction order.
 Where worklist reuse computes a superset of the required positions, the output
 mask gates writeback, so the extra positions never reach downstream layers.
 The remaining gap to Dense (1.4 PCKh points lower on DynConv, slightly better

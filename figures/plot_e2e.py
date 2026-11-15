@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """fig:e2e-latency: full-model latency of every path, normalized to Dense of the same precision (reads e2e_stats.csv).
 
-One panel per platform (3 x 2).  Each workload is a group with an FP32 cluster (the four paths) and an FP16 cluster
-(Dense and WISEConv; the baselines have no FP16 path).  Dense = 1 in each cluster, so the Ideal line of proportional
+One panel per platform (3 x 2).  Each workload is a group with an FP32 and an FP16 cluster of the paths measured
+(DynConv FP16 has no gather-scatter: DynConv's kernels are FP32 only).  Dense = 1 in each cluster, so the Ideal line of proportional
 scaling is the active ratio alpha.  Dense bars carry their absolute latency, WISEConv bars their speedup over the
 fastest path of the cluster, and bars above the axis are clipped with their value printed inside.
 """
@@ -20,11 +20,12 @@ YMAX = 1.6
 PLATFORMS = ["A100", "RTX 4090", "RTX 3080", "RTX 4070 Laptop", "AGX Orin", "Xavier NX"]
 WORKLOADS = [("fireflownet", "FireFlowNet"), ("yolov8m_b1", "YOLOv8m b1"), ("yolov8m_b4", "YOLOv8m b4"),
              ("dynconv", "DynConv")]
-CLUSTERS = [("fp32", ("dense", "tile_skip", "gather_scatter", "wiseconv")), ("fp16", ("dense", "wiseconv"))]
+PATHS = ("dense", "tile_skip", "gather_scatter", "wiseconv")
+CLUSTERS = [("fp32", PATHS), ("fp16", PATHS)]
 NAMES = {"dense": "Dense", "tile_skip": "Tile skipping", "gather_scatter": "Gather-scatter", "wiseconv": "WISEConv"}
 BW = 1.0           # bar width (slot = 1): the bars of a cluster touch
-CGAP = 0.45        # between the FP32 and FP16 clusters
-GGAP = 2.3         # between workloads
+CGAP = 0.6         # between the FP32 and FP16 clusters
+GGAP = 1.6         # between workloads
 FP16_BAND = "#f3f1ec"
 OURS_INK = "#a8521a"  # WISEConv labels: a darker step of the WISEConv orange
 TRUNC = "#c62828"     # the truncation mark
@@ -57,6 +58,10 @@ def panel(ax, platform, left, bottom_row):
                 x += CGAP
             c0 = x
             cell = data.get((platform, wl, dtype))
+            if cell:
+                paths = [p for p in paths if p in cell]
+            else:
+                paths = ("dense", "wiseconv")  # width of the "no FP16" note
             if dtype == "fp16":
                 ax.axvspan(c0 - 0.5, c0 + len(paths) - 0.5, color=FP16_BAND, lw=0, zorder=0.5)
             if not cell:

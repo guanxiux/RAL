@@ -3,7 +3,7 @@
 \centering
 \caption{Task accuracy on RTX~3080 (mAP over IoU 0.5--0.95). Dense runs the unmasked model; the three masked paths consume the same layer masks.}
 \label{tab:e2e-accuracy}
-\footnotesize
+\small
 \setlength{\tabcolsep}{3.2pt}
 \begin{tabular}{@{}llcccc@{}}
 \toprule
@@ -16,7 +16,9 @@
  & Gather-scatter & 1.888 & 0.639 & 0.209 & 86.68 \\
  & \sysname & 1.888 & 0.640 & 0.210 & 86.68 \\
 \midrule
-\multirow{2}{*}{FP16} & Dense & 1.903 & 0.633 & 0.205 & 88.06 \\
+\multirow{4}{*}{FP16} & Dense & 1.903 & 0.633 & 0.205 & 88.06 \\
+ & Tile skipping & 1.889 & 0.637 & 0.208 & 86.65 \\
+ & Gather-scatter & 1.889 & 0.636 & 0.208 & -- \\
  & \sysname & 1.889 & 0.639 & 0.210 & 86.66 \\
 \bottomrule
 \end{tabular}
