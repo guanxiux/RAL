@@ -48,7 +48,7 @@ per-frame position selection imposed by the mask conflicts with the contiguous
 coordinate assumption that sustains throughput, placing these two
 axes in tension.
 
-Existing systems sacrifice one axis for the other.
+The two existing execution paradigms each sacrifice one axis for the other.
 \emph{Gather-scatter}~\cite{sai,dgnet,dynconv} extracts exactly the
 active positions into a packed representation, computes, and
 scatters the results back, but is bottlenecked by the memory traffic of
@@ -63,21 +63,22 @@ wastes 32.6\% of issued operations, reducing latency by 36.9\%, slower
 than gather-scatter despite its throughput advantage
 (\S\ref{sec:bg:gap}).
 
-We find that redirecting a dense tiled pipeline to compute only scattered
-active positions achieves both a high useful-compute ratio and the throughput
-of dense execution. We collect these
-positions into a worklist and characterize (\S\ref{sec:char}) the resulting tiled execution on a
-desktop and an embedded GPU, identifying why: because the input stays a dense
-grid, the irregularity reduces to one index per output row, outside the
-reduction loop that drives coalesced channel loads and weight-tile reuse, so
-per-tile throughput matches dense execution. When the tile configuration follows the
-worklist length, convolution time is affine in the active ratio with a slope matching
-the dense marginal cost; the residual gap is an intercept of 5.6--17.4\% of
-dense time per layer (median per GPU and precision), dominated by kernel launch latency and fixed per-tile stalls such as barriers,
-not by throughput loss.
+Contrary to the expectation that scattered work breaks dense efficiency, we
+find that restricting a dense tiled pipeline to scattered active positions
+largely preserves its per-tile throughput. We collect these positions into a
+worklist and characterize the resulting execution on a desktop and an embedded
+GPU (\S\ref{sec:char}), identifying why: because the input stays a dense grid,
+every neighbor of an active position lies at a fixed offset from it, so the
+irregularity reduces to one index per output row, outside the reduction loop
+that drives coalesced channel loads and weight-tile reuse. Hardware counters
+confirm it: a worklist tile executes the same instructions as a dense tile and
+spends 0.98--1.04$\times$ its SM cycles. When the tile configuration follows the worklist length,
+convolution time is affine in the active ratio with a slope matching the dense
+marginal cost; the residual gap is an intercept of 5.6--17.4\% of dense time
+per layer (median per GPU and precision), dominated by kernel launch latency
+and fixed per-tile stalls such as barriers, not by throughput loss.
 
-While this finding establishes that worklist-driven tiled execution can
-sustain both axes, closing the gap end to end requires solving two further
+Turning this finding into end-to-end latency reduction requires solving two
 challenges.
 First, \emph{worklist construction cost}: deriving the worklist from the
 mask requires scanning the whole grid and costs time independent of the active count, so construction's share of
@@ -91,9 +92,14 @@ non-negligible cost per decision point (\S\ref{sec:char}).
 
 Based on these findings, we present \sysname
 (\textbf{W}orklist-dr\textbf{I}ven ma\textbf{S}k\textbf{E}d
-\textbf{Conv}o\-lu\-tion), which drives the dense tiled pipeline with an
-active-output worklist to achieve both a high useful-compute ratio and high
-throughput by co-designing worklist construction and consumption.
+\textbf{Conv}o\-lu\-tion), which drives the unchanged dense pipeline with an
+active-output worklist. This establishes \emph{worklist-driven tiled
+execution} as a third paradigm for masked convolution, beside tile skipping
+and gather-scatter: it retains the dense pipeline, as tile skipping does, and
+computes only active positions, as gather-scatter does, because the worklist
+enters a tile only as its row indices and leaves the reduction, the tensor and
+weight layouts, and the dense kernel's configuration space unchanged. Around this compute stage, \sysname co-designs worklist
+construction and consumption to meet the two challenges.
 To reduce construction cost, a single mask-space pass fuses output-mask
 propagation with per-tile compaction, operating on only mask and coordinate
 metadata; compatible operators reuse the worklist instead of
@@ -105,16 +111,17 @@ where its expected gain exceeds the selection overhead.
 
 This paper makes the following contributions:
 \begin{itemize}
-  \item We characterize worklist-driven tiled execution, 
-        identifying why computing scattered active positions preserves
-        dense-level throughput and where the remaining gap comes from.
-        These findings motivate and constrain the design
-        (\S\ref{sec:char}).
+  \item We characterize worklist-driven tiled execution on two GPUs,
+        showing that a worklist tile matches a dense tile in instructions and
+        SM cycles and that the remaining gap is a per-layer fixed cost. These
+        findings motivate and constrain the design (\S\ref{sec:char}).
 
-  \item We present \sysname, which co-designs worklist construction,
-        worklist-driven tiled compute, and cost-aware tile selection to
-        jointly sustain high useful-compute ratio and high throughput
-        (\S\ref{sec:design}).
+  \item We present \sysname, which establishes worklist-driven tiled
+        execution as a paradigm for masked convolution, in which an implicit
+        GEMM over the dense input indexes only its output rows, and which
+        co-designs worklist construction and reuse, a persistent
+        worklist-driven compute stage, and cost-aware tile selection around
+        it (\S\ref{sec:design}).
 
   % geomean over 44 workload-device-precision cases (fastest available baseline, dense included), 2026-11-14
   \item We evaluate \sysname on four workloads across six GPUs. \sysname

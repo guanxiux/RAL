@@ -1,13 +1,12 @@
 \section{Conclusion}
 \label{sec:conclusion}
 
-We presented \sysname, a masked-convolution runtime that replaces the dense
-tiled pipeline's contiguous coordinate stream with an active-output worklist,
-computing almost exclusively the positions an upstream mask requires while
-retaining the dense tensor layout and the regular per-position reduction. The
-construction and consumption stages are co-designed to secure both
-useful-compute ratio and throughput; our ablation confirms that disabling any
-single mechanism degrades one axis without improving the other. The resulting
-higher effective throughput lets \sysname convert upstream mask sparsity into
-proportional latency and energy reduction for the latency-critical vision
-tasks where masked convolution applies.
+We presented \sysname, which establishes worklist-driven tiled execution
+for masked convolution: an active-output worklist drives the dense tiled
+pipeline over an input that stays on the dense grid. Because only output rows
+are indexed, a worklist tile executes the instructions and SM cycles of a
+dense tile, and the remaining gap to ideal scaling is a per-layer fixed cost.
+\sysname co-designs worklist construction and consumption around this compute
+stage; our ablation confirms that disabling any single mechanism degrades one
+axis without improving the other. Together these mechanisms turn upstream mask sparsity into lower latency and energy for the
+latency-critical vision tasks where masked convolution applies.

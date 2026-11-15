@@ -94,7 +94,10 @@ agree.
 precision (Figure~\ref{fig:e2e-latency}). In FP32 it runs 1.49--3.23$\times$
 faster than the fastest baseline of each group (geometric mean 2.06$\times$),
 and in FP16, where Dense is the only baseline, 1.27--4.25$\times$ faster
-(2.10$\times$), 2.08$\times$ over all 44 groups. No baseline is consistently
+(2.10$\times$), 2.08$\times$ over all 44 groups. \sysname wins every group
+because worklist-driven tiled execution is the only path whose tiles compute
+only active positions at the per-tile cost of dense tiles (Insight~2), which
+\S\ref{sec:eval:microbenchmarks} quantifies. No baseline is consistently
 second: tile skipping is the
 fastest baseline in 13 of the 24 FP32 groups, gather-scatter in 6, and Dense
 in 5. Gather-scatter varies most, because its per-layer extraction, scatter,
@@ -157,6 +160,9 @@ Gather-scatter issues only required positions ($\eta = 1$), but extraction and
 writeback hold its raw throughput to 2.6--42.0\% of Dense. \sysname keeps
 $\eta$ at 0.91--1.00 and sustains 52.3--76.0\% of Dense raw throughput in
 FP32 (29.6--76.0\% in FP16), the highest effective throughput in every group.
+Its tiles run at the per-tile cost of dense tiles (Insight~2), so the raw
+throughput it gives up is the per-layer fixed cost of construction and launch
+(Insight~4), which weighs most where layers are short, as in FP16.
 
 \input{figures/worklist_efficiency_table}
 
@@ -189,7 +195,11 @@ Figure~\ref{fig:decomposition} shows where each path spends a YOLOv8m frame.
 At b1 in FP32, \sysname cuts convolution from 7.21 to 2.27\,ms at the cost of
 0.17\,ms of construction, and keeps the GPU busy because the compute path never
 returns to the host. Gather-scatter spends the least time in convolution (1.68\,ms) because it
-multiplies compact buffers, but those buffers tie every layer to the host. The
+multiplies compact buffers, but filling and draining them takes another
+1.95\,ms of gather and scatter: moving each receptive field through memory
+costs more than \sysname's tiles reading it in place from the dense input
+(3.63\,ms against 2.44\,ms for \sysname's construction and convolution). The buffers also tie every layer to
+the host. The
 gathered buffer and the GEMM's row count both equal the layer's active count,
 which exists only on the device, so each layer reads the count back before it
 can allocate and launch; launching for the largest possible count would
@@ -239,14 +249,11 @@ whose CTAs beyond the worklist exit, lengthens convolution by 19.4\% and
 Reading $n_W$ back to the host at every layer to launch the exact grid runs
 6.51$\times$ and 5.08$\times$ slower, as Insight~5 predicts.
 
-The tile-configuration variants keep \sysname's selection mechanism (the same
-layers follow the worklist length, through the same producers and candidate
-nodes) and change only the candidates, so they isolate what following $n_W$
-gains. Fixing every candidate to the configuration fastest at $\alpha = 1$
-runs 1.71$\times$ and 1.28$\times$ slower; fixing it to the configuration with
-the lowest expected latency over a uniform $n_W$ runs 1.10$\times$ slower on
-both GPUs. The
-configuration with the best expected speedup (speedup-optimal) comes within
+The tile-configuration variants isolate what following $n_W$ gains. Fixing
+every layer to the configuration fastest at $\alpha = 1$ runs 1.71$\times$ and
+1.28$\times$ slower; fixing it instead to the configuration with the lowest
+expected latency over a uniform $n_W$ runs 1.10$\times$ slower on both GPUs.
+The configuration with the best expected speedup (speedup-optimal) comes within
 1.6\% of \sysname on RTX~3080 but runs 1.09$\times$ slower on AGX Orin, where
 its convolution takes 3.83 instead of 3.34\,ms. The two GPUs differ in how
 many layers follow the length: the selection (\S\ref{sec:design:select}) adds
@@ -260,15 +267,18 @@ so the frame runs 1.07$\times$ and 1.02$\times$ slower; it loses most on
 RTX~3080, where the gains that the cost model declines are smallest.
 
 The zero-cost oracle runs the same candidates as Cost-unaware $K_{\max}$ on a
-graph captured for each frame's own $n_W$, with no selection mechanism. It
-runs at 0.92$\times$ and 0.88$\times$ \sysname's latency. Because both pick
-the same tile for every layer and frame, the gap between them (0.85 vs.\ 
-0.75\,ms and 3.16 vs.\ 2.79\,ms of convolution, 0.22 vs.\ 0.15\,ms and 0.65
-vs.\ 0.41\,ms of construction) is the cost of the device-side mechanism
-itself, not of the configuration choice. Current GPUs follow a device-resident
-length only by reconfiguring the graph (\S\ref{sec:char:cost}), so this margin
-is a hardware limit that software selection cannot remove; a launch predicate
-evaluated by the hardware would recover it (\S\ref{sec:eval:discussion}).
+graph captured for each frame's own $n_W$, with no selection mechanism; only
+the replay is timed, not the capture. It runs at 0.92$\times$ and
+0.88$\times$ \sysname's latency. Because both pick the same tile for every
+layer and frame, the gap between them (0.85 vs.\ 0.75\,ms and 3.16 vs.\
+2.79\,ms of convolution, 0.22 vs.\ 0.15\,ms and 0.65 vs.\ 0.41\,ms of
+construction) is the cost of the device-side mechanism itself, not of the
+configuration choice. Every mechanism that current GPUs offer for acting on a
+device-resident length pays per decision point, and the device-updatable node
+that \sysname uses is the cheapest of those measured in
+\S\ref{sec:char:cost}; this margin is therefore what following $n_W$ costs on
+current GPUs. A launch predicate evaluated before CTA allocation would remove
+it (\S\ref{sec:eval:discussion}).
 
 \subsection{Discussion}
 \label{sec:eval:discussion}

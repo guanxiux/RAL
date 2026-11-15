@@ -5,15 +5,16 @@
 \subsection{Overview}
 \label{sec:overview}
 % fig:overview is defined in characterization.tex so that it floats to the top of the Design section page.
-\sysname exploits the fact that dense tiled convolution is driven by output
-coordinates: each coordinate determines the receptive-field reads and output
-write, while the reduction over channels and kernel offsets remains regular.
-Replacing the dense coordinate sequence with an active-output worklist
-introduces position-level selectivity into the tiled pipeline without altering
-the reduction datapath (Figure~\ref{fig:overview}).
+\sysname realizes worklist-driven tiled execution. Dense tiled convolution is
+driven by output coordinates: each coordinate determines the receptive-field
+reads and the output write, while the reduction over channels and kernel
+offsets stays regular. Replacing each tile's dense coordinate block with
+entries of an active-output worklist introduces position-level selectivity
+into the tiled pipeline without altering its reduction datapath
+(Figure~\ref{fig:overview}).
 
-The characterization shows that a worklist tile keeps the per-tile throughput
-of dense execution (\S\ref{sec:char:reduction}). What remains between this
+The characterization shows that a worklist tile matches a dense tile in
+instructions and SM cycles (\S\ref{sec:char:reduction}). What remains between this
 selectivity and end-to-end latency reduction are the costs isolated by
 Insights~4 and~5: each construction pass costs nearly constant time whatever
 the activity (\S\ref{sec:char:bound}), and following the worklist length requires a choice
@@ -118,15 +119,17 @@ and the compute stage must consume a length that only the device knows.
 \subsection{Worklist-Driven Tiled Compute}
 \label{sec:design:compute}
 
-The compute stage keeps the dense kernel's implicit-GEMM mapping and changes
-only which output positions a tile covers. Dense convolution maps to a GEMM
-with $M$ output positions, $N=C_{out}$, and reduction depth $k^2C_{in}$;
-\sysname sets $M=n_{\mathcal{W}}$, so GEMM row $i$ is output position
-$\mathcal{W}[i]$. A configuration $q$ is one point of the dense kernel's
+In worklist-driven tiled execution, selectivity enters a tile only through its
+row indices. Dense convolution maps to a GEMM with $M$ output positions,
+$N=C_{out}$, and reduction depth $k^2C_{in}$; \sysname sets
+$M=n_{\mathcal{W}}$, so GEMM row $i$ is output position $\mathcal{W}[i]$, and
+keeps $N$, the reduction, and the tensor and weight layouts of the dense
+kernel. A configuration $q$ is therefore any point of the dense kernel's
 configuration space: the tile shape $B_M\times B_N$, the reduction step $B_K$,
 and the remaining tiling parameters such as warp layout, pipeline depth, and a
-reduction split within or across CTAs~\cite{cutlass}. \sysname adds no
-parameter to this space.
+reduction split within or across CTAs~\cite{cutlass}. Because this space stays
+intact, the configuration can follow $n_{\mathcal{W}}$
+(\S\ref{sec:design:select}).
 
 \begin{algorithm}[t]
 \caption{Worklist-Driven Tiled Compute (configuration $q$)}
@@ -164,10 +167,12 @@ static launch serves every length and every frame. Each tile reads its $B_M$
 worklist entries once (line~4); the reduction (lines~6--12) then walks the
 kernel offsets and channel slices exactly as dense execution does. Because the
 input stays a dense grid, every neighbor of an active position lies at a fixed
-offset from that position, so the worklist sets only each row's base address
-and the addresses inside the reduction loop remain affine. The irregularity is
-$B_M$ indexed loads per tile outside the reduction, while channel-contiguous
-loads and weight-tile reuse are those of the dense kernel (Insight~2). The
+offset from that position: the row's worklist entry and the tap's offset give
+each input address, so the addresses inside the reduction loop remain affine
+and no kernel map is read, where a sparse-input implicit GEMM reads one map
+entry per row and tap inside the loop (\S\ref{sec:bg:related}). The irregularity is $B_M$ indexed loads per
+tile outside the reduction, while channel-contiguous loads and weight-tile
+reuse are those of the dense kernel (Insight~2). The
 epilogue stores only positions active in $M_{out}$ (line~13), so the padding
 of the last tile and the superset entries inherited through reuse produce no
 writes. That padding is the only issued work beyond the worklist:

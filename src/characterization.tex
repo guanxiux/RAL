@@ -1,4 +1,4 @@
-\section{Characterizing Worklist-Driven Convolution}
+\section{Characterizing Worklist-Driven Tiled Execution}
 \label{sec:char}
 
 \providecommand{\tbd}[1]{\textcolor{red}{#1}}
@@ -9,11 +9,11 @@
   \fbox{\parbox[c][#1][c]{\dimexpr\columnwidth-2\fboxsep-2\fboxrule\relax}{\centering\small\sffamily #2}}}
 
 Before presenting \sysname, we characterize what worklist-driven tiled
-convolution achieves and where it falls short. We study the compute stage
-(a dense tiled implicit-GEMM kernel redirected to compute only positions
-from a worklist; \S\ref{sec:design:compute})
-and the construction stage (a mask-to-worklist pass) separately, so that each
-finding belongs to the execution model, not to a particular implementation.
+execution achieves and where it falls short. We study its compute stage (the
+dense implicit-GEMM kernel with its GEMM rows taken from a worklist;
+\S\ref{sec:design:compute}) and its construction stage (a mask-to-worklist
+pass) separately, so that each finding belongs to the paradigm, not to a
+particular implementation.
 FP16 uses \texttt{mma.sync} tensor cores; FP32 is a SIMT kernel of the same
 structure. Each configuration is timed in isolation inside CUDA graphs on
 RTX~3080 (68~SMs) and Jetson AGX Orin (16~SMs) at locked clocks, using
@@ -66,9 +66,9 @@ gap to 2.0--2.6$\times$ at $\alpha \le 0.05$, at the price of running
 9.2--18.7\% slower than dense at $\alpha = 1$, and remains 11.2--16.5\% slower
 than the per-length best in expected time.
 
-\insight{1}{The latency of worklist-driven tiled convolution is affine in the
-active ratio at dense marginal cost only when the tile configuration
-follows the worklist length.}
+\insight{1}{Under worklist-driven tiled execution, convolution latency is
+affine in the active ratio at dense marginal cost only when the tile
+configuration follows the worklist length.}
 
 % ===========================================================================
 \subsection{Why Per-Tile Throughput Matches Dense}
