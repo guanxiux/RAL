@@ -14,9 +14,10 @@
   \Description{Top: a grayscale street scene seen from a vehicle, overlaid with
   a grid whose cells around a pedestrian and a car are marked red as active;
   the WISEConv trajectory steers away earlier than the dense one. Bottom: from
-  the camera, the dense path sends the whole grid to the GPU, while WISEConv
-  packs the red cells into a worklist for the GPU; its prediction and planning
-  finish earlier on the timeline.}
+  the camera, the dense path convolves the whole input grid into the whole
+  output grid, while WISEConv collects the red cells into a worklist and
+  computes only the required outputs; its prediction and planning finish
+  earlier on the timeline.}
   \label{fig:teaser}
 \end{figure}
 
