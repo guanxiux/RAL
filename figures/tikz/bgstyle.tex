@@ -1,6 +1,6 @@
 % Shared style of the Background schematics (bg_*.tex).  Colors follow figures/bar_patterns.py: each hue keeps one
-% meaning across the paper (light red with a red outline = active / required position (as in the intro figure), orange = WISEConv, slate steps = the baselines (tile skipping, gather-scatter
-% extra data), dotted gray = wasted computation, as in fig:gap).  Drawn at \columnwidth (241 pt), included unscaled.  Cell fills and
+% meaning across the paper (light red with a red outline = active / required position (as in the intro figure), orange = WISEConv, slate steps = the baselines' bars and extra data (tile skipping, gather-scatter), purple = the baseline
+% frames, dotted gray = wasted computation, as in fig:gap).  Drawn at \columnwidth (241 pt), included unscaled.  Cell fills and
 % the dark-navy rules come from the authors' original schematics (input C1E5F5; weights now a light yellow F6E2A6 and required a light red F9CDCD);
 % the SM fill is a lighter step of their D9D9D9 so that it stays apart from the wasted gray.
 \usepackage[T1]{fontenc}
@@ -17,7 +17,7 @@
 \definecolor{gather}{HTML}{7F98AF}
 \definecolor{wasted}{HTML}{DDDDDD}
 \definecolor{wastedink}{HTML}{9A9A9A}
-\definecolor{baseline}{HTML}{6A86A0}  % the slate of the baseline bars (bar_patterns.py tile_skip)
+\definecolor{baseline}{HTML}{7660A6}  % the purple of the Dense frame in the intro figure (fig:teaser)
 \definecolor{infill}{HTML}{C1E5F5}
 \definecolor{wfill}{HTML}{F6E2A6}
 \definecolor{smfill}{HTML}{EAEAEA}
@@ -53,15 +53,15 @@
   \node[cell=#3, #4] at (#1, #2) {};}
 
 % \figframe{baseline|ours}{tag}: an outer frame around the whole schematic, placed last in the tikzpicture.  Baselines
-% (fig:masked-conv, fig:tile-skip, fig:gather-scatter) get a dashed slate frame (the baselines' bar color), WISEConv
-% (fig:overview) a solid orange one,
-% each with its tag on the top edge.
+% (fig:masked-conv, fig:tile-skip, fig:gather-scatter) get a dashed purple frame, WISEConv (fig:overview) a solid orange
+% one, each with its tag on the top edge.  Colors and widths follow the frames of the intro figure (fig:teaser, purple
+% Dense and orange WISEConv, 2026-11-15): both 0.9 pt, read off the figure at \columnwidth (about 5 px of 1280).
 \tikzset{
-  baselineframe/.style={draw=baseline, line width=0.6pt, dash pattern=on 2.4pt off 1.4pt, rounded corners=3pt},
-  oursframe/.style={draw=wiseconv!85!black, line width=0.9pt, rounded corners=3pt},
-  baselinetag/.style={fill=white, inner xsep=1.4pt, inner ysep=0.6pt, anchor=west, text=baseline!80!black,
+  baselineframe/.style={draw=baseline, line width=0.9pt, dash pattern=on 2.4pt off 1.4pt, rounded corners=3pt},
+  oursframe/.style={draw=wiseconv, line width=0.9pt, rounded corners=3pt},
+  baselinetag/.style={fill=white, inner xsep=1.4pt, inner ysep=0.6pt, anchor=west, text=baseline!70!black,
                       font=\fontsize{7.4}{8}\selectfont\bfseries},
-  ourstag/.style={baselinetag, text=wiseconv!85!black},
+  ourstag/.style={baselinetag, text=wiseconv!80!black},
 }
 \newcommand{\figframe}[2]{%
   \coordinate (ff-sw) at ($(current bounding box.south west)+(-0.9,-0.9)$);

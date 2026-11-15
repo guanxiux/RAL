@@ -4,12 +4,13 @@
 \begin{figure}[t]
   \centering
   \includegraphics[width=\columnwidth]{figures/demo.png}
-  \caption{Perception latency decides whether a vehicle can react in time.
-  Only the active positions (red) of a frame need to be recomputed;
-  dense convolution still computes all of them. \sysname collects the active
-  positions into a worklist and drives the dense tiled pipeline with it, which
-  keeps the throughput of dense execution, so prediction and planning start
-  earlier and the vehicle steers away sooner.}
+  \caption{Dense convolution, the baseline, computes every position of every
+  frame; \sysname runs the same dense tiled pipeline but drives it with a
+  worklist of only the active positions (red), so it skips the inactive work
+  while each tile runs at the throughput of a dense tile. In this driving scene
+  only the cells around the pedestrian and the car change, so the shorter
+  convolution lets the downstream prediction and planning finish earlier and
+  the vehicle steer away sooner.}
   \Description{Top: a grayscale street scene seen from a vehicle, overlaid with
   a grid whose cells around a pedestrian and a car are marked red as active;
   the WISEConv trajectory steers away earlier than the dense one. Bottom: from

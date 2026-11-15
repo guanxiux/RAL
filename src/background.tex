@@ -47,7 +47,8 @@ feature grid, so a single masked-convolution runtime serves them all.
 \begin{figure}[b]
   \centering
   \includegraphics[width=\columnwidth]{figures/tikz/bg_conv.pdf}
-  \caption{Masked convolution and its dense execution. Each output $y_p$ aggregates its receptive
+  \caption{Masked convolution on the running example, executed by the dense
+  baseline. Each output $y_p$ aggregates its receptive
   field $\mathcal{N}(p)$ in $\mathbf{x}$ with the weights $\mathbf{f}$.
   Dense convolution computes every output in tiles of contiguous positions,
   which keeps loads coalesced and each weight tile reused across the tile, so
@@ -134,11 +135,11 @@ and required work.
 \begin{figure}[t]
   \centering
   \includegraphics[width=\columnwidth]{figures/tikz/bg_tileskip.pdf}
-  \caption{Tile skipping on the example of Figure~\ref{fig:masked-conv}.
-  It keeps the dense tiled pipeline, so each issued tile runs at dense
-  throughput without extra passes, and skips only tiles with no active
-  position. A partially active tile still runs in full, so its inactive
-  (dotted) outputs are wasted computation.}
+  \caption{Tile skipping, the baseline that keeps the dense tiled pipeline and
+  skips only tiles with no active position, on the example of
+  Figure~\ref{fig:masked-conv}. Each issued tile runs at dense throughput
+  without extra passes, but a partially active tile still runs in full, so its
+  inactive (dotted) outputs are wasted computation.}
   \Description{Two SMs process mask tiles: tiles with active positions are
   computed in full, and an all-inactive tile is skipped.}
   \label{fig:tile-skip}
@@ -147,11 +148,11 @@ and required work.
 \begin{figure}[t]
   \centering
   \includegraphics[width=\columnwidth]{figures/tikz/bg_gather.pdf}
-  \caption{Gather-scatter on the example of
-  Figure~\ref{fig:masked-conv}. To compute only active outputs, it copies their
-  receptive fields into a packed buffer (gather) so that a GEMM can process
-  them as contiguous rows, then writes the packed results back into
-  $\mathbf{y}$ (scatter). No computation is wasted, but the two extra passes
+  \caption{Gather-scatter, the baseline that computes only active outputs by
+  packing them into contiguous rows, on the example of
+  Figure~\ref{fig:masked-conv}. It copies their receptive fields into a packed
+  buffer (gather), runs a GEMM over the rows, and writes the packed results
+  back into $\mathbf{y}$ (scatter). No computation is wasted, but the two extra passes
   over memory, not the computation, dominate its latency.}
   \Description{Receptive fields of active positions are gathered into a
   packed column, split across two SMs, and the packed outputs are scattered
