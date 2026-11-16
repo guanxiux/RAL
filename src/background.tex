@@ -47,17 +47,23 @@ feature grid, so a single masked-convolution runtime serves them all.
 \begin{figure}[b]
   \centering
   \includegraphics[width=\columnwidth]{figures/tikz/bg_conv.pdf}
-  \caption{Masked convolution on the running example, executed by the dense
-  baseline. Each output $y_p$ aggregates its receptive
-  field $\mathcal{N}(p)$ in $\mathbf{x}$ with the weights $\mathbf{f}$.
+  \caption{Masked convolution executed by the dense baseline, on the example
+  that Figures~\ref{fig:tile-skip}, \ref{fig:gather-scatter}
+  and~\ref{fig:overview} reuse: a $3\times3$ convolution with padding 1 on a
+  $4\times4$ grid.
+  Each output $y_p$ aggregates its receptive field $\mathcal{N}(p)$, the
+  $3\times3$ window of the padded $\mathbf{x}$ around $p$ (padding marked
+  --), with the weights $\mathbf{f}$.
   Dense convolution computes every output in tiles of contiguous positions,
   which keeps loads coalesced and each weight tile reused across the tile, so
   it runs at high throughput; but only the outputs active in $M_{out}$
   (red) are required, and the throughput spent on the rest (dotted) is
   wasted.}
-  \Description{An input grid, a kernel, and an output grid whose active positions
-  are red and inactive positions dotted; a dashed red box marks the receptive
-  field of one active output.}
+  \Description{An input grid with a ring of padding, the receptive fields of all sixteen positions
+  laid out as the grid of positions with the four corners drawn and the rest
+  elided, a kernel, and an output grid whose active positions are red and
+  inactive positions dotted; a dashed red box on the input marks the window of the
+  receptive field of output 0 around its nine cells, padding included.}
   \label{fig:masked-conv}
 \end{figure}
 
@@ -187,7 +193,7 @@ For $|\mathcal{C}|>0$, an ideal path achieves $\eta=1$ by issuing only required 
   \end{aligned}
   \label{eq:efficiency-framework-throughput}
 \end{equation}
-where \(t\) denotes the latency of the execution path, including auxiliary mask and coordinate processing, \(k\) is the filter kernel size, and \(C_{in}\) and \(C_{out}\) are the input and output channel counts respectively. The factor of two counts each multiply-accumulate as two FLOPs. Consequently, \(T_{\mathrm{eff}}\) directly characterizes the processing rate of required outputs and therefore determines the realized latency.
+where \(t\) denotes the latency of the execution path, including auxiliary mask and coordinate processing, \(k\) is the filter kernel size, and \(C_{in}\) and \(C_{out}\) are the input and output channel counts respectively. The factor of two counts each multiply-accumulate as two FLOPs. \(T_{\mathrm{eff}}\) therefore determines the realized latency: the rate at which required outputs are produced.
 
 
 % These paths fail for different reasons, so we separate policy sparsity from
@@ -240,36 +246,19 @@ in tensor formats. DPACS~\cite{dpacs} targets the same dynamic 2D spatial
 sparsity but designs a custom dataflow accelerator to handle the resulting
 irregular access patterns.
 
-Worklist-driven tiled execution indexes only the output rows of a tiled GEMM,
-which removes two costs that the coordinate-indexed implicit GEMM of 3D sparse
-convolution pays~\cite{spconv2,torchsparsepp}. A point cloud is itself
-a sparse coordinate set, so these systems first build a kernel map that pairs
-each output with its input neighbors at every kernel offset, by hashing,
-sorting, and global scans that often outlast the GEMM~\cite{torchsparsepp,minuet},
-and then resolve the input row of every (output, offset) pair through the map
-inside the reduction loop; CUTLASS's gather/scatter convolution indexes its
-input the same way~\cite{cutlass}. In masked 2D convolution the input stays on
-the dense grid, so every neighbor of an active output lies at a fixed offset
-from it, and one worklist entry per row fixes all of the row's loads. Both
-costs disappear: the worklist comes from one compaction pass over the mask
-(\S\ref{sec:design:construct}) and holds one entry per active output rather
-than one per output and offset, and the reduction keeps the dense kernel's
-addressing, so a worklist tile executes the instructions of a dense tile
-(\S\ref{sec:char:reduction}). Mixture-of-experts grouped
-GEMM~\cite{scattermoe,megablocks} and the Blackwell TMA row
-gather~\cite{ptxisa} also load rows by index, but rows of a matrix, in which
-no kernel offsets arise.
-
-\sysname selects a tile configuration at every layer of every frame, from a
-length that exists only on the device, for layers that last microseconds, so
-each decision point competes with the gain it buys (\S\ref{sec:char:cost}).
-Kernel selection by problem size elsewhere serves sizes that change per
-request or batch: compilers and inference engines for dynamic shapes tune
-kernels over shape ranges and dispatch among them at run
-time~\cite{dietcode,nimble,tensorrt}, GEMM libraries choose a schedule per
-problem size~\cite{streamkpp}, and DA-MoE selects fused mixture-of-experts
-kernels on the device from each layer's token distribution~\cite{damoe}. Their
-kernels run long enough to absorb a selection step; a masked layer does not.
+The closest mechanism is the kernel-map implicit GEMM of 3D sparse
+convolution~\cite{spconv2,torchsparsepp,cutlass}. Because a point cloud
+is itself a sparse
+coordinate set, these systems build a kernel map that pairs each output with
+its input neighbors at every kernel offset and resolve each pair inside the
+reduction loop; in masked 2D convolution the input stays on a dense grid, so
+one worklist entry per output row suffices and the reduction keeps the dense
+kernel's addressing (\S\ref{sec:char:reduction}).
+Existing tile-configuration selection by problem
+size~\cite{dietcode,nimble,tensorrt,damoe} serves sizes that change per
+request or batch, where kernels run long enough to absorb a selection
+step. A masked convolution layer lasts microseconds, so each decision
+point competes with the gain it buys (\S\ref{sec:char:cost}).
 
 
 % Some 3D systems~\cite{spconv2,torchsparsepp} compute through

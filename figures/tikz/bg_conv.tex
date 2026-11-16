@@ -1,50 +1,102 @@
 \documentclass[tikz,border=1pt]{standalone}
 \input{bgstyle}
-% fig:masked-conv: a 3x3 convolution on a 4x4 grid; the output mask marks positions 0, 5, 9, 12, 14 (the running
-% example of fig:tile-skip and fig:gather-scatter); the receptive field of output 5 is outlined.
+% fig:masked-conv: a 3x3 convolution on a 4x4 grid, drawn as the Dense row of the intro figure (fig:teaser): the input
+% x with its padding ring, the receptive fields N(p) of all 16 positions laid out as the grid of positions (the four
+% corners N(0), N(3), N(12), N(15) drawn, the rest elided; the 3x3 window of N(0) is dashed on x), the weights f, and
+% the output y with the output mask, whose active positions 0, 5, 9, 12, 14 are the running example of fig:tile-skip
+% and fig:gather-scatter.
 \begin{document}
-\begin{tikzpicture}[x=1mm, y=1mm, idx/.append style={font=\fontsize{8.0}{8.4}\selectfont}]
-  \def\c{5}
+\begin{tikzpicture}[x=1mm, y=1mm, idx/.append style={font=\fontsize{6.4}{6.8}\selectfont}]
+  \def\c{3.6}                                     % cell of x and y
+  \def\pc{2.9}                                    % cell of a receptive field and of f
   \def\isact#1{\pgfmathparse{or(or(or(or(#1==0,#1==5),#1==9),#1==12),#1==14)}}
-  % input x
+  \tikzset{small idx/.style={idx, font=\fontsize{5.7}{6.1}\selectfont},
+           window/.style={line width=0.7pt, dash pattern=on 1.6pt off 1pt, rounded corners=1pt}}
+  \def\pad{-}\def\actcol{actred}
+  % cells are filled first and their grid lines drawn once afterwards, so that shared edges keep one width
+  % \padmark{center x}{center y}{half length}: the padding mark, a short rule at the cell's exact center
+  \newcommand{\padmark}[3]{\draw[ink!55, line width=0.5pt, line cap=butt] ({#1-#3}, #2) -- ({#1+#3}, #2);}
+  % \rf{x}{y}{nine entries, row-major; - is padding}{frame color}: one receptive field
+  \newcommand{\rf}[4]{%
+    \foreach \e [count=\k from 0] in {#3} {
+      \pgfmathtruncatemacro\r{\k/3}\pgfmathtruncatemacro\q{mod(\k,3)}
+      \ifx\e\pad
+        \fill[white] (#1+\q*\pc, #2-\r*\pc) rectangle ++(\pc, -\pc);
+        \padmark{#1+\q*\pc+\pc/2}{#2-\r*\pc-\pc/2}{0.4}
+      \else
+        \fill[infill] (#1+\q*\pc, #2-\r*\pc) rectangle ++(\pc, -\pc);
+        \node[small idx] at (#1+\q*\pc+\pc/2, #2-\r*\pc-\pc/2) {$x_{\e}$};
+      \fi}
+    \foreach \k in {1,2} \draw[rule, line width=0.35pt] (#1+\k*\pc, #2) -- ++(0, -3*\pc) (#1, #2-\k*\pc) -- ++(3*\pc, 0);
+    \draw[#4, line width=0.8pt] (#1, #2) rectangle ++(3*\pc, -3*\pc);}
+  % input x inside its padding ring (padded grid 6x6, x at rows/columns 1-4)
+  \begin{scope}[shift={(0,-0.9)}]
+  \begin{scope}[rule!45, line width=0.35pt, dash pattern=on 0.9pt off 0.7pt]
+    \draw (0, 0) rectangle (6*\c, -6*\c);
+    \foreach \k in {1,...,5} \draw (\k*\c, 0) -- ++(0, -\c) (\k*\c, -5*\c) -- ++(0, -\c)
+                                   (0, -\k*\c) -- ++(\c, 0) (5*\c, -\k*\c) -- ++(\c, 0);
+  \end{scope}
+  \foreach \i in {0,...,5} \foreach \j in {0,...,5} {
+    \pgfmathtruncatemacro\inside{and(and(\i>0,\i<5),and(\j>0,\j<5))}
+    \ifnum\inside=0 \padmark{\i*\c+\c/2}{-\j*\c-\c/2}{0.5}\fi}
   \foreach \i in {0,...,15} {
     \pgfmathtruncatemacro\r{\i/4}\pgfmathtruncatemacro\q{mod(\i,4)}
-    \node[cell=\c mm, inp] at (\q*\c, -\r*\c) {};
-    \node[idx] at (\q*\c+\c/2, -\r*\c-\c/2) {$x_{\i}$};
+    \fill[infill] (\c+\q*\c, -\c-\r*\c) rectangle ++(\c, -\c);
+    \node[idx] at (\c+\q*\c+\c/2, -\c-\r*\c-\c/2) {$x_{\i}$};
   }
+  \foreach \k in {0,...,4} \draw[rule, line width=0.35pt] (\c+\k*\c, -\c) -- ++(0, -4*\c) (\c, -\c-\k*\c) -- ++(4*\c, 0);
+  % the 3x3 window of N(0), padding included, drawn just outside its nine cells
+  \draw[actred, window] (-0.4, 0.4) rectangle ++(3*\c+0.8, -3*\c-0.8);
+  \end{scope}
+  \draw[flow] (22.0,-11.7) -- (23.8,-11.7);
+  % receptive fields in the layout of the positions: N(0) ... N(3) / ... / N(12) ... N(15)
+  \rf{24.4}{0}{-,-,-,-,0,1,-,4,5}{actred}
+  \rf{39.1}{0}{-,-,-,2,3,-,6,7,-}{wastedink}
+  \rf{24.4}{-14.7}{-,8,9,-,12,13,-,-,-}{actred}
+  \rf{39.1}{-14.7}{10,11,-,14,15,-,-,-,-}{wastedink}
+  % ellipses as three dots centered in the gaps (the TeX glyphs sit off center)
+  \foreach \x/\y/\a in {36.1/-4.35/0, 36.1/-19.05/0, 28.75/-11.7/90, 43.45/-11.7/90, 36.1/-11.7/-45}
+    \foreach \k in {-1,0,1} \fill[ink] ($(\x,\y)+(\a:\k*1.1)$) circle (0.22);
+  % labels of the drawn receptive fields
+  \draw[actred, line width=0.6pt, rounded corners=1.5pt] (5.4, -0.5) -- (5.4, 3.2) -- (28.75, 3.2) -- (28.75, 0.0);
+  \node[fill=white, inner sep=1pt, text=actred] at (17.1, 3.2) {$\mathcal{N}(0)$};
+  \draw[wastedink, line width=0.5pt] (43.45, 0.0) -- (43.45, 2.2);
+  \node[anchor=south, inner sep=0.6pt, text=ink!80] at (43.45, 2.2) {$\mathcal{N}(3)$};
+  % receptive fields of active outputs (0 and 12) in red, the others in gray
+  \foreach \x/\n/\col in {28.75/12/actred, 43.45/15/wastedink} {
+    \draw[\col, line width=0.5pt] (\x, -23.4) -- (\x, -24.4);
+    \node[anchor=north, inner sep=0.6pt, text=\ifx\col\actcol actred\else ink!80\fi] at (\x, -24.4) {$\mathcal{N}(\n)$};}
   % weights f
   \foreach \i in {0,...,8} {
     \pgfmathtruncatemacro\r{\i/3}\pgfmathtruncatemacro\q{mod(\i,3)}
-    \node[cell=\c mm, wgt] at (26+\q*\c, -2.5-\r*\c) {};
-    \node[idx] at (26+\q*\c+\c/2, -2.5-\r*\c-\c/2) {$f_{\i}$};
+    \fill[wfill] (51.8+\q*\pc, -7.35-\r*\pc) rectangle ++(\pc, -\pc);
+    \node[small idx] at (51.8+\q*\pc+\pc/2, -7.35-\r*\pc-\pc/2) {$f_{\i}$};
   }
+  \foreach \k in {0,...,3} \draw[rule, line width=0.35pt] (51.8+\k*\pc, -7.35) -- ++(0, -3*\pc) (51.8, -7.35-\k*\pc) -- ++(3*\pc, 0);
   % output y with the mask
-  \foreach \i in {0,...,15} {
-    \pgfmathtruncatemacro\r{\i/4}\pgfmathtruncatemacro\q{mod(\i,4)}
-    \isact{\i}
-    \ifnum\pgfmathresult=1 \actbox (49+\q*\c, -\r*\c) rectangle ++(\c, -\c);
-    \else \path[waste] (49+\q*\c, -\r*\c) rectangle ++(\c, -\c); \fi
-    \node[idx] at (49+\q*\c+\c/2, -\r*\c-\c/2) {$y_{\i}$};
-  }
-  \foreach \k in {0,...,4} \draw[rule, line width=0.35pt] (49+\k*\c, 0) -- ++(0, -20) (49, -\k*\c) -- ++(20, 0);
-  \node[op] at (23.2, -10) {$\otimes$};
-  \node[op] at (45.6, -10) {$=$};
-  % receptive field of output 5
-  \draw[actred, line width=0.6pt, dash pattern=on 1.6pt off 1pt, rounded corners=1.2pt]
-    (-0.6, 0.6) rectangle (15.25, -15.25);
-  \draw[actred, line width=0.8pt] (54, -5) rectangle (59, -10);
-  \draw[flow, draw=actred, rounded corners=1.5pt] (7.5, 0.7) -- (7.5, 4.2) -- (56.5, 4.2) -- (56.5, -5);
-  \node[fill=white, inner sep=1pt, text=actred] at (32, 4.2) {receptive field $\mathcal{N}(5)$};
+  \begin{scope}[shift={(64.6,-4.5)}]
+    \foreach \i in {0,...,15} {
+      \pgfmathtruncatemacro\r{\i/4}\pgfmathtruncatemacro\q{mod(\i,4)}
+      \isact{\i}
+      \ifnum\pgfmathresult=1 \actbox (\q*\c, -\r*\c) rectangle ++(\c, -\c);
+      \else \path[waste] (\q*\c, -\r*\c) rectangle ++(\c, -\c); \fi
+      \node[idx] at (\q*\c+\c/2, -\r*\c-\c/2) {$y_{\i}$};
+    }
+    \foreach \k in {0,...,4} \draw[rule, line width=0.35pt] (\k*\c, 0) -- ++(0, -4*\c) (0, -\k*\c) -- ++(4*\c, 0);
+  \end{scope}
+  \node[op] at (49.8, -11.7) {$\otimes$};
+  \node[op] at (62.6, -11.7) {$=$};
   % labels
-  \node[title] at (10, -21.2) {Input $\mathbf{x}$};
-  \node[title] at (33.5, -21.2) {Weights $\mathbf{f}$};
-  \node[title] at (59, -21.2) {Output $\mathbf{y}$};
-  % legend
-  \begin{scope}[shift={(-3.0, -26.6)}]
-    \actbox (0, 0) rectangle ++(2.6, -2.6); \draw[rule, line width=0.35pt] (0, 0) rectangle ++(2.6, -2.6);
-    \node[anchor=west] at (3.0, -1.3) {active in $M_{out}$ (required)};
-    \path[waste] (40, 0) rectangle ++(2.6, -2.6); \draw[rule, line width=0.35pt] (40, 0) rectangle ++(2.6, -2.6);
-    \node[anchor=west] at (43.0, -1.3) {inactive (wasted if computed)};
+  \node[title] at (10.8, -28.2) {Input $\mathbf{x}$ (padded)};
+  \node[title] at (36.1, -28.2) {Receptive fields};
+  \node[title] at (56.15, -28.2) {Weights $\mathbf{f}$};
+  \node[title] at (71.8, -28.2) {Output $\mathbf{y}$};
+  % legend, top right
+  \begin{scope}[shift={(48.6, 5.4)}, every node/.style={font=\fontsize{7}{8}\selectfont, anchor=north west, align=left, inner sep=0.5pt}]
+    \actbox (0, 0) rectangle ++(2.4, -2.4); \draw[rule, line width=0.35pt] (0, 0) rectangle ++(2.4, -2.4);
+    \node at (3.0, 0.2) {active in $M_{out}$ (required)};
+    \path[waste] (0, -3.2) rectangle ++(2.4, -2.4); \draw[rule, line width=0.35pt] (0, -3.2) rectangle ++(2.4, -2.4);
+    \node at (3.0, -3.0) {inactive (wasted if computed)};
   \end{scope}
   \figframe{baseline}{Baseline: Dense}
 \end{tikzpicture}
