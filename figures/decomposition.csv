@@ -4,10 +4,14 @@ batch,dtype,path,total_ms,construction_ms,conv_ms,gather_ms,other_ms,idle_ms,ali
 1,fp32,gather_scatter,12.73547,0.00000,1.68413,1.94916,0.84431,8.25787,0.9669,logs/wise2_eval/rtx_3080_sm86/wildtrack640_yolov8m_select/micro_upd
 1,fp32,wiseconv,2.99771,0.16978,2.26884,0.00000,0.55908,0.00000,0.9989,logs/wise2_eval/rtx_3080_sm86/wildtrack640_yolov8m_select/micro_upd
 1,fp16,dense,3.65598,0.00000,2.55212,0.00000,1.10386,0.00000,1.0007,logs/wise2_eval/rtx_3080_sm86/wildtrack640_yolov8m_select/micro_upd
+1,fp16,tile_skip,11.37382,0.00000,10.57766,0.00000,0.79616,0.00000,1.0005,logs/wise2_eval/rtx_3080_sm86/wildtrack640_yolov8m_select/micro_upd
+1,fp16,gather_scatter,12.59117,0.00000,1.14761,1.81256,0.63887,8.99213,0.9902,logs/wise2_eval/rtx_3080_sm86/wildtrack640_yolov8m_select/micro_upd
 1,fp16,wiseconv,1.44443,0.14509,0.88088,0.00000,0.41846,0.00000,0.9749,logs/wise2_eval/rtx_3080_sm86/wildtrack640_yolov8m_select/micro_upd
 4,fp32,dense,8.00006,0.00000,6.42171,0.00000,1.57835,0.00000,0.9998,logs/wise2_eval/rtx_3080_sm86/wildtrack640_yolov8m_b4_select/micro_upd
 4,fp32,tile_skip,5.04414,0.00000,4.45861,0.00000,0.58552,0.00000,0.9822,logs/wise2_eval/rtx_3080_sm86/wildtrack640_yolov8m_b4_select/micro_upd
 4,fp32,gather_scatter,4.49505,0.00000,1.42501,1.63512,0.56424,0.87069,1.1564,logs/wise2_eval/rtx_3080_sm86/wildtrack640_yolov8m_b4_select/micro_upd
 4,fp32,wiseconv,1.88006,0.05129,1.48904,0.00000,0.33036,0.00935,0.9373,logs/wise2_eval/rtx_3080_sm86/wildtrack640_yolov8m_b4_select/micro_upd
 4,fp16,dense,2.81494,0.00000,1.88202,0.00000,0.93293,0.00000,1.0001,logs/wise2_eval/rtx_3080_sm86/wildtrack640_yolov8m_b4_select/micro_upd
+4,fp16,tile_skip,5.10937,0.00000,4.62831,0.00000,0.48106,0.00000,0.9949,logs/wise2_eval/rtx_3080_sm86/wildtrack640_yolov8m_b4_select/micro_upd
+4,fp16,gather_scatter,4.02773,0.00000,0.70357,1.10648,0.30407,1.91361,0.9954,logs/wise2_eval/rtx_3080_sm86/wildtrack640_yolov8m_b4_select/micro_upd
 4,fp16,wiseconv,0.76302,0.04900,0.50078,0.00000,0.20690,0.00634,0.9676,logs/wise2_eval/rtx_3080_sm86/wildtrack640_yolov8m_b4_select/micro_upd

@@ -19,7 +19,7 @@ WORKLOADS = [("fireflownet", "FireFlowNet"), ("yolov8m_b1", "YOLOv8m b1"), ("yol
 PATHS = ("dense", "tile_skip", "gather_scatter", "wiseconv")
 CLUSTERS = [("fp32", PATHS), ("fp16", PATHS)]
 NAMES = {"dense": "Dense", "tile_skip": "Tile skipping", "gather_scatter": "Gather-scatter", "wiseconv": "WISEConv"}
-CGAP, GGAP, YMAX = 0.25, 0.9, 1.25
+CGAP, GGAP, YMAX = 0.45, 1.0, 1.25
 BW = 0.84  # bar width (slot = 1): a small gap between bars
 FP16_BAND = "#f3f1ec"
 OURS_INK = "#a8521a"

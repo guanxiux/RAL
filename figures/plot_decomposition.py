@@ -23,10 +23,10 @@ NAMES = {"dense": "Dense", "tile_skip": "Tile skipping", "gather_scatter": "Gath
 H = 0.74  # bar height
 
 rows = read("decomposition.csv")
-PANELS = [("fp32", 14.0, [0, 2, 4, 6, 8, 10, 12, 14]), ("fp16", 4.4, [0, 1, 2, 3, 4])]
+PANELS = [("fp32", 14.0, [0, 2, 4, 6, 8, 10, 12, 14]), ("fp16", 14.0, [0, 2, 4, 6, 8, 10, 12, 14])]
 nrows = {d: sum(1 for r in rows if r["dtype"] == d) + 0.5 for d, _, _ in PANELS}
-fig = plt.figure(figsize=(FIG_W, 2.95))
-L, R, T, B, VG = 0.255, 0.97, 0.83, 0.105, 0.12
+fig = plt.figure(figsize=(FIG_W, 3.7))
+L, R, T, B, VG = 0.255, 0.97, 0.865, 0.085, 0.09
 unit = (T - B - VG) / sum(nrows.values())
 top = T
 for pi, (dtype, xmax, xt) in enumerate(PANELS):

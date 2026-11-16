@@ -49,11 +49,17 @@ def affine():
     for dev, dname in DEVICES:
         for p in DTYPES:
             s = load(dev, f"i1_summary_{p}.json")
+            # the coordinate-indexed variant on the same configuration space (experiments/wise2/microbench/indexed,
+            # i1_indexed.py): its per-length best over the same dense time
+            x = load(dev, f"i1_indexed_summary_{p}.json")
+            assert np.allclose(x["worklist"], s["curves"]["best"]), (dev, p)
             for i, a in enumerate(s["alphas"]):
                 rows.append(dict(device=dname, dtype=p.upper(), alpha=a, best=s["curves"]["best"][i],
                                  tuned=s["curves"]["tuned"][i], single=s["curves"]["single"][i], fit_a=s["fit_a"],
                                  fit_b=s["fit_b"], r2_layer_median=s["r2_layer_median"],
-                                 intercept_share_median=s["intercept_share_median"]))
+                                 intercept_share_median=s["intercept_share_median"], indexed=x["indexed"][i],
+                                 indexed_fit_a=x["fit_indexed"][0], indexed_fit_b=x["fit_indexed"][1],
+                                 indexed_ratio_median=x["ratio_median"][i]))
     write("char_affine.csv", rows)
 
 
@@ -77,6 +83,16 @@ def reduction():
                                  **{k: m[k] for k in ("inst", "cycles", "l2_sectors", "dram_bytes")},
                                  r2_min=min(min(m[k + "_r2"]) for k in ("inst", "cycles", "l2_sectors", "dram_bytes"))))
     write("char_reduction_marginal.csv", marg)
+    # the indexed variant (i2_indexed.py): its marginal slope over the dense slope of the same run, and its sectors per
+    # request at the largest prefix over dense
+    ix = []
+    for dev, dname in DEVICES:
+        for p in DTYPES:
+            for m in load(dev, f"i2_indexed_summary_{p}.json"):
+                ix.append(dict(device=dname, dtype=p.upper(), layer=m["layer"], short=short(m["label"]),
+                               inst=m["ix_inst"], cycles=m["ix_cycles"], dram_bytes=m["ix_dram_bytes"],
+                               sectors_per_request=m["ix_spr"] / m["dense_spr"]))
+    write("char_reduction_indexed.csv", ix)
 
 
 def order():

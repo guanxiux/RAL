@@ -35,7 +35,9 @@ non-FFT algorithm.
   reduction split~\cite{cutlass}). The per-length best takes the fastest configuration at each worklist
   length; the two fixed configurations keep one configuration for every length:
   the latency-optimal one has the lowest expected time over a uniform $\alpha$,
-  and the dense-tuned one is the fastest at $\alpha = 1$.}
+  and the dense-tuned one is the fastest at $\alpha = 1$. Indexed is the same
+  kernel reading each row's input from a kernel map at every tap, at its own
+  per-length best.}
   \Description{Four line charts of normalized time against active ratio: the
   per-length best is a straight line above the proportional diagonal; a
   configuration fixed at its alpha = 1 optimum flattens at low activity.}
@@ -52,6 +54,15 @@ b = 0.18$ (FP16), with per-layer $R^2$ medians of 0.985--0.995
 (Figure~\ref{fig:char-affine}). The slope $a$ matches the dense
 marginal cost; the entire departure from proportional is the intercept $b$, a
 per-layer fixed cost analyzed in \S\ref{sec:char:bound}.
+
+Indexing only the output rows is what keeps this slope. We give the same
+kernel and configuration space the addressing of sparse-input implicit GEMM
+(\S\ref{sec:bg:related}): each row reads its input at every tap from a kernel
+map, built in advance by grid arithmetic, the cheapest map a dense grid
+allows. At its own per-length best, this indexed kernel runs 1.06--1.10$\times$
+(RTX~3080) and 1.11--1.16$\times$ (AGX Orin) slower than the worklist kernel
+in FP16 (median over layers, per active ratio) and 1.01--1.05$\times$ in FP32,
+and its FP16 slope rises to $a = 0.87$ and 1.03 (Figure~\ref{fig:char-affine}).
 
 This affine behavior holds only when the configuration follows the worklist
 length. At $\alpha \le 0.05$, the dense-tuned configuration (the fastest at
@@ -82,10 +93,14 @@ configuration follows the worklist length.}
   and two precisions, dot: median). (a)~Global-load sectors per request of the
   median frame. (b)--(d)~Cost of one more tile: the slope over the tile count
   of six worklist prefixes over that of six dense prefixes, so per-launch costs
-  such as the cold weight reads cancel.}
-  \Description{Four dot-and-range panels, one row per layer: sectors per
-  request, instructions, and SM cycles sit at one; DRAM bytes lie between one
-  and 1.4 on 3x3 layers and at one on the 1x1 layer.}
+  such as the cold weight reads cancel. Indexed (triangles): the kernel of
+  Figure~\ref{fig:char-affine} that reads a kernel map at every tap, against
+  the dense tile of the same run.}
+  \Description{Four dot-and-range panels, one row per layer: for worklist
+  tiles, sectors per request, instructions, and SM cycles sit at one and DRAM
+  bytes lie between one and 1.4 on 3x3 layers and at one on the 1x1 layer;
+  indexed tiles sit above one in instructions, SM cycles, and DRAM bytes and
+  below one in sectors per request.}
   \label{fig:char-reduction}
 \end{figure}
 
@@ -105,7 +120,11 @@ instructions as a dense tile on every layer, GPU, and precision, and spends
 fields with their neighbors; the $1\times1$ layer, whose receptive fields do
 not overlap, reads exactly as much as dense. The extra reads do not lengthen
 the tile: its SM cycles stay at dense, so they are hidden behind its
-computation.
+computation. The indexed kernel loses this parity inside the reduction loop.
+Every tap adds a dependent index load ahead of the input copy, so in FP16 an
+indexed tile executes a median 1.15$\times$ the instructions of a dense tile
+and spends 1.23$\times$ its SM cycles (up to 1.68$\times$), and its 4-byte
+index loads lower sectors per request to a median 0.86$\times$ of dense.
 
 \insight{2}{Irregularity is confined to row-level indirection outside the
 reduction loop, leaving channel-contiguous access and weight-tile reuse

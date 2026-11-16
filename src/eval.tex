@@ -82,7 +82,7 @@ agree.
   for YOLOv8m b4), \sysname bars give its speedup over the fastest other path
   of the group, and a red cross marks bars that extend beyond the axis. The dashed line
   is ideal proportional scaling, the mean active ratio $\hat{\alpha}$ given
-  under each workload.}
+  under each workload (FP32 / FP16 where the masks differ).}
   \Description{Six panels, one per GPU. In each, four workloads each show an
   FP32 and an FP16 group of Dense, Tile skipping, Gather-scatter, and WISEConv
   bars, normalized to Dense. WISEConv is the
@@ -112,7 +112,7 @@ costs and make it the fastest baseline on four of the six GPUs in FP32, where
 
 The distance to the ideal line follows worklist length, as Insight~4
 predicts. As a geometric mean over GPUs and precisions, \sysname runs at
-1.61$\times$ the ideal latency on YOLOv8m b4, whose median worklist holds 1{,}382 entries, and
+1.64$\times$ the ideal latency on YOLOv8m b4, whose median worklist holds 1{,}382 entries, and
 at 2.78$\times$ on DynConv, whose median worklist holds 43
 (Table~\ref{tab:worklist-efficiency}), so per-layer fixed costs dominate its
 frame.
@@ -148,9 +148,8 @@ AEE and AP elsewhere) is set by the upstream mask policy.
   $(1-\eta)T$ (dotted) of every path, relative to the raw throughput of Dense
   of the same precision. \sysname bars give its effective throughput.}
   \Description{Two panels (RTX 3080 and AGX Orin). For four workloads, an FP32
-  group of Dense, Tile skipping, Gather-scatter, and WISEConv bars and an FP16
-  group of Dense and WISEConv bars; each bar stacks effective and wasted
-  throughput. WISEConv has the highest effective throughput in every group.}
+  and an FP16 group of Dense, Tile skipping, Gather-scatter, and WISEConv bars;
+  each bar stacks effective and wasted throughput. WISEConv has the highest effective throughput in every group.}
   \label{fig:effective-throughput}
 \end{figure}
 
@@ -159,12 +158,14 @@ Figure~\ref{fig:effective-throughput} explains the end-to-end result with the
 two axes of Eq.~\ref{eq:efficiency-framework-throughput}: a masked path is
 fast only if it is both selective (useful-compute ratio $\eta$) and keeps
 dense throughput ($T$). The two baselines fail on opposite axes. Tile skipping
-keeps the dense tile schedule, reaching 17.5--59.9\% of Dense raw throughput,
-but computes every position of an active tile, so $\eta$ is 0.49--0.74.
-Gather-scatter issues only required positions ($\eta = 1$), but extraction and
-writeback hold its raw throughput to 2.6--42.0\% of Dense. \sysname keeps
-$\eta$ at 0.91--1.00 and sustains 52.3--76.0\% of Dense raw throughput in
-FP32 (29.6--76.0\% in FP16), the highest effective throughput in every group.
+keeps the dense tile schedule, reaching 17.5--59.9\% of Dense raw throughput in
+FP32 (7.9--19.7\% in FP16, where its kernels run on CUDA cores and Dense's on
+tensor cores), but computes every position of an active tile, so $\eta$ is
+0.49--0.80. Gather-scatter issues only required positions ($\eta = 1$), but
+extraction and writeback hold its raw throughput to 2.6--42.0\% of Dense
+(4.4--15.4\% in FP16). \sysname keeps $\eta$ at 0.91--1.00 and sustains
+52.3--76.0\% of Dense raw throughput in FP32 (29.6--73.2\% in FP16), the
+highest effective throughput in every group.
 Its tiles run at the per-tile cost of dense tiles (Insight~2), so the raw
 throughput it gives up is the per-layer fixed cost of construction and launch
 (Insight~4), which weighs most where layers are short, as in FP16.
@@ -248,7 +249,11 @@ FP16) on RTX~3080 and AGX Orin. Rebuilding the worklist at every layer (No
 reuse) nearly doubles construction time (0.16 to 0.30\,ms and 0.48 to
 0.84\,ms) and adds 9.9\% and 6.2\% to frame latency. A shuffled worklist
 lengthens convolution by 4.7\% and 4.4\% and the frame by 2.8\% and 2.6\%, as
-Insight~3 predicts (\S\ref{sec:char:order}). Launching the dense layer's grid,
+Insight~3 predicts (\S\ref{sec:char:order}). Reading every input row from a
+kernel map, as coordinate-indexed implicit GEMM does (Kernel map), raises
+construction to 0.25 and 0.73\,ms with the map build and convolution to 0.96
+and 3.82\,ms with the map lookups, so the frame runs 1.12$\times$ and
+1.14$\times$ slower (\S\ref{sec:char:reduction}). Launching the dense layer's grid,
 whose CTAs beyond the worklist exit, lengthens convolution by 19.4\% and
 13.1\%, the cost that the persistent grid avoids (\S\ref{sec:design:compute}).
 Reading $n_W$ back to the host at every layer to launch the exact grid runs

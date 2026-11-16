@@ -1,6 +1,7 @@
 variant,group,variant_label,construction_ms,convolution_ms,total_ms,ratio,reference,dtype,device,alignment,source
 no_reuse,construction,No reuse,0.3040131632201437,0.8624412329079132,1.58682789557146,1.0985820346629167,ours,fp16,rtx_3080_sm86,1.0417929627765046,logs/wise2_eval/rtx_3080_sm86/wildtrack640_yolov8m_select/ablation_upd
 shuffled,compute,Shuffled order,0.15922490433916656,0.9035249466304722,1.4851329021532609,1.0278308637832732,ours_fix,fp16,rtx_3080_sm86,1.0417929627765046,logs/wise2_eval/rtx_3080_sm86/wildtrack640_yolov8m_select/ablation_upd
+indexed,compute,Kernel map (indexed),0.2537914163399325,0.9632411809103517,1.6227837817207293,1.1234747723531293,ours_recheck,fp16,rtx_3080_sm86,0.9594774737312648,logs/wise2_abl2/rtx_3080_sm86/wildtrack640_yolov8m
 readback,compute,Readback \& launch,0.16023704385769202,0.8748083801804714,9.39889921522315,6.506982800257024,ours,fp16,rtx_3080_sm86,1.0417929627765046,logs/wise2_eval/rtx_3080_sm86/wildtrack640_yolov8m_select/ablation_upd
 full_grid,compute,Full-layer grid,0.1560198811110536,1.0309129890790392,1.6123338668518015,1.1158641147001493,ours_fix,fp16,rtx_3080_sm86,1.0417929627765046,logs/wise2_eval/rtx_3080_sm86/wildtrack640_yolov8m_select/ablation_upd
 dense_tile,selection,Dense-tuned config.,0.15582648469463722,1.8891722213216537,2.4726358684877483,1.7118386631371458,ours,fp16,rtx_3080_sm86,1.0417929627765046,logs/wise2_eval/rtx_3080_sm86/wildtrack640_yolov8m_select/ablation_upd
@@ -11,6 +12,7 @@ oracle,selection,Zero-cost oracle,0.1508359747650604,0.7541419413881738,1.324188
 ours,,Ours,0.1558049783642062,0.8621698672836434,1.4444327737967735,1.0,ours,fp16,rtx_3080_sm86,1.0417929627765046,logs/wise2_eval/rtx_3080_sm86/wildtrack640_yolov8m_select/ablation_upd
 no_reuse,construction,No reuse,0.841378853712204,3.341239024761573,5.997260226884138,1.0618617045246552,ours,fp16,orin_sm87,1.0209836086487925,logs/wise2_eval/orin_sm87/wildtrack640_yolov8m_select/ablation_upd
 shuffled,compute,Shuffled order,0.490831315470955,3.493575764124562,5.805401745520103,1.025736302391214,ours_fix,fp16,orin_sm87,1.0209836086487925,logs/wise2_eval/orin_sm87/wildtrack640_yolov8m_select/ablation_upd
+indexed,compute,Kernel map (indexed),0.7330560173422479,3.824628129538342,6.411808566467555,1.1352607217133115,ours_recheck,fp16,orin_sm87,0.9241562148461437,logs/wise2_abl2/orin_sm87/wildtrack640_yolov8m
 readback,compute,Readback \& launch,0.5288649169038447,3.357186492991844,28.704837219993454,5.082415340573127,ours,fp16,orin_sm87,1.0209836086487925,logs/wise2_eval/orin_sm87/wildtrack640_yolov8m_select/ablation_upd
 full_grid,compute,Full-layer grid,0.4802806148836607,3.787224390709623,6.080987180153467,1.074428537158918,ours_fix,fp16,orin_sm87,1.0209836086487925,logs/wise2_eval/orin_sm87/wildtrack640_yolov8m_select/ablation_upd
 dense_tile,selection,Dense-tuned config.,0.48088364665362365,4.912746102039562,7.230035427391617,1.2801341699812196,ours,fp16,orin_sm87,1.0209836086487925,logs/wise2_eval/orin_sm87/wildtrack640_yolov8m_select/ablation_upd

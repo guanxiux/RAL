@@ -1,13 +1,15 @@
 #!/usr/bin/env python3
 """fig:char-affine (Insight 1): layer-averaged convolution time over dense time against the active ratio, one panel
 per GPU and precision.  Per-length best (markers; its affine fit as text), the best single configuration, the
-dense-tuned configuration, and the proportional diagonal.  Reads char_affine.csv (char_stats.py)."""
+dense-tuned configuration, the per-length best of the coordinate-indexed variant on the same configuration space
+(kernel map per row and tap), and the proportional diagonal.  Reads char_affine.csv (char_stats.py)."""
 from __future__ import annotations
 
 from bar_patterns import IDEAL, IDEAL_LS
 from char_style import CFG, FIG_W, FS_CAP, FS_LEG, FS_NOTE, INK, plt, read, save, tidy
 
 rows = read("char_affine.csv")
+INDEXED = "#7660a6"  # the purple of the baseline frames (figures/tikz/bgstyle.tex): an existing execution paradigm
 DEVS, PRECS = ("RTX 3080", "AGX Orin"), ("FP32", "FP16")
 
 fig = plt.figure(figsize=(FIG_W, 2.55))
@@ -24,6 +26,7 @@ for i, dev in enumerate(DEVS):
         ax.plot([0, 1], [0, 1], color=IDEAL, ls=IDEAL_LS, lw=1.0, zorder=2)
         handles["tuned"], = ax.plot(a, get("tuned"), color=CFG["tuned"], lw=1.0, ls=(0, (4, 1.5, 1, 1.5)), zorder=3)
         handles["single"], = ax.plot(a, get("single"), color=CFG["single"], lw=1.0, ls=(0, (3, 1.5)), zorder=3)
+        handles["indexed"], = ax.plot(a, get("indexed"), color=INDEXED, lw=1.0, marker="^", ms=2.2, zorder=3.5)
         handles["best"], = ax.plot(a, get("best"), color=CFG["best"], lw=1.2, marker="o", ms=2.4, zorder=4)
         ax.text(0.97, 0.05, f"best $\\approx$ {fa:.2f}$\\alpha$ + {fb:.2f}", transform=ax.transAxes, ha="right", va="bottom",
                 fontsize=FS_NOTE, color=INK)
@@ -43,9 +46,9 @@ for i, dev in enumerate(DEVS):
 fig.text(L + (R - L) / 2, 0.012, r"Active ratio $\alpha$", ha="center", va="bottom", fontsize=FS_CAP)
 fig.text(0.012, B + (T - B) / 2, r"$t\,/\,t_{\mathrm{dense}}$", ha="left", va="center", rotation=90, fontsize=FS_CAP)
 handles["ideal"] = plt.Line2D([], [], color=IDEAL, ls=IDEAL_LS, lw=1.0)
-fig.legend([handles[k] for k in ("best", "single", "tuned", "ideal")],
-           ["best configuration per length", "fixed: latency-optimal",
+fig.legend([handles[k] for k in ("best", "indexed", "single", "tuned", "ideal")],
+           ["best configuration per length", "indexed, best per length", "fixed: latency-optimal",
             "fixed: dense-tuned", "ideal ($t \\propto \\alpha$)"], loc="upper center",
-           bbox_to_anchor=(0.54, 1.0), ncol=2, frameon=False, fontsize=FS_LEG, handlelength=1.8, columnspacing=0.8,
+           bbox_to_anchor=(0.54, 1.0), ncol=3, frameon=False, fontsize=FS_LEG, handlelength=1.8, columnspacing=0.8,
            handletextpad=0.4)
 save(fig, "char_affine.pdf")

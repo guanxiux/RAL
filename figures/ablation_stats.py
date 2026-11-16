@@ -76,6 +76,23 @@ def device_rows(DEVICE):
         rows.append(dict(variant=key, group=group, variant_label=label, construction_ms=cons, convolution_ms=conv,
                          total_ms=total, ratio=ratio, reference=ref, dtype=DTYPE, device=DEVICE,
                          alignment=f, source=str((d / "ablation_upd").relative_to(REPO))))
+    # Kernel map (indexed), 2026-11-16 (experiments/wise2/microbench/indexed/ablation_indexed.py, deploy/q3080_abl_indexed.sh):
+    # measured with WISEConv's own run of the same session (ours_recheck) on the ablation_bench protocol
+    # (logs/wise2_abl2/), aligned to the E2E the same way: times x Ours' E2E / ours_recheck clip latency
+    a2 = REPO / "logs/wise2_abl2" / DEVICE / "wildtrack640_yolov8m"
+    if (a2 / f"stage_{DTYPE}.json").exists():
+        from ablation2_stats import merged_stages
+        lat2 = {k: v["latency_ms"] for k, v in json.loads((a2 / f"lat_{DTYPE}.json").read_text())["backends"].items()}
+        st2 = merged_stages(a2 / f"stage_{DTYPE}.json")
+        if "E1_indexed" in st2 and "ours_recheck" in lat2:
+            f2 = e2e_ours / lat2["ours_recheck"]
+            s = st2["E1_indexed"]
+            row = dict(variant="indexed", group="compute", variant_label="Kernel map (indexed)",
+                       construction_ms=f2 * s["construction"] / 1e3, convolution_ms=f2 * s["conv"] / 1e3,
+                       total_ms=f2 * lat2["E1_indexed"], ratio=lat2["E1_indexed"] / lat2["ours_recheck"],
+                       reference="ours_recheck", dtype=DTYPE, device=DEVICE, alignment=f2,
+                       source=str(a2.relative_to(REPO)))
+            rows.insert(next(i for i, r in enumerate(rows) if r["variant"] == "readback"), row)
     assert abs(rows[-1]["total_ms"] - e2e_ours) < 1e-9  # Ours equals its whole-video E2E latency
     print(f"{DEVICE}: {len(rows)} rows, alignment {f:.3f}")
     return rows

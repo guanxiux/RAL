@@ -8,9 +8,8 @@ Reads ``logs/wise2_eval/`` (collected by ``experiments/wise2/report/collect.py``
     merged frame-weighted.
   * FireFlowNet: the mean of the per-sequence means (every held-out MVSEC sequence counts equally).  DynConv: the median of rounds (one MPII split).
   * alpha (the Ideal reference, latency normalized to Dense = alpha): required / dense MACs of the RTX 3080 work replay
-    over the whole evaluation set (work_full_fp32.json, work_counts.py --split full), one per workload: the masks do
-    not depend on the precision
-    of each workload and precision; all platforms run the same masks.
+    over the whole evaluation set (work_full_<dtype>.json, work_counts.py --split full), one per workload and
+    precision (the temporal policies threshold activations of the run's precision); all platforms run the same masks.
 """
 
 from __future__ import annotations
@@ -80,8 +79,10 @@ def runs(dev, wl, dtype, gs):
     return res
 
 
-def alpha(task):
-    w = et.load(et.EV / "rtx_3080_sm86" / task / "micro_upd" / "work_full_fp32.json")
+def alpha(task, dtype):
+    # per precision (2026-11-16): the temporal policies threshold activations of the run's precision, so FP16 masks
+    # differ from FP32's (YOLOv8m b1 15.3% vs 17.5%); work_full_fp16.json is the FP16 replay (work_counts.py --dtype fp16)
+    w = et.load(et.EV / "rtx_3080_sm86" / task / "micro_upd" / f"work_full_{dtype}.json")
     return w["paths"]["wiseconv"]["required_macs"] / w["paths"]["dense"]["dense_macs"] if w else None
 
 
@@ -93,7 +94,7 @@ def main():
                 lat = yolo(dev, task, dtype) if wl is None else runs(dev, wl, dtype, gs)
                 if "dense" not in lat:
                     continue
-                a = alpha(task)
+                a = alpha(task, dtype)
                 for path, ms in lat.items():
                     rows.append({"platform": et.DEV_NAMES[dev], "workload": key, "dtype": dtype, "path": path,
                                  "latency_ms": f"{ms:.5f}", "norm": f"{ms / lat['dense']:.5f}",

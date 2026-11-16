@@ -19,7 +19,7 @@ REPO = HERE.parents[1]
 EV = REPO / "logs/wise2_eval/rtx_3080_sm86"
 OUT = HERE / "decomposition.csv"
 TASKS = {1: ("wildtrack640_yolov8m_select", "yolov8m_b1"), 4: ("wildtrack640_yolov8m_b4_select", "yolov8m_b4")}
-PATHS = {"fp32": ("dense", "tile_skip", "gather_scatter", "wiseconv"), "fp16": ("dense", "wiseconv")}
+PATHS = {"fp32": ("dense", "tile_skip", "gather_scatter", "wiseconv"), "fp16": ("dense", "tile_skip", "gather_scatter", "wiseconv")}
 
 
 def main():
@@ -34,6 +34,9 @@ def main():
             # the re-measured dense baseline (2026-11-13: cudnn.benchmark, --dense-layout auto; q3080_dense_bd.sh)
             bd["dense"] = json.loads((d / f"bd_dense_{dtype}.json").read_text())["backends"]["dense"]
             mem["dense"] = json.loads((d / f"memory_dense_{dtype}.json").read_text())["backends"]["dense"]
+            if dtype == "fp16":  # the FP16 baselines (2026-11-16, deploy/q3080_fp16bl_bd.sh)
+                bd.update(json.loads((d / "bd_bl_fp16.json").read_text())["backends"])
+                mem.update(json.loads((d / "memory_bl_fp16.json").read_text())["backends"])
             for path in paths:
                 b, clip, tot = bd[path], mem[path]["latency_ms"], e2e[(key, dtype, path)]
                 s = b["stage_us_per_frame"]

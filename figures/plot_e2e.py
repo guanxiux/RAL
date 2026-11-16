@@ -39,8 +39,14 @@ for r in read("e2e_stats.csv"):
     alpha[key] = float(r["alpha"])
 
 
-# the mean active ratio of each workload (FP32 replay; FP16 runs the same masks)
-alpha_of = {name: alpha[("RTX 3080", wl, "fp32")] for wl, name in WORKLOADS}
+# the mean active ratio of each workload and precision (the FP16 masks differ where a policy thresholds activations)
+alpha_of = {name: (alpha[("RTX 3080", wl, "fp32")], alpha[("RTX 3080", wl, "fp16")]) for wl, name in WORKLOADS}
+
+
+def alpha_label(name, fp16=True):
+    """FP32 / FP16 active ratio (one value where they agree or the platform has no FP16)."""
+    a32, a16 = (100 * a for a in alpha_of[name])
+    return f"{a32:.1f}%" if not fp16 or abs(a32 - a16) < 0.05 else f"{a32:.1f}% / {a16:.1f}%"
 
 
 def fmt_ms(ms):
@@ -100,7 +106,7 @@ def panel(ax, platform, left, bottom_row):
     if bottom_row:
         for c, (_, name) in zip(centers, WORKLOADS):
             ax.text(c, -0.20, name, transform=ax.get_xaxis_transform(), ha="center", va="top", fontsize=FS_TICK + 0.5)
-            ax.text(c, -0.40, r"$\hat{\alpha}$ = " + f"{100 * alpha_of[name]:.1f}%", transform=ax.get_xaxis_transform(),
+            ax.text(c, -0.40, r"$\hat{\alpha}$ = " + alpha_label(name, any(k[0] == platform and k[2] == "fp16" for k in data)), transform=ax.get_xaxis_transform(),
                     ha="center", va="top", fontsize=FS_NOTE, color=INK)
     ax.text(0.0, 1.07, platform, transform=ax.transAxes, ha="left", va="bottom", fontsize=FS_CAP, fontweight="bold")
 
