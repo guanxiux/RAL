@@ -15,7 +15,7 @@ from matplotlib.lines import Line2D
 from bar_patterns import COLORS, IDEAL, IDEAL_LS, INK, MUTED, add_bar, legend_handles
 from char_style import FS_CAP, FS_LEG, FS_NOTE, FS_TICK, plt, read, save, tidy
 
-FIG_W, FIG_H = 7.0, 3.42  # acmart \textwidth (505.9 pt)
+FIG_W, FIG_H = 7.0, 3.0  # acmart \textwidth (505.9 pt)
 YMAX = 1.6
 PLATFORMS = ["A100", "RTX 4090", "RTX 3080", "RTX 4070 Laptop", "AGX Orin", "Xavier NX"]
 WORKLOADS = [("fireflownet", "FireFlowNet"), ("yolov8m_b1", "YOLOv8m b1"), ("yolov8m_b4", "YOLOv8m b4"),
@@ -112,8 +112,8 @@ def panel(ax, platform, left, bottom_row):
 
 
 fig = plt.figure(figsize=(FIG_W, FIG_H))
-L, R, T, B = 0.058, 0.995, 0.875, 0.115
-HG, VG = 0.035, 0.085
+L, R, T, B = 0.058, 0.995, 0.862, 0.15
+HG, VG = 0.035, 0.094
 pw = (R - L - HG) / 2
 ph = (T - B - 2 * VG) / 3
 for i, platform in enumerate(PLATFORMS):

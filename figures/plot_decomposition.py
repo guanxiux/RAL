@@ -9,6 +9,7 @@ sea green with the gather-scatter hatch, other operators warm gray, GPU idle the
 from __future__ import annotations
 
 from matplotlib.patches import Patch
+from matplotlib.transforms import blended_transform_factory
 
 from bar_patterns import WASTED_COLOR, WASTED_HATCH, WASTED_INK
 from char_style import FIG_W, INK, plt, read, save, tidy
@@ -23,16 +24,13 @@ NAMES = {"dense": "Dense", "tile_skip": "Tile skipping", "gather_scatter": "Gath
 H = 0.74  # bar height
 
 rows = read("decomposition.csv")
-PANELS = [("fp32", 14.0, [0, 2, 4, 6, 8, 10, 12, 14]), ("fp16", 14.0, [0, 2, 4, 6, 8, 10, 12, 14])]
-nrows = {d: sum(1 for r in rows if r["dtype"] == d) + 0.5 for d, _, _ in PANELS}
-fig = plt.figure(figsize=(FIG_W, 3.7))
-L, R, T, B, VG = 0.255, 0.97, 0.865, 0.085, 0.09
-unit = (T - B - VG) / sum(nrows.values())
-top = T
+# FP32 and FP16 side by side, sharing the path labels on the left
+PANELS = [("fp32", 15.5, [0, 5, 10, 15]), ("fp16", 15.5, [0, 5, 10, 15])]
+fig = plt.figure(figsize=(FIG_W, 2.05))
+L, R, T, B, HG = 0.25, 0.99, 0.80, 0.16, 0.03
+w_ax = (R - L - HG) / 2
 for pi, (dtype, xmax, xt) in enumerate(PANELS):
-    h = nrows[dtype] * unit
-    ax = fig.add_axes([L, top - h, R - L, h])
-    top -= h + VG
+    ax = fig.add_axes([L + pi * (w_ax + HG), B, w_ax, T - B])
     tidy(ax, "x")
     y, ticks, labels, group_mid = 0.0, [], [], []
     for gi, batch in enumerate((1, 4)):
@@ -49,7 +47,7 @@ for pi, (dtype, xmax, xt) in enumerate(PANELS):
                     ax.barh(y, w, H, left=left, color="none", edgecolor=INKS[key], hatch=hatch, lw=0, zorder=3.1)
                 left += w
             ours = r["path"] == "wiseconv"
-            ax.text(left + xmax * 0.011, y, f"{float(r['total_ms']):.2f}", va="center", ha="left", fontsize=FS_NOTE,
+            ax.text(left + xmax * 0.015, y, f"{float(r['total_ms']):.2f}", va="center", ha="left", fontsize=FS_NOTE,
                     color=INK, fontweight="bold" if ours else "normal")
             ticks.append(y)
             labels.append(NAMES[r["path"]])
@@ -60,22 +58,26 @@ for pi, (dtype, xmax, xt) in enumerate(PANELS):
         y += 0.5
     ax.set_ylim(y - 0.5 - 0.3, -0.7)
     ax.set_yticks(ticks)
-    ax.set_yticklabels(labels, fontsize=FS_TICK)
-    for t in ax.get_yticklabels():
-        if t.get_text() == "WISEConv":
-            t.set_fontweight("bold")
+    if pi == 0:
+        ax.set_yticklabels(labels, fontsize=FS_TICK)
+        for t in ax.get_yticklabels():
+            if t.get_text() == "WISEConv":
+                t.set_fontweight("bold")
+        for mid, text in group_mid:
+            ax.text(0.025, mid, text, transform=blended_transform_factory(fig.transFigure, ax.transData), ha="center",
+                    va="center", rotation=90,
+                    fontsize=FS_TICK, fontweight="bold")
+    else:
+        ax.set_yticklabels([])
     ax.tick_params(axis="y", length=0)
-    for mid, text in group_mid:
-        ax.text(-0.30, mid, text, transform=ax.get_yaxis_transform(), ha="center", va="center", rotation=90,
-                fontsize=FS_TICK, fontweight="bold")
     ax.set_xlim(0, xmax)
     ax.set_xticks(xt)
+    ax.tick_params(axis="x", labelsize=FS_TICK)
     ax.spines["left"].set_visible(False)
-    ax.text(0.0, 1.02, dtype.upper(), transform=ax.transAxes, ha="left", va="bottom", fontsize=FS_LAB,
+    ax.text(0.0, 1.015, dtype.upper(), transform=ax.transAxes, ha="left", va="bottom", fontsize=FS_LAB,
             fontweight="bold")
-    if pi == len(PANELS) - 1:
-        ax.set_xlabel("Latency per frame (ms)", fontsize=FS_LAB, labelpad=1.5)
+fig.text((L + R) / 2, 0.015, "Latency per frame (ms)", ha="center", va="bottom", fontsize=FS_LAB)
 handles = [Patch(facecolor=c, edgecolor=INKS.get(k, "none"), hatch=h, lw=0) for k, _, c, h in STAGES]
-fig.legend(handles, [n for _, n, _, _ in STAGES], loc="upper center", ncol=3, frameon=False,
-           bbox_to_anchor=(0.5, 1.0), fontsize=FS_LEG, handlelength=1.0, columnspacing=1.0, handletextpad=0.3, labelspacing=0.25)
+fig.legend(handles, [n for _, n, _, _ in STAGES], loc="upper center", ncol=5, frameon=False,
+           bbox_to_anchor=(0.5, 1.0), fontsize=FS_TICK, handlelength=0.9, columnspacing=0.6, handletextpad=0.25)
 save(fig, "decomposition.pdf")

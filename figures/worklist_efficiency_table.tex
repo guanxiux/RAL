@@ -1,13 +1,13 @@
 \begin{table}[!t]
   \centering
-  \caption{\sysname's $\eta$ decomposition and worklist lengths on RTX~3080 (FP32). The
-  $n_{\mathcal{W}}$ percentiles pool all layers and frames.}
+  \caption{\sysname's $\eta$ decomposition and worklist lengths on RTX~3080 (FP32);
+  $n_{\mathcal{W}}$ percentiles pool layers and frames.}
   \Description{A table reports eta construct, eta compute, eta, and the
   P10, P50, and P90 worklist lengths for FireFlowNet, YOLOv8m at batch 1 and 4,
   and DynConv on RTX 3080. Worklist-length statistics are computed from samples
   pooled across all layers and frames.}
   \label{tab:worklist-efficiency}
-  \small
+  \footnotesize
   \setlength{\tabcolsep}{1.5pt}
   \begin{tabular*}{\columnwidth}{@{\extracolsep{\fill}}l c c c r r r@{}}
     \toprule

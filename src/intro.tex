@@ -30,13 +30,11 @@ ball~\cite{robottabletennis} (Figure~\ref{fig:teaser}). Yet on a given input
 much of that computation is spatially redundant. A
 common remedy is masked convolution: an upstream policy marks spatially
 active positions on the dense feature grid, and a dedicated sparse
-convolution operator updates only these positions in the dense output. The mask may derive
-from event-camera increments~\cite{evconv,asyncsparse}, temporal
+convolution operator updates only these positions in the dense output. The mask may come from event-camera increments~\cite{evconv,asyncsparse}, temporal
 differences~\cite{deltacnn,skipconv}, or learned spatial
-gates~\cite{dynconv,dgnet}. These mask sources promise large reductions in
+gates~\cite{dynconv,dgnet}. These masks promise large reductions in
 convolution work, yet existing masked-convolution
-systems~\cite{evconv,deltacnn,dgnet,dynconv} rarely
-translate the sparsity into proportional latency reduction.
+systems~\cite{evconv,deltacnn,dgnet,dynconv} rarely turn the sparsity into proportional latency reduction.
 
 Dense GPU convolution obtains high \emph{throughput} (operations per second)
 from tiled execution: each tile enumerates a contiguous block of output
@@ -121,8 +119,7 @@ This paper makes the following contributions:
 \begin{itemize}
   \item We characterize worklist-driven tiled execution on two GPUs,
         showing that a worklist tile matches a dense tile in instructions and
-        SM cycles and that the remaining gap is a per-layer fixed cost. These
-        findings motivate and constrain the design (\S\ref{sec:char}).
+        SM cycles and that the remaining gap is a per-layer fixed cost. These findings shape the design (\S\ref{sec:char}).
 
   \item We present \sysname, which establishes worklist-driven tiled
         execution as a paradigm for masked convolution, in which an implicit
@@ -132,9 +129,14 @@ This paper makes the following contributions:
         it (\S\ref{sec:design}).
 
   % geomean over 44 workload-device-precision cases (fastest available baseline, dense included), 2026-11-16
-  \item We evaluate \sysname on four workloads across six GPUs. \sysname
-        achieves a 2.06$\times$ (FP32) and 2.09$\times$ (FP16)
-        geometric-mean speedup over the fastest baseline per
-        pair, and reduces energy by 60.8--82.5\% relative to dense
+  \item We evaluate \sysname on four workloads and six GPUs. It achieves a 2.06$\times$ (FP32) and 2.09$\times$ (FP16)
+        geometric-mean speedup over the fastest baseline and reduces energy by 60.8--82.5\% versus dense
         execution on embedded GPUs (\S\ref{sec:eval}).
 \end{itemize}
+
+\S\ref{sec:background} reviews masked convolution and its execution
+paradigms, \S\ref{sec:char} characterizes worklist-driven tiled execution,
+\S\ref{sec:design} and \S\ref{sec:impl} present the design and its
+implementation, \S\ref{sec:eval} evaluates \sysname and discusses its
+hardware implications, and \S\ref{sec:conclusion} concludes.
+The implementation is available at \url{https://github.com/isca27-897/WISEConv}.

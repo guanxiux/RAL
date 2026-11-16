@@ -9,9 +9,8 @@ implicit-GEMM kernels in the style of CUTLASS~\cite{cutlass}, covering FP32
 (SIMT) and FP16 (tensor core) arithmetic with NHWC tensors, all convolution
 variants of the evaluated models, and mask-aware auxiliary operators. Each
 frame runs as one CUDA graph. Selection uses the lowest-latency device-side
-mechanism CUDA currently offers, device-updatable kernel nodes (CUDA~12.4):
-each candidate is a node of the graph, and the worklist producer enables the
-selected node and disables the previous one only when the selection changes.
+mechanism CUDA offers, device-updatable kernel nodes (CUDA~12.4):
+each candidate is a node of the graph, and the worklist producer enables the selected node and disables the previous one only when it changes.
 Every kernel agrees numerically with cuDNN at each active output position.
 
 % --- OLD VERSION ---

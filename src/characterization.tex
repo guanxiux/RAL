@@ -1,4 +1,4 @@
-\section{Characterizing Worklist-Driven Tiled Execution}
+\section{Characterization}
 \label{sec:char}
 
 \providecommand{\tbd}[1]{\textcolor{red}{#1}}
@@ -28,7 +28,7 @@ input at every tap from a prebuilt map; the kernel, configuration space, and
 hardware are identical, so differences isolate the addressing mode.
 
 % ===========================================================================
-\subsection{Affine Latency Requires Following the Length}
+\subsection{Following the Length Makes Latency Affine}
 \label{sec:char:affine}
 
 \begin{figure}[t]
@@ -53,8 +53,7 @@ $b = 0.07$--$0.23$ across the two GPUs and precisions, with per-layer $R^2$
 medians of 0.985--0.995. The slope $a$ matches the dense marginal cost; the
 entire departure from proportional is the intercept $b$, a per-layer fixed
 cost analyzed in \S\ref{sec:char:bound}. The intercept is larger in FP16
-($b = 0.18$--$0.23$ against 0.07--0.15 in FP32) because tensor cores shrink
-dense time while this fixed cost stays the same.
+($b = 0.18$--$0.23$ against 0.07--0.15 in FP32) because tensor cores shrink dense time but not this fixed cost.
 
 Indexing only the output rows is what keeps this slope. Under kernel-map
 addressing at its own per-length best, the same kernel runs
@@ -85,9 +84,9 @@ configuration follows the worklist length.}
 \begin{figure}[t]
   \centering
   \includegraphics[width=\columnwidth]{figures/char_reduction.pdf}
-  \caption{Hardware counters of a worklist tile and a kernel-map tile relative
+  \caption{Hardware counters of worklist and kernel-map tiles relative
   to a dense tile of the same configuration on representative layers (dot:
-  median; bar: range over the two GPUs and precisions). Panels (b)--(d) give
+  median; bar: range over GPUs and precisions). Panels (b)--(d) give
   the cost of one more tile.}
   \Description{Four dot-and-range panels, one row per layer: for worklist
   tiles, sectors per request, instructions, and SM cycles sit at one and DRAM
@@ -185,11 +184,10 @@ per-layer fixed costs, not throughput loss. The intercept $b$ is dominated by
 the time to launch the kernel and finish one tile: a single-tile launch
 already takes 69--80\% of $b$ (Figure~\ref{fig:char-bound}a, medians over the
 representative layers). Without work, a launch spends 65--81\% of its stall
-cycles on constant-cache misses (the kernel parameters are cold); one tile adds
+cycles on constant-cache misses (cold kernel parameters); one tile adds
 barriers and on-chip latency (short-scoreboard and fixed-latency waits), while
 DRAM/L2 latency stays at 6--23\%. The intercept is 10.0--17.4\% of a median
-layer's dense time, except 5.6\% on AGX Orin FP32, where each layer is longer
-relative to the launch.
+layer's dense time, except 5.6\% on AGX Orin FP32, whose layers are long relative to the launch.
 
 Construction adds a second fixed cost. Each construction pass takes
 1.6--4.4\,$\mu$s on RTX~3080 and 3.8--27.2\,$\mu$s on AGX Orin, almost
@@ -227,12 +225,11 @@ exceeds this cost, so the mechanism's cost, not the oracle's gain, limits
 adaptation.
 
 \insight{5}{Every mechanism for following the worklist length incurs a
-per-decision-point cost often comparable to the per-layer gain from adaptation.}
+per-decision-point cost often comparable to the per-layer gain.}
 
-Insights 4 and 5 together mean that current hardware cannot reach the oracle
+Insights 4 and 5 mean that current GPUs cannot reach the oracle
 affine line without trading selection cost against adaptation gain;
-\S\ref{sec:eval:discussion} discusses the hardware support that would remove
-this trade-off.
+\S\ref{sec:eval:discussion} discusses hardware support that removes this trade-off.
 
 % fig:char-cost is defined near the end of the section so that its column space goes to the text.
 \begin{figure}[t]

@@ -1,12 +1,14 @@
 \section{Conclusion}
 \label{sec:conclusion}
 
-We presented \sysname, which establishes worklist-driven tiled execution
-for masked convolution: an active-output worklist drives the dense tiled
-pipeline over an input that stays on the dense grid. Because only output rows
-are indexed, a worklist tile executes the instructions and SM cycles of a
-dense tile, and the remaining gap to ideal scaling is a per-layer fixed cost.
-\sysname co-designs worklist construction and consumption around this compute
-stage; our ablation confirms that disabling any single mechanism degrades one
-axis without improving the other. Together these mechanisms turn upstream mask sparsity into lower latency and energy for the
-latency-critical vision tasks where masked convolution applies.
+\sysname narrows the sparsity-to-speedup gap of masked convolution with
+worklist-driven tiled execution. Using output coordinates as the interface
+between position selection and the dense reduction datapath, it restricts
+computation to active positions at the per-tile throughput of dense execution;
+with co-designed construction, reuse, and selection, what separates it from
+proportional speedup is per-layer fixed cost, not lost throughput. Faster,
+more energy-efficient masked convolution lets latency-critical perception,
+such as a car avoiding a pedestrian, a drone dodging an obstacle, or a robot
+returning a ball, react sooner within the same onboard power budget.
+Lightweight GPU support for launch and for acting on device-resident values
+(\S\ref{sec:eval:discussion}) would narrow the gap further.

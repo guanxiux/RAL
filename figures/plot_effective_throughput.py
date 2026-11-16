@@ -29,8 +29,8 @@ data = defaultdict(dict)
 for r in read("effective_throughput.csv"):
     data[(r["platform"], r["workload"], r["dtype"])][r["path"]] = (float(r["effective"]), float(r["wasted"]))
 
-fig = plt.figure(figsize=(FIG_W, 2.55))
-L, R, T, B, VG = 0.075, 0.995, 0.85, 0.105, 0.125
+fig = plt.figure(figsize=(FIG_W, 2.2))
+L, R, T, B, VG = 0.075, 0.995, 0.845, 0.115, 0.13
 ph = (T - B - VG) / 2
 for i, plat in enumerate(PLATFORMS):
     ax = fig.add_axes([L, T - (i + 1) * ph - i * VG, R - L, ph])

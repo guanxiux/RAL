@@ -29,8 +29,8 @@ def make_table(rows: list[dict]) -> str:
     lines = [
         r"\begin{table}[!t]",
         r"  \centering",
-        r"  \caption{\sysname's $\eta$ decomposition and worklist lengths on RTX~3080 (FP32). The",
-        r"  $n_{\mathcal{W}}$ percentiles pool all layers and frames.}",
+        r"  \caption{\sysname's $\eta$ decomposition and worklist lengths on RTX~3080 (FP32);",
+        r"  $n_{\mathcal{W}}$ percentiles pool layers and frames.}",
         r"  \Description{A table reports eta construct, eta compute, eta, and the",
         r"  P10, P50, and P90 worklist lengths for FireFlowNet, YOLOv8m at batch 1 and 4,",
         r"  and DynConv on RTX 3080. Worklist-length statistics are computed from samples",

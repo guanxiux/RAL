@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Render the Background sparsity-to-latency example (fig:gap) from gap_stats.csv.
+"""Render the Background sparsity-to-speedup example (fig:gap) from gap_stats.csv.
 
 Two equal-area panels, the three execution paths named on the x axis (no path legend):
 

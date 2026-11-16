@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Derive the Background sparsity-to-latency example (fig:gap) from the evaluation logs.
+"""Derive the Background sparsity-to-speedup example (fig:gap) from the evaluation logs.
 
 Workload: YOLOv8m at batch 4 on WildTrack 640, RTX 3080, FP32, the temporal difference masks of the task policy
 (DeltaCNN).  Every number comes from the files the evaluation tables use (experiments/wise2/report/eval_tables.py,

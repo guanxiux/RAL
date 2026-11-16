@@ -22,8 +22,8 @@ POINTS = (("nw0", "no work"), ("nw1", "1 tile"))
 
 ic = read("char_intercept.csv")
 cs = read("char_construction.csv")
-fig = plt.figure(figsize=(FIG_W, 2.25))
-B, T = 0.13, 0.80
+fig = plt.figure(figsize=(FIG_W, 2.0))
+B, T = 0.145, 0.78
 ax = fig.add_axes([0.225, B, 0.38, T - B])
 axb = fig.add_axes([0.75, B, 0.235, T - B])
 

@@ -84,15 +84,13 @@ $\mathcal{N}(p)$ is active,
   \end{cases}
   \label{eq:mask}
 \end{equation}
-$M_{out}$ thus identifies the output positions that the execution path is required
-to compute, each by aggregating $\mathbf{x}$ over $\mathcal{N}(p)$ with the weights
+$M_{out}$ thus identifies the output positions the execution path must compute, each by aggregating $\mathbf{x}$ over $\mathcal{N}(p)$ with the weights
 $\mathbf{f}$.
 
 An execution path issues computation over a sequence of position slots
 $\mathcal{C}$, where each slot is drawn from
 $\mathcal{G}\cup\{\bot\}$; $\bot$ denotes a padding slot that carries no
-output coordinate. The path must satisfy the \emph{coverage contract}: every
-active coordinate is included,
+output coordinate. It must satisfy the \emph{coverage contract}: every active coordinate appears,
 $\{p : M_{out}[p]=1\}\subseteq\{c\in\mathcal{C}:c\ne\bot\}$.
 For each non-$\bot$ slot $p\in\mathcal{C}$ it computes
 \begin{equation}
@@ -105,19 +103,19 @@ $\mathbf{f}_i\in\mathbb{R}^{C_{in}\times C_{out}}$ the corresponding weight
 slice. How unrequested positions are treated is policy-specific: event and
 temporal execution retains prior state, while learned gating merges results
 into a residual. Coverage is therefore the operator-level correctness
-condition; the policy determines the treatment of all other positions.
+condition; the policy treats all other positions.
 Beyond coverage, a path may issue inactive or $\bot$ slots; dense
 convolution is the extreme where
 $\{c\in\mathcal{C}:c\ne\bot\}=\mathcal{G}$. The policy fixes the accuracy
 and required work.
 
-\subsection{The Sparsity-to-Latency Gap}
+\subsection{The Sparsity-to-Speedup Gap}
 \label{sec:bg:gap}
 
 \begin{figure}[htb]
   \centering
   \includegraphics[width=\columnwidth]{figures/gap.pdf}
-  \caption{Sparsity-to-latency gap of existing work on YOLOv8m~\cite{yolov8} at batch~4,
+  \caption{Sparsity-to-speedup gap of existing work on YOLOv8m~\cite{yolov8} at batch~4,
   quantified by its loss in throughput and useful-compute ratio. (a)~Ideal
   scales dense latency by the active ratio. (b)~Bar height is raw throughput;
   the labeled share is effective throughput, and the gray share is wasted on
@@ -142,10 +140,9 @@ and required work.
 \begin{figure}[t]
   \centering
   \includegraphics[width=\columnwidth]{figures/tikz/bg_gather.pdf}
-  \caption{Demonstration of gather-scatter~\cite{sai,dgnet,dynconv}: it
-  copies the receptive fields of the active outputs into a packed buffer
+  \caption{Demonstration of gather-scatter~\cite{sai,dgnet,dynconv}: it copies the active outputs' receptive fields into a packed buffer
   (gather), runs a GEMM over the packed rows, and writes the results back into
-  $\mathbf{y}$ (scatter), adding two extra passes over memory.}
+  $\mathbf{y}$ (scatter), two extra passes over memory.}
   \Description{Receptive fields of active positions are gathered into a
   packed column, split across two SMs, and the packed outputs are scattered
   to the output tensor.}
@@ -216,11 +213,9 @@ Figure~\ref{fig:gap} makes this concrete for YOLOv8m~\cite{yolov8} at
 batch~4 on WildTrack~640~\cite{wildtrack} (RTX~3080, FP32), comparing cuDNN
 (Dense), DeltaCNN tile skipping, and MMCV gather-scatter~\cite{mmcv} on the
 same temporal difference masks~\cite{deltacnn}. Under these masks, 82.2\% of
-convolution work is unnecessary. Tile skipping holds throughput at
-41.9\% of dense but at a useful-compute ratio of only 67.4\%;
+convolution work is unnecessary. Tile skipping holds 41.9\% of dense throughput but a useful-compute ratio of only 67.4\%;
 gather-scatter lifts the useful-compute ratio to one, yet extraction traffic
-and per-layer host synchronization cut its throughput to 31.7\% of dense. Neither path efficiently converts
-the GPU's capability into effective throughput.
+and per-layer host synchronization cut its throughput to 31.7\% of dense. Neither path turns the GPU's capability into effective throughput.
 
 
 \subsection{Distinction from Related Sparse Execution}
@@ -247,8 +242,7 @@ one worklist entry per output row suffices and the reduction keeps the dense
 kernel's addressing (\S\ref{sec:char:reduction}).
 Existing tile-configuration selection by problem
 size~\cite{dietcode,nimble,tensorrt,damoe} serves sizes that change per
-request or batch, where kernels run long enough to absorb a selection
-step. A masked convolution layer lasts microseconds, so each decision
+request or batch, where kernels run long enough to absorb selection. A masked layer lasts microseconds, so each decision
 point competes with the gain it buys (\S\ref{sec:char:cost}).
 
 

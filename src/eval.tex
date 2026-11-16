@@ -13,9 +13,7 @@ necessary (\S\ref{sec:eval:ablation-sensitivity}).
 \paragraph{Platforms.}
 We evaluate six NVIDIA GPUs that span datacenter, desktop, laptop, and
 embedded classes: A100, RTX~4090, RTX~3080, RTX~4070 Laptop, Jetson AGX Orin,
-and Jetson Xavier NX. GPU clocks are locked on every platform so that
-latencies are stable across runs. On the two Jetson boards, where the energy
-budget constrains deployment, we also report per-frame energy from the board's
+and Jetson Xavier NX. GPU clocks are locked on every platform for stable latencies. On the two Jetson boards, where energy constrains deployment, we also report per-frame energy from the board's
 input power.
 
 \paragraph{Workloads.}
@@ -46,6 +44,7 @@ Eval.\ frames & 196.8K & 251.7K & 2,958 \\
 \end{tabular}
 \end{table}
 
+{\tolerance=2000%
 \paragraph{Baselines.}
 \emph{Dense} runs the original model with PyTorch and cuDNN~\cite{cudnn}
 autotuning: it computes every position and carries none of the masking
@@ -60,7 +59,7 @@ size its buffers and its GEMM, so it must run eagerly. Every path runs in both
 precisions except gather-scatter on DynConv in FP16: DynConv's kernels support
 only FP32, and MMCV's masked convolution does not support the grouped
 convolutions of its network. We report \sysname's speedup over the
-fastest baseline on each workload and platform.
+fastest baseline on each workload and platform.\par}
 
 \paragraph{Protocol.}
 Latency is the GPU time of one frame (of one batch of four for YOLOv8m b4)
@@ -101,11 +100,10 @@ fastest baseline in 13 of the 24 groups, gather-scatter in 6, and Dense in 5.
 In FP16, Dense is the fastest baseline in 19 of the 20 groups, because tensor
 cores shorten its convolution while DeltaCNN's FP16 kernels run on CUDA cores
 and gather-scatter's host synchronization does not depend on precision.
-Gather-scatter varies most, because its per-layer extraction, scatter, and host
+Gather-scatter varies most, since its per-layer extraction, scatter, and host
 synchronization do not shrink with the active ratio. In 23 groups, mostly
-FireFlowNet, DynConv, and YOLOv8m b1, it runs 1.85--12.4$\times$ slower than
-Dense and extends beyond the axis. On YOLOv8m b4, four streams amortize these
-costs and make it the fastest baseline on four of the six GPUs in FP32, where
+FireFlowNet, DynConv, and YOLOv8m b1, it runs 1.85--12.4$\times$ slower than Dense, beyond the axis. On YOLOv8m b4, four streams amortize these
+costs and make it the fastest baseline on four of six GPUs in FP32, where
 \sysname still runs 1.69--2.39$\times$ faster.
 
 The distance to the ideal line follows worklist length, as Insight~4
@@ -161,9 +159,8 @@ extraction and writeback hold its raw throughput to 2.6--42.0\% of Dense
 (4.4--15.4\% in FP16). \sysname keeps $\eta$ at 0.91--1.00 and sustains
 52.3--76.0\% of Dense raw throughput in FP32 (29.6--73.2\% in FP16), the
 highest effective throughput in every group.
-Its tiles run at the per-tile cost of dense tiles (Insight~2), so the raw
-throughput it gives up is the per-layer fixed cost of construction and launch
-(Insight~4), which weighs most where layers are short, as in FP16.
+Its tiles match dense tiles in cost (Insight~2), so its lost raw throughput is the per-layer fixed cost of construction and launch
+(Insight~4), which weighs most on short layers, as in FP16.
 
 \input{figures/worklist_efficiency_table}
 
@@ -178,7 +175,7 @@ YOLOv8m b1 and DynConv, whose shortest worklists (P10) hold 26 and 3 entries.
 \begin{figure}[t]
   \centering
   \includegraphics[width=\columnwidth]{figures/decomposition.pdf}
-  \caption{Per-frame latency of YOLOv8m on RTX~3080 by stage.}
+  \caption{Per-stage YOLOv8m frame latency on RTX~3080.}
   \Description{Two panels, FP32 and FP16, of horizontal stacked bars, one per
   path, grouped by batch 1 and batch 4, splitting per-frame latency into construction,
   convolution, gather and scatter, other operators, and host synchronization.}
@@ -188,11 +185,9 @@ YOLOv8m b1 and DynConv, whose shortest worklists (P10) hold 26 and 3 entries.
 \paragraph{Latency decomposition.}
 The latency difference comes from what each path does outside convolution
 (Figure~\ref{fig:decomposition}). We split the busy part of each path's frame by
-its kernels' shares of GPU busy time; host sync is the rest of the frame, when the GPU waits
-for the host, and gather-scatter's gather and scatter include compacting the
+its kernels' shares of GPU busy time; host sync is the rest, when the GPU waits for the host, and gather-scatter's gather and scatter include compacting the
 mask into the index list it gathers by.
-At b1 in FP32, \sysname cuts convolution from 7.21 to 2.27\,ms at the cost of
-0.17\,ms of construction, and keeps the GPU busy because the compute path never
+At b1 in FP32, \sysname cuts convolution from 7.21 to 2.27\,ms for 0.17\,ms of construction and keeps the GPU busy because its compute path never
 returns to the host.
 
 Gather-scatter spends the least time in convolution (1.68\,ms) because it
@@ -242,76 +237,53 @@ allocates 0.1\,MiB more than Dense.
 
 Table~\ref{tab:ablation} replaces one mechanism at a time on YOLOv8m (b1,
 FP16) on RTX~3080 and AGX Orin. Rebuilding the worklist at every layer (No
-reuse) nearly doubles construction time (0.16 to 0.30\,ms and 0.48 to
-0.84\,ms) and adds 9.9\% and 6.2\% to frame latency. A shuffled worklist
-lengthens convolution by 4.7\% and 4.4\% and the frame by 2.8\% and 2.6\%, as
-Insight~3 predicts (\S\ref{sec:char:order}). Reading every row's input from a
-kernel map at every tap (Kernel map), as kernel-map implicit GEMM does, raises
-construction to 0.25 and 0.73\,ms with the map build and convolution to 0.96
-and 3.82\,ms with the map lookups, so the frame runs 1.12$\times$ and
-1.14$\times$ slower (\S\ref{sec:char:reduction}). Launching the dense layer's grid,
-whose CTAs beyond the worklist exit, lengthens convolution by 19.4\% and
-13.1\%, the cost that the persistent grid avoids (\S\ref{sec:design:compute}).
-Reading $n_W$ back to the host at every layer to launch the exact grid runs
-6.51$\times$ and 5.08$\times$ slower, as Insight~5 predicts.
+reuse) nearly doubles construction and adds 9.9\% and 6.2\% to the frame; a
+shuffled worklist adds 2.8\% and 2.6\%, as Insight~3 predicts. Kernel-map
+addressing pays for the map build in construction and for the lookups in
+convolution and runs 1.12$\times$ and 1.14$\times$ slower
+(\S\ref{sec:char:reduction}). Launching the dense layer's grid (excess CTAs exit) lengthens convolution by 19.4\% and 13.1\%, and
+reading $n_W$ back to launch the exact grid runs 6.51$\times$ and
+5.08$\times$ slower (Insight~5).
 
 The tile-configuration variants isolate what following $n_W$ gains. Fixing
 every layer to the configuration fastest at $\alpha = 1$ runs 1.71$\times$ and
-1.28$\times$ slower; the latency-optimal configuration of
-\S\ref{sec:char:affine} runs 1.10$\times$ slower on both GPUs.
-The speedup-optimal configuration comes within
-1.6\% of \sysname on RTX~3080 but runs 1.09$\times$ slower on AGX Orin, where
-its convolution takes 3.83 instead of 3.34\,ms. The two GPUs differ in how
-many layers follow the length: the selection (\S\ref{sec:design:select}) adds
-candidates to a layer only where the gain exceeds that GPU's per-layer
-selection cost, which holds for 5 of 83 layers on RTX~3080 and for 24 on AGX
-Orin, whose per-layer gains are larger (Insight~5). Placing four candidates at
-every layer regardless of this cost (Cost-unaware $K_{\max}$) shortens
-convolution by 1.7\% and 5.4\%, but every producer then takes the selecting
-path and construction grows from 0.16 to 0.22\,ms and from 0.48 to 0.65\,ms,
-so the frame runs 1.07$\times$ and 1.02$\times$ slower, most on RTX~3080,
-where the gains that the cost model declines are smallest.
-
-The zero-cost oracle runs the same candidates as Cost-unaware $K_{\max}$ on a
-graph captured for each frame's own $n_W$, with no selection mechanism (only
-the replay is timed), and runs at 0.92$\times$ and 0.88$\times$ \sysname's
-latency. Both pick the same tile for every layer and frame, so the gap between
-them (0.85 vs.\ 0.75\,ms and 3.16 vs.\ 2.79\,ms of convolution, 0.22 vs.\
-0.15\,ms and 0.65 vs.\ 0.41\,ms of construction) is the cost of the
-device-side mechanism itself. The device-updatable node that \sysname uses is
-the cheapest mechanism measured in \S\ref{sec:char:cost}, so this margin is
-what following $n_W$ costs on current GPUs; a launch predicate evaluated
+1.28$\times$ slower, and the latency-optimal configuration of
+\S\ref{sec:char:affine} 1.10$\times$ slower. The speedup-optimal configuration
+comes within 1.6\% of \sysname on RTX~3080 but runs 1.09$\times$ slower on
+AGX Orin: selection (\S\ref{sec:design:select}) adds candidates only where the
+gain exceeds the GPU's per-layer selection cost, which holds for 5 of 83
+layers on RTX~3080 and for 24 on AGX Orin, whose per-layer gains are larger
+(Insight~5). Placing four candidates at every layer regardless of this cost
+(Cost-unaware $K_{\max}$) shortens convolution by 1.7\% and 5.4\%, but every
+producer then takes the selecting path, so construction grows and the frame
+runs 1.07$\times$ and 1.02$\times$ slower. The zero-cost oracle runs the same
+candidates on a graph captured for each frame's own $n_W$ (only the replay is
+timed) and reaches 0.92$\times$ and 0.88$\times$ \sysname's latency. Because
+it picks the same tile as Cost-unaware $K_{\max}$ for every layer and frame,
+its gap to that variant is the cost of the device-side mechanism itself, the
+cheapest measured in \S\ref{sec:char:cost}; a launch predicate evaluated
 before CTA allocation would remove it (\S\ref{sec:eval:discussion}).
 
 \subsection{Discussion}
 \label{sec:eval:discussion}
 
 \paragraph{Limitations.}
-\sysname converts spatial sparsity into latency, so its benefit is bounded by
-how sparse the upstream masks are and by how much of the frame convolution
-occupies. First, the gain vanishes as the active ratio approaches one: at full
-activity the per-length best configuration only matches dense execution
+\sysname's benefit is bounded by the sparsity of the upstream masks and by
+convolution's share of the frame. As the active ratio approaches one, the
+per-length best configuration only matches dense execution
 (\S\ref{sec:char:affine}) while construction still runs, so a fully active
-input runs slightly slower than the dense path. \sysname consumes masks and
-makes no claim about their quality or the resulting accuracy; a policy that
-keeps most positions active should stay on the dense path. Second, \sysname
-accelerates convolution only, so convolution's share of frame latency caps the
-end-to-end speedup. FP16 tensor cores shrink that share, and the remaining
-non-convolution operators become the next bottleneck, which is why FP16
-speedups are narrower than FP32 ones (\S\ref{sec:eval:microbenchmarks}).
-Models dominated by other operators bound the gain further.
+input runs slightly slower than the dense path; a policy that keeps most
+positions active should stay on it. \sysname consumes masks and makes no claim
+about their quality or the resulting accuracy. Convolution's share of frame
+latency caps the end-to-end speedup: FP16 tensor cores shrink that share,
+which is why FP16 speedups are narrower than FP32 ones
+(\S\ref{sec:eval:microbenchmarks}), and models dominated by other operators
+gain less.
 
 \paragraph{Hardware implications.}
-The characterization traces the remaining gap to two per-layer costs that
-current GPUs leave to software. The intercept of the affine model is launch
-and dependency latency rather than lost bandwidth (Insight~4), and its share
-grows as inputs become sparser; hardware that shortens the path from launch to
-the first useful instruction (for example, by staging kernel parameters before
-the CTA starts) and the dependent chain of a single tile would move sparse
-execution toward the proportional line. Following the worklist length costs
-about as much per decision point as it gains (Insight~5), because every
-existing mechanism either returns to the host or reconfigures the graph. A
-launch predicate that the hardware evaluates on a device-resident value before
-allocating CTA resources, or a work distributor that picks the tile shape from
-the worklist length, would let every layer adapt its configuration at
-negligible cost.
+The remaining gap comes from two per-layer costs that GPUs leave to software. The affine intercept is launch and dependency latency, not lost
+bandwidth (Insight~4); hardware that shortens the path from launch to the
+first useful instruction (e.g., by staging kernel parameters before the CTA starts) and a single tile's dependent chain would move sparse execution toward proportional scaling. Following the worklist length costs about as
+much per decision point as it gains (Insight~5), because existing mechanisms return to the host or reconfigure the graph; a hardware launch
+predicate evaluated on a device-resident value before CTA allocation, or a work distributor that picks the tile shape from $n_W$, would let
+every layer adapt at negligible cost.

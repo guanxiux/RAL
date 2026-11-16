@@ -39,6 +39,7 @@
 \renewcommand{\shortauthors}{ISCA 2027 Submission \#\iscasubmissionnumber}
 
 \begin{abstract}
+\tolerance=2000
 % v17 (ISCA framing, 2026-11-10)
 Masked convolution promises lower latency by computing only
 positions an upstream policy marks active, yet existing paths keep either
@@ -63,8 +64,8 @@ fastest baseline per workload-platform pair and reduces energy by
 60.8--82.5\% versus dense execution on embedded GPUs.
 \end{abstract}
 
-\keywords{Sparse convolution, dynamic spatial sparsity, GPU runtime, deep learning
-systems, efficient inference}
+\keywords{GPU, masked convolution, dynamic spatial sparsity, worklist-driven
+execution, implicit GEMM, DNN inference}
 
 \maketitle
 
@@ -82,9 +83,9 @@ systems, efficient inference}
 \input{src/conclusion}
 % ---------------------------------------------------------------------------
 
-\begin{acks}
-% TODO
-\end{acks}
+% \begin{acks}
+% % TODO
+% \end{acks}
 
 \bibliographystyle{ACM-Reference-Format}
 \bibliography{refs}

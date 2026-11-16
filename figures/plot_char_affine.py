@@ -12,8 +12,8 @@ rows = read("char_affine.csv")
 INDEXED = "#c0392b"  # the red of the baseline frames (figures/tikz/bgstyle.tex): an existing execution paradigm
 DEVS, PRECS = ("RTX 3080", "AGX Orin"), ("FP32", "FP16")
 
-fig = plt.figure(figsize=(FIG_W, 2.55))
-L, R, B, T, GX, GY = 0.115, 0.985, 0.11, 0.815, 0.07, 0.09
+fig = plt.figure(figsize=(FIG_W, 2.25))
+L, R, B, T, GX, GY = 0.115, 0.985, 0.125, 0.79, 0.07, 0.102
 pw, ph = (R - L - GX) / 2, (T - B - GY) / 2
 handles = {}
 for i, dev in enumerate(DEVS):

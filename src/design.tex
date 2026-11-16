@@ -5,10 +5,7 @@
 \subsection{Overview}
 \label{sec:overview}
 % fig:overview is defined at the end of characterization.tex so that it floats into Design.
-\sysname realizes worklist-driven tiled execution: each tile takes its output
-coordinates from an active-output worklist $\mathcal{W}$ of length
-$n_{\mathcal{W}}$ instead of a contiguous block, and keeps the dense reduction
-datapath (Figure~\ref{fig:overview}).
+\sysname realizes worklist-driven tiled execution: each tile takes its output coordinates from a worklist $\mathcal{W}$ of length $n_{\mathcal{W}}$, not a contiguous block, and keeps the dense reduction datapath (Figure~\ref{fig:overview}).
 
 Because a worklist tile matches a dense tile in instructions and SM cycles
 (Insight~2), what separates this selectivity from end-to-end latency reduction
@@ -22,9 +19,7 @@ the tile configuration of every layer that reads $\mathcal{W}$
 $\mathcal{W}$ (\ding{193}, \S\ref{sec:design:reuse}), so neither construction
 nor selection repeats at every layer. A persistent grid (\ding{194},
 \S\ref{sec:design:compute}) consumes $\mathcal{W}$, reading $n_{\mathcal{W}}$
-from device memory. All stages run in one per-frame CUDA graph (bottom of
-Figure~\ref{fig:overview}), so the frame needs no host synchronization between
-layers.
+from device memory. All stages run in one per-frame CUDA graph (Figure~\ref{fig:overview}, bottom), so no host synchronization separates layers.
 
 %% ================================================================
 \subsection{Tile-Local Worklist Construction}
@@ -35,10 +30,9 @@ Construction turns $M_{in}$ into $M_{out}$ and $\mathcal{W}$ in
 one pass over the layer's output grid, reading and writing only mask metadata,
 never features or weights (Algorithm~\ref{alg:construct}). The pass partitions
 the grid into construction tiles, one per CTA. Each CTA derives its tile's
-entries of $M_{out}$ by Eq.~\ref{eq:mask} (lines~3--6; a learned gate supplies
-them directly), compacts the tile's active positions in dense traversal order
+entries of $M_{out}$ by Eq.~\ref{eq:mask} (lines~3--6; a learned gate supplies them), compacts the tile's active positions in dense traversal order
 (line~7), and reserves a contiguous segment of $\mathcal{W}$ with one atomic
-add on $n_{\mathcal{W}}$, kept as a counter in device memory (line~9). The buffer holds $|\mathcal{G}|$ entries, the static
+add on $n_{\mathcal{W}}$, a counter in device memory (line~9). The buffer holds $|\mathcal{G}|$ entries, the static
 upper bound on $n_{\mathcal{W}}$, so construction allocates nothing at run time
 and $n_{\mathcal{W}}$ never leaves the device. Every active position lands in
 exactly one segment, so the worklist is exact: $n_{\mathcal{W}}=\|M_{out}\|_0$.
@@ -69,8 +63,7 @@ exactly one segment, so the worklist is exact: $n_{\mathcal{W}}=\|M_{out}\|_0$.
 
 The resulting order is tile-local: dense within each segment, arrival order
 across segments. Construction does not sort globally, which would need a
-device-wide prefix scan or a second pass, because order has a negligible effect
-on compute (Insight~3). The pass still scans the whole grid, so its cost is
+device-wide prefix scan or a second pass, because order barely affects compute (Insight~3). The pass still scans the whole grid, so its cost is
 fixed by the layer shape while the convolution it enables shrinks with activity
 and channel width.
 
@@ -79,7 +72,7 @@ and channel width.
 \label{sec:design:reuse}
 
 \sysname therefore builds a worklist only where the active set can grow. Layer
-$l+1$ reuses the worklist of layer $l$ when it keeps the output grid and cannot
+$l+1$ reuses the worklist of layer $l$ when it keeps the grid and cannot
 activate a position outside layer $l$'s active set:
 \begin{equation}
   \mathcal{G}^{l+1}=\mathcal{G}^{l},\qquad
@@ -104,8 +97,7 @@ does~\cite{deltacnn}, the reused worklist becomes a superset
 ($\eta_{\mathrm{construct}}<1$); the extra positions cost compute time but
 not correctness, because only positions active in the layer's own $M_{out}$
 are written. A new grid or a receptive field wider than one position
-marks a rebuild point. Rebuild points recur at every $3\times3$ convolution, so
-the worklist length changes from layer to layer as well as from frame to frame,
+marks a rebuild point. Rebuild points recur at every $3\times3$ convolution, so the worklist length changes across layers as well as frames,
 and the compute stage must consume a length that only the device knows.
 
 %% ================================================================
