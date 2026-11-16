@@ -47,22 +47,16 @@ feature grid, so a single masked-convolution runtime serves them all.
 \begin{figure}[b]
   \centering
   \includegraphics[width=\columnwidth]{figures/tikz/bg_conv.pdf}
-  \caption{Running example of masked convolution, executed by the dense baseline
-  and reused in Figures~\ref{fig:tile-skip}, \ref{fig:gather-scatter}
-  and~\ref{fig:overview}: a $3\times3$ convolution with padding 1 on a
-  $4\times4$ grid.
-  Each output $y_p$ aggregates its receptive field $\mathcal{N}(p)$, the
-  $3\times3$ window of the padded $\mathbf{x}$ around $p$ (padding marked
-  --), with the weights $\mathbf{f}$.
-  Dense convolution computes every output in tiles of contiguous positions,
-  which keeps loads coalesced and each weight tile reused across the tile, so
-  it runs at high throughput; but only the outputs active in $M_{out}$
-  (red) are required, and the throughput spent on the rest (dotted) is
-  wasted.}
+  \caption{Background of masked convolution and its execution by the dense
+  pipeline, on a
+  $3\times3$ convolution with padding~1 (marked --),
+  the example reused in Figures~\ref{fig:tile-skip}, \ref{fig:gather-scatter}
+  and~\ref{fig:overview}. The dense pipeline computes every output, but only the outputs active in $M_{out}$ (blue) are required, so the computation of the
+  rest (gray) is wasted.}
   \Description{An input grid with a ring of padding, the receptive fields of all sixteen positions
   laid out as the grid of positions with the four corners drawn and the rest
-  elided, a kernel, and an output grid whose active positions are red and
-  inactive positions dotted; a dashed red box on the input marks the window of the
+  elided, a kernel, and an output grid whose active positions are blue and
+  inactive positions gray; a dashed blue box on the input marks the window of the
   receptive field of output 0 around its nine cells, padding included.}
   \label{fig:masked-conv}
 \end{figure}
@@ -123,16 +117,11 @@ and required work.
 \begin{figure}[htb]
   \centering
   \includegraphics[width=\columnwidth]{figures/gap.pdf}
-  \caption{Workload study of a notable sparsity-to-latency gap. YOLOv8m~\cite{yolov8} at batch~4 on WildTrack~640 and RTX~3080
-  (FP32) under the DeltaCNN~\cite{deltacnn} temporal difference masks,
-  comparing cuDNN (Dense), DeltaCNN tile skipping, and MMCV
-  gather-scatter~\cite{mmcv}; all paths consume the same masks.
-  (a)~End-to-end latency per batch step; the dashed line (Ideal) is dense latency
-  scaled by the active ratio of the convolution work.
-  (b)~Throughput normalized to dense raw throughput. Bar height is raw
-  throughput $T$; the colored share is effective throughput
-  $T_{\mathrm{eff}}$ (labeled) and the dotted share is spent on inactive
-  positions.}
+  \caption{Sparsity-to-latency gap of existing work on YOLOv8m~\cite{yolov8} at batch~4,
+  quantified by its loss in throughput and useful-compute ratio. (a)~Ideal
+  scales dense latency by the active ratio. (b)~Bar height is raw throughput;
+  the labeled share is effective throughput, and the gray share is wasted on
+  inactive positions.}
   \Description{Two bar charts for Dense, tile skipping, and gather-scatter:
   end-to-end latency against a proportional reference line, and raw
   throughput stacked into useful and wasted shares.}
@@ -141,11 +130,10 @@ and required work.
 \begin{figure}[t]
   \centering
   \includegraphics[width=\columnwidth]{figures/tikz/bg_tileskip.pdf}
-  \caption{One baseline, tile skipping, which keeps the dense tiled pipeline and
-  skips only tiles with no active position, on the example of
-  Figure~\ref{fig:masked-conv}. Each issued tile runs at dense throughput
-  without extra passes, but a partially active tile still runs in full, so its
-  inactive (dotted) outputs are wasted computation.}
+  \caption{Demonstration of tile skipping~\cite{sbnet,skipconv,evconv,deltacnn}:
+  it keeps the dense pipeline and skips only the tiles with no active position,
+  so a partially active tile still runs in full and computes its inactive
+  (gray) outputs.}
   \Description{Two SMs process mask tiles: tiles with active positions are
   computed in full, and an all-inactive tile is skipped.}
   \label{fig:tile-skip}
@@ -154,12 +142,10 @@ and required work.
 \begin{figure}[t]
   \centering
   \includegraphics[width=\columnwidth]{figures/tikz/bg_gather.pdf}
-  \caption{Another baseline, gather-scatter, which computes only active outputs by
-  packing them into contiguous rows, on the example of
-  Figure~\ref{fig:masked-conv}. It copies their receptive fields into a packed
-  buffer (gather), runs a GEMM over the rows, and writes the packed results
-  back into $\mathbf{y}$ (scatter). No computation is wasted, but the two extra passes
-  over memory, not the computation, dominate its latency.}
+  \caption{Demonstration of gather-scatter~\cite{sai,dgnet,dynconv}: it
+  copies the receptive fields of the active outputs into a packed buffer
+  (gather), runs a GEMM over the packed rows, and writes the results back into
+  $\mathbf{y}$ (scatter), adding two extra passes over memory.}
   \Description{Receptive fields of active positions are gathered into a
   packed column, split across two SMs, and the packed outputs are scattered
   to the output tensor.}
@@ -168,14 +154,17 @@ and required work.
 
 Existing systems execute a mask in one of two paradigms. \emph{Tile
 skipping}~\cite{sbnet,skipconv,evconv,dynaspa,motiondelta,sparsetem} (Figure~\ref{fig:tile-skip}) inherits the dense pipeline's tile-based computation without additional metadata passes, skipping a tile only when all its coordinates are inactive and
-otherwise computing the whole tile; DeltaCNN~\cite{deltacnn} fuses a selective
-path into the kernel, taken when a tile is estimated to be mostly empty, to cut
-wasted work. \emph{Gather-scatter}~\cite{sai,dgnet}
+otherwise computing the whole tile; DeltaCNN~\cite{deltacnn} adds a selective
+path inside the kernel for tiles with few active inputs, but the path still
+occupies a thread block sized for the full tile, branches per position, and
+runs with lower weight reuse, so it cuts wasted operations at the cost of
+throughput. \emph{Gather-scatter}~\cite{sai,dgnet}
 (Figure~\ref{fig:gather-scatter}) instead abandons the dense pipeline: it extracts exactly the active
 coordinates into a packed representation, runs a separate GEMM, and scatters
 the results back, removing the inactive arithmetic but adding extraction,
-irregular access, and writeback overhead; DynConv~\cite{dynconv} adopts a model structure suited to gather-scatter, where one gather feeds several consecutive layers before a single
-scatter, amortizing that overhead.
+irregular access, and writeback overhead as well as a host synchronization
+per layer; DynConv~\cite{dynconv} adopts a model structure suited to gather-scatter, where one gather feeds several consecutive layers before a single
+scatter, amortizing these costs.
 
 A policy fixes the active ratio $\alpha$, defined as the fraction of output-grid positions marked active, whereas a concrete execution path determines the useful-compute ratio $\eta$, defined as the fraction of issued slots that correspond to required outputs:
 \begin{equation}
@@ -223,12 +212,14 @@ where \(t\) denotes the latency of the execution path, including auxiliary mask 
 % required-output computation and therefore determines its latency.
 
 % numbers: TABLES.md YOLOv8m b4 FP32 efficiency breakdown (micro_upd/work_fp32.json)
-Figure~\ref{fig:gap} makes this concrete on RTX~3080 for YOLOv8m~\cite{yolov8}
-at batch~4 under temporal difference masks~\cite{deltacnn}, where 82.2\% of
+Figure~\ref{fig:gap} makes this concrete for YOLOv8m~\cite{yolov8} at
+batch~4 on WildTrack~640~\cite{wildtrack} (RTX~3080, FP32), comparing cuDNN
+(Dense), DeltaCNN tile skipping, and MMCV gather-scatter~\cite{mmcv} on the
+same temporal difference masks~\cite{deltacnn}. Under these masks, 82.2\% of
 convolution work is unnecessary. Tile skipping holds throughput at
 41.9\% of dense but at a useful-compute ratio of only 67.4\%;
 gather-scatter lifts the useful-compute ratio to one, yet extraction traffic
-collapses its throughput to 31.7\% of dense. Neither path efficiently converts
+and per-layer host synchronization cut its throughput to 31.7\% of dense. Neither path efficiently converts
 the GPU's capability into effective throughput.
 
 

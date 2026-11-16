@@ -21,8 +21,8 @@
       \fi
     }
     \draw[rule, line width=0.35pt] (#1, #2) rectangle ++(2*#4, -2*#5) (#1+#4, #2) -- ++(0, -2*#5) (#1, #2-#5) -- ++(2*#4, 0);}
-  \newcommand{\tframe}[3]{\draw[tileskip, line width=0.8pt] (#1, #2) rectangle ++(2*#3, -2*#3);}
-  \newcommand{\tlabel}[3]{\node[idx, text=tileskip!75!black] at (#1, #2) {tile #3};}
+  \newcommand{\tframe}[3]{\draw[ink, line width=0.8pt] (#1, #2) rectangle ++(2*#3, -2*#3);}
+  \newcommand{\tlabel}[3]{\node[idx, text=ink] at (#1, #2) {tile #3};}
   \def\aw{6.0}\def\ah{4.4}  % receptive-field cell
   \def\b{4.2}                % output cell
   % \issue{x}{y}{first index}{tile}: the tile's receptive fields (o) f = its outputs
@@ -50,7 +50,7 @@
   \node[smlabel] at (\sx, -17.0) {SM 1};
   \issue{\sx+2.0}{-3.4}{0}{0}
   % tile 1: skipped (never issued)
-  \draw[tileskip, line width=0.6pt, dash pattern=on 1.4pt off 1pt, rounded corners=1pt]
+  \draw[muted, line width=0.6pt, dash pattern=on 1.4pt off 1pt, rounded corners=1pt]
     (\sx+33.6, -3.4) rectangle ++(2*\aw+7.7+2*\b, -2*\ah);
   \node[text=muted] at (\sx+33.6+\aw+3.85+\b, -3.4-\ah) {skipped};
   \tlabel{\sx+33.6+2*\aw+7.7+\b}{-3.4-2*\ah-1.9}{1}
@@ -62,7 +62,7 @@
     \node[anchor=west] at (3.2, -1.4) {required};
     \path[waste] (18.4, 0) rectangle ++(2.8, -2.8); \draw[rule, line width=0.35pt] (18.4, 0) rectangle ++(2.8, -2.8);
     \node[anchor=west] at (21.6, -1.4) {inactive (wasted if computed)};
-    \draw[tileskip, line width=0.6pt, dash pattern=on 1.4pt off 1pt] (60.6, 0) rectangle ++(2.8, -2.8);
+    \draw[muted, line width=0.6pt, dash pattern=on 1.4pt off 1pt] (60.6, 0) rectangle ++(2.8, -2.8);
     \node[anchor=west] at (63.8, -1.4) {skipped tile};
   \end{scope}
   \figframe{baseline}{Baseline: tile skipping}

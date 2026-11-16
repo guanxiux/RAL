@@ -4,33 +4,26 @@
 %% ================================================================
 \subsection{Overview}
 \label{sec:overview}
-% fig:overview is defined in characterization.tex so that it floats to the top of the Design section page.
-\sysname realizes worklist-driven tiled execution. Dense tiled convolution is
-driven by output coordinates: each coordinate determines the receptive-field
-reads and the output write, while the reduction over channels and kernel
-offsets stays regular. Replacing each tile's dense coordinate block with
-entries of an active-output worklist introduces position-level selectivity
-into the tiled pipeline without altering its reduction datapath
-(Figure~\ref{fig:overview}).
+% fig:overview is defined at the end of characterization.tex so that it floats into Design.
+\sysname realizes worklist-driven tiled execution: each tile takes its output
+coordinates from an active-output worklist $\mathcal{W}$ of length
+$n_{\mathcal{W}}$ instead of a contiguous block, and keeps the dense reduction
+datapath (Figure~\ref{fig:overview}).
 
-The characterization shows that a worklist tile matches a dense tile in
-instructions and SM cycles (\S\ref{sec:char:reduction}). What remains between this
-selectivity and end-to-end latency reduction are the costs isolated by
-Insights~4 and~5: each construction pass costs nearly constant time whatever
-the activity (\S\ref{sec:char:bound}), and following the worklist length requires a choice
-of configuration that only the device can make (\S\ref{sec:char:cost}).
-Figure~\ref{fig:overview} shows how \sysname handles both on the running
-example. Construction (\ding{192}, \S\ref{sec:design:construct}) builds the
-worklist from $M_{out}$ in one pass over mask metadata, and the same pass
-selects the tile configuration of every layer that reads the worklist
-(\S\ref{sec:design:select}). Later operators with the same geometry reuse the
-worklist (\ding{193}, \S\ref{sec:design:reuse}), so neither construction
-nor selection repeats at every layer. The compute stage (\ding{194}, \S\ref{sec:design:compute})
-consumes the worklist in a persistent grid that reads its length from device
-memory. All stages run in one per-frame CUDA graph (bottom of
-Figure~\ref{fig:overview}): construction enables, on the device, the selected
-candidate of every layer that reads the worklist (the small-tile nodes of
-$\ell$ and $\ell{+}1$), so the frame needs no host synchronization between
+Because a worklist tile matches a dense tile in instructions and SM cycles
+(Insight~2), what separates this selectivity from end-to-end latency reduction
+are the per-layer costs of Insights~4 and~5: each construction pass takes
+nearly constant time whatever the activity, and following the worklist length
+requires a choice of configuration that only the device can make.
+Construction (\ding{192}, \S\ref{sec:design:construct}) builds $\mathcal{W}$
+from $M_{out}$ in one pass over mask metadata and, in the same kernel, selects
+the tile configuration of every layer that reads $\mathcal{W}$
+(\S\ref{sec:design:select}). Later operators with the same geometry reuse
+$\mathcal{W}$ (\ding{193}, \S\ref{sec:design:reuse}), so neither construction
+nor selection repeats at every layer. A persistent grid (\ding{194},
+\S\ref{sec:design:compute}) consumes $\mathcal{W}$, reading $n_{\mathcal{W}}$
+from device memory. All stages run in one per-frame CUDA graph (bottom of
+Figure~\ref{fig:overview}), so the frame needs no host synchronization between
 layers.
 
 %% ================================================================
@@ -38,14 +31,14 @@ layers.
 \label{sec:design:construct}
 \label{sec:design:construct:compact}
 
-Construction turns $M_{in}$ into $M_{out}$ and the worklist $\mathcal{W}$ in
+Construction turns $M_{in}$ into $M_{out}$ and $\mathcal{W}$ in
 one pass over the layer's output grid, reading and writing only mask metadata,
 never features or weights (Algorithm~\ref{alg:construct}). The pass partitions
 the grid into construction tiles, one per CTA. Each CTA derives its tile's
 entries of $M_{out}$ by Eq.~\ref{eq:mask} (lines~3--6; a learned gate supplies
 them directly), compacts the tile's active positions in dense traversal order
 (line~7), and reserves a contiguous segment of $\mathcal{W}$ with one atomic
-add on a device-resident length counter $n_{\mathcal{W}}$ (line~9). The buffer holds $|\mathcal{G}|$ entries, the static
+add on $n_{\mathcal{W}}$, kept as a counter in device memory (line~9). The buffer holds $|\mathcal{G}|$ entries, the static
 upper bound on $n_{\mathcal{W}}$, so construction allocates nothing at run time
 and $n_{\mathcal{W}}$ never leaves the device. Every active position lands in
 exactly one segment, so the worklist is exact: $n_{\mathcal{W}}=\|M_{out}\|_0$.
@@ -75,11 +68,11 @@ exactly one segment, so the worklist is exact: $n_{\mathcal{W}}=\|M_{out}\|_0$.
 \end{algorithm}
 
 The resulting order is tile-local: dense within each segment, arrival order
-across segments. Order has a negligible effect on the compute
-stage (Insight~3), so construction does not sort globally, which would require
-a device-wide prefix scan or a second pass. What remains is the cost of the pass itself: it scans the whole
-grid, so it is fixed by the layer shape while the convolution it enables
-shrinks with activity and channel width.
+across segments. Construction does not sort globally, which would need a
+device-wide prefix scan or a second pass, because order has a negligible effect
+on compute (Insight~3). The pass still scans the whole grid, so its cost is
+fixed by the layer shape while the convolution it enables shrinks with activity
+and channel width.
 
 %% ================================================================
 \subsection{Cross-Operator Worklist Reuse}
@@ -95,8 +88,8 @@ activate a position outside layer $l$'s active set:
 \end{equation}
 The condition depends on operator types, not on mask values ($1\times1$
 convolutions, activations, and normalization satisfy it), so model conversion
-marks reuse edges once. A reused worklist need not be exact. To track where
-issued work goes, we factor the useful-compute ratio of
+marks reuse edges once. A reused worklist can be a superset of the layer's
+active set, so we factor the useful-compute ratio of
 Eq.~\ref{eq:efficiency-framework} into a construction and a compute term:
 \begin{equation}
   \eta
@@ -108,9 +101,9 @@ Eq.~\ref{eq:efficiency-framework} into a construction and a compute term:
 A freshly constructed worklist has $\eta_{\mathrm{construct}}=1$. When the
 upstream policy narrows a mask, as DeltaCNN's update truncation
 does~\cite{deltacnn}, the reused worklist becomes a superset
-($\eta_{\mathrm{construct}}<1$); the extra positions cost compute time but do
-not affect the output, because only positions active in the layer's own
-$M_{out}$ are written. A new grid or a receptive field wider than one position
+($\eta_{\mathrm{construct}}<1$); the extra positions cost compute time but
+not correctness, because only positions active in the layer's own $M_{out}$
+are written. A new grid or a receptive field wider than one position
 marks a rebuild point. Rebuild points recur at every $3\times3$ convolution, so
 the worklist length changes from layer to layer as well as from frame to frame,
 and the compute stage must consume a length that only the device knows.
@@ -119,17 +112,14 @@ and the compute stage must consume a length that only the device knows.
 \subsection{Worklist-Driven Tiled Compute}
 \label{sec:design:compute}
 
-In worklist-driven tiled execution, selectivity enters a tile only through its
-row indices. Dense convolution maps to a GEMM with $M$ output positions,
-$N=C_{out}$, and reduction depth $k^2C_{in}$; \sysname sets
-$M=n_{\mathcal{W}}$, so GEMM row $i$ is output position $\mathcal{W}[i]$, and
-keeps $N$, the reduction, and the tensor and weight layouts of the dense
-kernel. A configuration $q$ is therefore any point of the dense kernel's
-configuration space: the tile shape $B_M\times B_N$, the reduction step $B_K$,
-and the remaining tiling parameters such as warp layout, pipeline depth, and a
-reduction split within or across CTAs~\cite{cutlass}. Because this space stays
-intact, the configuration can follow $n_{\mathcal{W}}$
-(\S\ref{sec:design:select}).
+Dense convolution maps to a GEMM with $M$ output positions, $N=C_{out}$, and
+reduction depth $k^2C_{in}$; \sysname sets $M=n_{\mathcal{W}}$, so GEMM row $i$
+is output position $\mathcal{W}[i]$, and keeps $N$, the reduction, and the
+tensor and weight layouts of the dense kernel. A configuration $q$ is therefore
+any point of the dense kernel's configuration space: the tile shape
+$B_M\times B_N$, the reduction step $B_K$, and tiling parameters such as warp
+layout, pipeline depth, and a reduction split within or across
+CTAs~\cite{cutlass}.
 
 \begin{algorithm}[t]
 \caption{Worklist-Driven Tiled Compute (configuration $q$)}
@@ -161,21 +151,17 @@ intact, the configuration can follow $n_{\mathcal{W}}$
 Because $n_{\mathcal{W}}$ exists only on the device, the host cannot launch
 the right number of tiles. Algorithm~\ref{alg:compute} instead launches a
 persistent grid of $P$ CTAs, sized by the configuration and the GPU alone,
-which reads $n_{\mathcal{W}}$ from device memory and strides over the output
-tiles it implies (line~2); CTAs beyond the tile count exit immediately, so one
-static launch serves every length and every frame. Each tile reads its $B_M$
-worklist entries once (line~4); the reduction (lines~6--12) then walks the
-kernel offsets and channel slices exactly as dense execution does. Because the
-input stays a dense grid, every neighbor of an active position lies at a fixed
-offset from that position: the row's worklist entry and the tap's offset give
-each input address, so the addresses inside the reduction loop remain affine
-and no kernel map is read, where a kernel-map implicit GEMM reads one map
-entry per row and tap inside the loop (\S\ref{sec:bg:related}). The irregularity is $B_M$ worklist loads per
-tile outside the reduction, while channel-contiguous loads and weight-tile
-reuse are those of the dense kernel (Insight~2). The
-epilogue stores only positions active in $M_{out}$ (line~13), so the padding
-of the last tile and the superset entries inherited through reuse produce no
-writes. That padding is the only issued work beyond the worklist:
+which reads $n_{\mathcal{W}}$ from device memory and strides over the tiles it
+implies (line~2); CTAs beyond the tile count exit immediately, so one static
+launch serves every length and every frame. Each tile reads its $B_M$ worklist
+entries once (line~4), and the reduction (lines~6--12) walks the kernel
+offsets and channel slices as dense execution does. Because the input stays a
+dense grid, each input address is a row's worklist entry plus the tap's fixed
+offset: addresses inside the reduction loop stay affine, and no kernel map is
+read (Insight~2). The epilogue stores only positions active in $M_{out}$
+(line~13), so neither the padding of the last tile nor the superset entries
+inherited through reuse are written. The padding is the only issued work
+beyond the worklist:
 $\eta_{\mathrm{compute}}=n_{\mathcal{W}}/(\lceil n_{\mathcal{W}}/B_M\rceil
 B_M)$.
 
@@ -223,12 +209,12 @@ trade-off rather than a design constant.
 At run time the decision must happen where $n_{\mathcal{W}}$ first exists,
 without host involvement. The kernel that writes a layer's worklist learns
 $n_{\mathcal{W}}$ when its last CTA finishes, compares it with the thresholds
-of every layer that reads this worklist (the layer and the operators that
-reuse it), and switches each to its selected candidate, when it differs from
-the current one, before the compute launches. The design does not depend on how the
-switch is performed: $c(K)$ is the cost of the cheapest device-side mechanism
-the GPU offers (\S\ref{sec:impl}). As a result, $K$ differs across layers,
-GPUs, and precisions: layers whose optimum shifts little keep one
-configuration and pay nothing for selection;
-\S\ref{sec:eval:ablation-sensitivity} shows that both ignoring the cost and
-fixing one configuration fall short of this selection.
+of every layer that reads the worklist, and, before the compute launches,
+switches each of these layers whose selected candidate has changed. The design
+does not depend on a particular switching mechanism: $c(K)$ is the cost of the
+cheapest device-side one the GPU offers (\S\ref{sec:impl}). Because $K$ comes
+from Eq.~\ref{eq:select}, it differs across layers, GPUs, and precisions: layers whose optimum shifts little keep
+one configuration and pay nothing for selection;
+\S\ref{sec:eval:ablation-sensitivity} shows that ignoring the cost loses to
+this selection, and that a single well-chosen configuration comes close where
+the switching mechanism costs about as much as following the length gains.

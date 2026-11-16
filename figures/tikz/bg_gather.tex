@@ -55,11 +55,11 @@
   \foreach \k in {0,...,4} \draw[rule, line width=0.35pt] (\yx+\k*\s, \gy) -- ++(0, -4*\s) (\yx, \gy-\k*\s) -- ++(4*\s, 0);
   \node[title] at (\yx+2*\s, \gy-4*\s-1.2) {Output $\mathbf{y}$};
   % the two extra passes
-  \draw[-{Stealth[length=4pt, width=3.4pt]}, line width=1.4pt, draw=gather] (13.4, \gm) -- (20.0, \gm);
-  \node[anchor=south, text=gather!70!black, font=\fontsize{7}{7}\selectfont] at (16.7, \gm+0.5) {gather};
+  \draw[-{Stealth[length=4pt, width=3.4pt]}, line width=1.4pt, draw=baseline!80] (13.4, \gm) -- (20.0, \gm);
+  \node[anchor=south, text=baseline!75!black, font=\fontsize{7}{7}\selectfont] at (16.7, \gm+0.5) {gather};
   \node[idx, text=muted, align=center, anchor=north] at (16.7, \gm-0.8) {extra\\pass};
-  \draw[-{Stealth[length=4pt, width=3.4pt]}, line width=1.4pt, draw=gather] (64.6, \gm) -- (71.6, \gm);
-  \node[anchor=south, text=gather!70!black, font=\fontsize{7}{7}\selectfont] at (68.1, \gm+0.5) {scatter};
+  \draw[-{Stealth[length=4pt, width=3.4pt]}, line width=1.4pt, draw=baseline!80] (64.6, \gm) -- (71.6, \gm);
+  \node[anchor=south, text=baseline!75!black, font=\fontsize{7}{7}\selectfont] at (68.1, \gm+0.5) {scatter};
   \node[idx, text=muted, align=center, anchor=north] at (68.1, \gm-0.8) {extra\\pass};
   \figframe{baseline}{Baseline: gather-scatter}
 \end{tikzpicture}

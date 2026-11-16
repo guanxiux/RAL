@@ -3,9 +3,9 @@
 \usepackage[outline]{contour}\contourlength{0.9pt}
 % fig:teaser.  Top: the (gray) driving frame x on the 12x5 grid of convolution positions, and the upstream mask M
 % whose red cells are the active positions (grid and cells shared with teaser_assets.py).  Bottom: how each system
-% executes the masked convolution.  Dense collects the 3x3 receptive field of every position into contiguous tiles
-% (a 5x3 window shown, the rest elided); WISEConv collects only the active positions', laid out where they sit, from
-% the same frame.  The width of each GPU box stands for its convolution time; the steering wheels on the timeline mark
+% executes the masked convolution.  Tile skipping computes every position of the 2x2 tiles that hold an active one
+% (12 for 5); WISEConv takes a worklist of the active coordinates and collects only their receptive fields, laid
+% out where they sit, from the same frame.  The width of each GPU box stands for its convolution time; the steering wheels on the timeline mark
 % when planning finishes.
 \definecolor{det}{HTML}{1F8A5B}
 \definecolor{hood}{HTML}{E9EDF1}  % the ego vehicle's hood, as in figures/demo.png
@@ -13,8 +13,11 @@
   detbox/.style={draw=det, line width=0.7pt},
   reused/.style={draw=det, line width=0.55pt, dash pattern=on 1.4pt off 0.9pt},
   small/.style={font=\fontsize{6.2}{7.0}\selectfont},
+  % operators on the baseline 2.44 pt (the math axis of op's 9.5 pt) below the row's center line, so that the
+  % centers of = and (x) sit on that line whatever the descender of y
+  opc/.style={op, anchor=base, yshift=-2.44pt},
   stage/.style={draw=rule, line width=0.6pt, fill=white, rounded corners=1.5pt, align=center,
-                font=\fontsize{6.4}{7.2}\selectfont, minimum width=8.8mm, minimum height=8.6mm, inner sep=0.9pt},
+                font=\fontsize{6.4}{7.2}\selectfont, minimum width=8.8mm, minimum height=6.6mm, inner sep=0.9pt},
   wlabel/.style={font=\fontsize{7.4}{8}\selectfont\bfseries, fill=white, fill opacity=0.85, text opacity=1,
                  inner sep=0.8pt, rounded corners=1pt},
 }
@@ -34,6 +37,22 @@
       \draw[draw=#2, line width=1.5pt, line cap=butt] ({\a-2.2}:3.1) arc[start angle={\a-2.2}, end angle={\b+\e}, radius=3.1];}
     \filldraw[fill=#2, draw=ink, line width=0.5pt, line join=round]
       ($(72:3.1)+(72:0.6)$) -- ($(72:3.1)+(-18:1.0)$) -- ($(72:3.1)+(252:0.6)$) -- cycle;
+  \end{scope}}
+% \minimask{x}{y}{tiles}: the upstream mask at 0.9 mm per position (its top-left at x, y); with tiles=1 the 2x2 tiling
+% is drawn faintly and the tiles that hold an active position are outlined
+\newcommand{\minimask}[3]{%
+  \begin{scope}[shift={(#1,#2)}]
+    \path[waste] (0,0) rectangle (10.8,-4.5);
+    \foreach \c/\r in {4/1,4/2,4/3,5/2,6/2} \fill[actfill] (\c*0.9, -\r*0.9) rectangle ++(0.9, -0.9);
+    \foreach \k in {1,...,11} \draw[rule!45, line width=0.2pt] (\k*0.9, 0) -- ++(0, -4.5);
+    \foreach \k in {1,...,4} \draw[rule!45, line width=0.2pt] (0, -\k*0.9) -- ++(10.8, 0);
+    \foreach \c/\r in {4/1,4/2,4/3,5/2,6/2} \draw[actred, line width=0.45pt] (\c*0.9, -\r*0.9) rectangle ++(0.9, -0.9);
+    \ifnum#3=1
+      \foreach \k in {1,...,5} \draw[rule, line width=0.35pt, dash pattern=on 0.6pt off 0.5pt] (\k*1.8, 0) -- ++(0, -4.5);
+      \foreach \k in {1,2} \draw[rule, line width=0.35pt, dash pattern=on 0.6pt off 0.5pt] (0, -\k*1.8) -- ++(10.8, 0);
+      \foreach \c/\r in {4/0,4/2,6/2} \draw[ink, line width=0.7pt] (\c*0.9, -\r*0.9) rectangle ++(1.8, -1.8);
+    \fi
+    \draw[rule, line width=0.45pt] (0,0) rectangle (10.8,-4.5);
   \end{scope}}
 \newcommand{\weights}[1]{% center of the 3x3 weights f, the size of one patch
   \begin{scope}[shift={#1}]
@@ -60,17 +79,15 @@
     \input{teaser_traj}  % road-plane trajectories in perspective (teaser_traj.py), running on under the hood
     \filldraw[fill=hood, draw=ink, line width=1pt] (-1,-34.4) .. controls (24,-28.6) and (61,-28.6) .. (86,-34.4) -- (86,-36) -- (-1,-36) -- cycle;
   \end{scope}
-  \node[anchor=east, font=\fontsize{8.6}{9}\selectfont\bfseries, inner sep=0] at (40.4,-25.0)
-    {\contour{white}{\textcolor{baseline!75!black}{Dense}}};
-  \node[anchor=north west, font=\fontsize{8.6}{9}\selectfont\bfseries, inner sep=0] at (46.4,-25.5)
-    {\contour{white}{\textcolor{wiseconv!80!black}{WISEConv}}};
+  % outcome on the hood, as on the timeline
+  \node[anchor=east, font=\fontsize{7.4}{8}\selectfont\bfseries, text=baseline!75!black, inner sep=0] at (40.4,-33.3) {Tile skipping: too late};
+  \node[anchor=west, font=\fontsize{7.4}{8}\selectfont\bfseries, text=wiseconv!80!black, inner sep=0] at (44.6,-33.3) {WISEConv: in time};
   \node[wlabel, anchor=north east, font=\fontsize{7}{8}\selectfont] at (\W-0.8,-0.8) {Input frame $\mathbf{x}$};
   \node[anchor=north east, draw=rule, line width=0.4pt, rounded corners=1.2pt, inner xsep=1.2pt, inner ysep=1.0pt,
         align=left, small] at (\W,-35.9) {%
     \tikz[baseline=-0.6ex]{\fill[actfill] (0,-0.9mm) rectangle (2.4mm,0.9mm); \draw[actred, line width=0.6pt] (0,-0.9mm) rectangle (2.4mm,0.9mm);}~active in mask $M$\\[0.4mm]
-    \tikz[baseline=-0.6ex]{\path[waste] (0,-0.9mm) rectangle (2.4mm,0.9mm); \draw[rule, line width=0.4pt] (0,-0.9mm) rectangle (2.4mm,0.9mm);}~inactive (wasted if computed)\\[0.4mm]
-    \tikz[baseline=-0.6ex]{\draw[det, line width=0.7pt] (0,-0.9mm) rectangle (2.4mm,0.9mm);}~detection\\[0.4mm]
-    \tikz[baseline=-0.6ex]{\draw[reused] (0,-0.9mm) rectangle (2.4mm,0.9mm);}~reused detection};
+    \tikz[baseline=-0.6ex]{\path[waste] (0,-0.9mm) rectangle (2.4mm,0.9mm); \draw[rule, line width=0.4pt] (0,-0.9mm) rectangle (2.4mm,0.9mm);}~inactive (wasted if computed)
+};
 
   % ---------------- the upstream mask M ----------------
   \begin{scope}[shift={(6.4,-37.6)}]
@@ -81,82 +98,92 @@
     \foreach \c/\r in \active \draw[actred, line width=0.6pt] (\c*1.5, -\r*1.5) rectangle ++(1.5, -1.5);
     \draw[rule, line width=0.5pt] (0,0) rectangle (18,-7.5);
     \node[anchor=west, align=left, small] at (19.4,-3.75)
-      {{\fontsize{7.4}{8.4}\selectfont\textbf{Upstream mask $M$}}\\[0.3mm]the positions that need\\recomputing (red), here\\where the scene changed};
+      {{\fontsize{7.4}{8.4}\selectfont\textbf{Upstream mask $M$}}\\[0.3mm]the positions that need\\recomputing (blue), here\\where the scene changed};
   \end{scope}
   % x and M feed both systems
-  \draw[ink, line width=0.55pt] (2.5,-\H) -- (2.5,-78.8) (6.4,-41.35) -- (2.5,-41.35);
+  \draw[ink, line width=0.55pt] (2.5,-\H) -- (2.5,-78.6) (6.4,-41.35) -- (2.5,-41.35);
   \fill[ink] (2.5,-41.35) circle (0.45);
-  \draw[flow] (2.5,-58.0) -- (4.5,-58.0);
-  \draw[flow] (2.5,-78.8) -- (4.5,-78.8);
+  \node[small, anchor=east, rotate=90] at (1.4,-47.0) {$\mathbf{x}$, $M$};
+  \draw[flow] (2.5,-57.0) -- (4.5,-57.0);
+  \draw[flow] (2.5,-78.6) -- (4.5,-78.6);
 
-  % ---------------- Dense ----------------
-  \begin{scope}[shift={(0,-58.0)}]
-    \fill[smfill, rounded corners=2pt] (6.0,8.7) rectangle (41.4,-9.3);
-    \node[smlabel] at (6.0,8.7) {GPU};
-    \node[anchor=north west, inner sep=0] at (7.4,5.5) {\includegraphics[width=26.4mm]{teaser_assets/patches_dense.png}};
-    \foreach \i in {0,...,11} \foreach \j in {0,...,4} \draw[rule, line width=0.25pt] (7.4+\i*\p+0.1, 5.5-\j*\p-0.1) rectangle ++(\q, -\q);
-    \foreach \c/\r in \active \draw[actred, line width=0.6pt] (7.4+\c*\p+0.1, 5.5-\r*\p-0.1) rectangle ++(\q, -\q);
-    \node[small, anchor=north] at (23.7,-6.0) {receptive fields of \emph{all} positions};
-    \node[op] at (35.8,0) {$\otimes$};
-    \weights{(38.8,0)}
-    \node[op] at (43.0,0) {$=$};
-    \node[anchor=north west, inner sep=0] at (44.8,\th/2) {\includegraphics[width=\tw mm]{teaser_assets/scene.jpg}};
-    \begin{scope}[shift={(44.8,\th/2)}]
-      \draw[detbox] \detbus; \draw[detbox] \detman; \draw[detbox] \detped; \draw[detbox] \detcar;
-      \draw[rule, line width=0.4pt] (0,0) rectangle (\tw,-\th);
-    \end{scope}
-    \node[small, align=center, anchor=north] at (54.3,-4.6) {$\mathbf{y}$: every position\\recomputed};
-    \draw[flow] (65.0,0) -- (67.0,0);
-    \node[stage] at (71.4,0) {Predict\\\&\\plan};
-    \draw[flow] (76.0,0) -- (78.0,0);
-    \wheel{(80.4,0)}{baseline}{150/130/2.2, 121/101/2.2, 92/71/0}
-    \draw[draw=baseline, line width=0.6pt, dash pattern=on 1.2pt off 0.9pt] (80.4,-2.2) -- (80.4,-36.2);
+  % ---------------- Tile skipping ----------------
+  % the mask's 2x2 tiles -> the tiles that hold an active position, every position of each -> (x) f = y
+  \begin{scope}[shift={(0,-57.0)}]
+    \fill[smfill, rounded corners=2pt] (6.0,7.4) rectangle (46.2,-8.5);
+    \node[smlabel] at (6.0,7.4) {GPU};
+    \minimask{7.4}{2.25}{1}
+    \draw[flow] (18.8,0) -- (21.0,0);
+    \foreach \t/\x/\c/\r in {a/21.6/4/0, b/27.8/4/2, c/34.0/6/2} {
+      \node[anchor=north west, inner sep=0] at (\x,2.2) {\includegraphics[width=4.4mm]{teaser_assets/tile_\t.png}};
+      \foreach \pass in {0,1} \foreach \i in {0,1} \foreach \j in {0,1} {
+        \pgfmathtruncatemacro\pc{\c+\i}\pgfmathtruncatemacro\pr{\r+\j}
+        \def\isact{0}\foreach \ac/\ar in \active {\ifnum\ac=\pc\ifnum\ar=\pr\xdef\isact{1}\fi\fi}
+        \ifnum\isact=\pass
+          \ifnum\pass=1
+            \draw[actred, line width=0.6pt] (\x+\i*\p, 2.2-\j*\p) rectangle ++(\p, -\p);
+          \else
+            \path[waste, opacity=0.75] (\x+\i*\p+0.1, 2.2-\j*\p-0.1) rectangle ++(\q, -\q);
+            \draw[rule, line width=0.25pt] (\x+\i*\p, 2.2-\j*\p) rectangle ++(\p, -\p);
+          \fi
+        \fi}
+      \draw[ink, line width=0.6pt, rounded corners=0.8pt] (\x-0.3, 2.5) rectangle ++(5.0, -5.0);}
+    % a tile is 2x2 output positions (on the mask); computing it expands it into their 4 receptive fields
+    \draw[ink, line width=0.4pt] (11.9,-1.35) -- (11.9,-2.6);
+    \node[small, anchor=north, align=center, font=\fontsize{6.2}{7}\selectfont\itshape, inner sep=0.6pt] at (11.9,-2.6) {one tile of\\2$\times$2 outputs};
+    \node[small, anchor=south, font=\fontsize{6.2}{7}\selectfont\itshape] at (30.0, 2.6) {receptive fields};
+    \node[small, align=center, anchor=north] at (30.0,-2.6) {all 12 positions\\computed for 5 active};
+    \node[opc] at (40.8,0) {$\otimes$};
+    \weights{(43.8,0)}
+    \node[opc] at (49.4,0) {$=\ \mathbf{y}$};
+    \draw[flow] (52.6,0) -- (54.2,0);
+    \node[stage] at (58.6,0) {Predict\\\& plan};
+    \draw[flow] (63.2,0) -- (64.6,0);
+    \wheel{(67.0,0)}{baseline}{150/130/2.2, 121/101/2.2, 92/71/0}
+    \draw[draw=baseline, line width=0.6pt, dash pattern=on 1.2pt off 0.9pt] (67.0,-2.2) -- (67.0,-36.0);
   \end{scope}
-  \draw[baselineframe] (4.6,-48.0) rectangle (65.0,-68.6);
-  \node[baselinetag] at (7.4,-48.0) {Baseline: Dense};
+  \draw[baselineframe] (4.6,-48.0) rectangle (52.6,-66.4);
+  \node[baselinetag] at (7.4,-48.0) {Baseline: Tile skipping};
 
   % ---------------- WISEConv ----------------
-  \begin{scope}[shift={(0,-78.8)}]
-    \fill[smfill, rounded corners=2pt] (6.0,6.6) rectangle (21.6,-12.2);
-    \node[smlabel] at (6.0,6.6) {GPU};
+  % the mask -> the worklist of active coordinates (row, column), tile-local order -> their receptive fields, where
+  % they sit -> (x) f = y
+  \begin{scope}[shift={(0,-78.6)}]
+    \fill[smfill, rounded corners=2pt] (6.0,9.4) rectangle (35.6,-11.0);
+    \node[smlabel] at (6.0,9.4) {GPU};
+    \minimask{7.4}{6.25}{0}
+    \draw[flow] (18.8,4.0) -- (20.6,4.0);
+    \node[anchor=west, draw=wiseconv!80!black, line width=0.5pt, fill=white, rounded corners=0.8pt, inner sep=0.7pt,
+          align=left, font=\fontsize{5.8}{6.6}\selectfont] (wl) at (21.0,4.0) {(1,4)\,(2,4)\,(2,5)\\(3,4)\,(2,6)};
+    \node[anchor=south west, font=\fontsize{6.2}{7}\selectfont\itshape, text=wiseconv!80!black, inner sep=0.6pt] at (wl.north west) {worklist};
+    \draw[flow] (wl.south -| 24.9,0) -- (24.9,-0.2);
     % the active patches sit where their positions lie in the grid (columns 4-6, rows 1-3)
-    \node[anchor=north west, inner sep=0] at (7.4,3.3) {\includegraphics[width=6.6mm]{teaser_assets/patches_ours.png}};
-    \foreach \c/\r in \active {
-      \draw[rule, line width=0.25pt] (7.4+\c*\p-4*\p+0.1, 3.3-\r*\p+\p-0.1) rectangle ++(\q, -\q);
-      \draw[actred, line width=0.6pt] (7.4+\c*\p-4*\p+0.1, 3.3-\r*\p+\p-0.1) rectangle ++(\q, -\q);}
-    \node[small, align=center, anchor=north] at (13.8,-4.0) {only \emph{active}\\positions\\(the worklist)};
-    \node[op] at (16.0,0) {$\otimes$};
-    \weights{(19.0,0)}
-    \node[op] at (23.2,0) {$=$};
-    \node[anchor=north west, inner sep=0] at (25.0,\th/2) {\includegraphics[width=\tw mm]{teaser_assets/scene.jpg}};
-    \begin{scope}[shift={(25.0,\th/2)}]
-      \path[fill=white, opacity=0.55, even odd rule] (0,0) rectangle (\tw,-\th)
-        \foreach \c/\r in \active {(\c*\ts, -\r*\ts) rectangle ++(\ts, -\ts)};
-      % outline of the active region only (cells (4,1)-(4,3), (5,2), (6,2))
-      \draw[actred, line width=0.6pt] (4*\ts,-1*\ts) -- (5*\ts,-1*\ts) -- (5*\ts,-2*\ts) -- (7*\ts,-2*\ts) -- (7*\ts,-3*\ts)
-        -- (5*\ts,-3*\ts) -- (5*\ts,-4*\ts) -- (4*\ts,-4*\ts) -- cycle;
-      \draw[reused] \detbus; \draw[reused] \detman; \draw[detbox] \detped; \draw[detbox] \detcar;
-      \draw[rule, line width=0.4pt] (0,0) rectangle (\tw,-\th);
-    \end{scope}
-    \node[small, align=center, anchor=north] at (34.5,-4.6) {$\mathbf{y}$: active recomputed,\\the rest reused};
-    \draw[flow] (45.6,0) -- (47.6,0);
-    \node[stage] at (52.0,0) {Predict\\\&\\plan};
-    \draw[flow] (56.6,0) -- (58.6,0);
-    \wheel{(61.0,0)}{wiseconv}{150/71/0}
-    \draw[wiseconv, line width=0.6pt, dash pattern=on 1.2pt off 0.9pt] (61.0,-2.2) -- (61.0,-15.4);
+    \node[anchor=north west, inner sep=0] at (21.6,-0.5) {\includegraphics[width=6.6mm]{teaser_assets/patches_ours.png}};
+    \foreach \c/\r in \active   % frames on the patch pitch (centered in the gaps), so shared edges coincide
+      \draw[actred, line width=0.6pt] (21.6+\c*\p-4*\p, -0.5-\r*\p+\p) rectangle ++(\p, -\p);
+    \node[opc] at (30.2,-3.8) {$\otimes$};
+    \weights{(33.2,-3.8)}
+    \node[small, align=left, anchor=north west] at (7.0,1.2) {exactly the\\5 active\\positions,\\\emph{in place}};
+    \node[opc] at (38.8,-3.8) {$=\ \mathbf{y}$};
+    \draw[flow] (42.0,-3.8) -- (43.6,-3.8);
+    \node[stage] at (48.0,-3.8) {Predict\\\& plan};
+    \draw[flow] (52.6,-3.8) -- (54.0,-3.8);
+    \wheel{(56.4,-3.8)}{wiseconv}{150/71/0}
+    \draw[wiseconv, line width=0.6pt, dash pattern=on 1.2pt off 0.9pt] (56.4,-6.0) -- (56.4,-14.4);
   \end{scope}
-  \draw[oursframe] (4.6,-71.0) rectangle (45.6,-92.2);
-  \node[ourstag] at (7.4,-71.0) {Ours: WISEConv};
+  \draw[oursframe] (4.6,-68.0) rectangle (42.0,-90.8);
+  \node[ourstag] at (7.4,-68.0) {Ours: WISEConv};
 
   % ---------------- timeline ----------------
-  \draw[ink, line width=0.7pt, -{Stealth[length=3pt]}] (4.6,-94.2) -- (\W,-94.2);
-  \draw[ink, line width=0.7pt] (4.6,-93.4) -- (4.6,-95.0);
-  \node[small, anchor=north west] at (4.0,-94.6) {time};
-  \foreach \x/\col/\m in {61.0/ink/-1, 80.4/ink/1} {   % uncolored faces: on time / late
-    \begin{scope}[shift={(\x,-97.4)}]
-      \draw[\col, line width=0.6pt] (0,0) circle (1.6);
-      \fill[\col] (-0.55,0.45) circle (0.22) (0.55,0.45) circle (0.22);
-      \draw[\col, line width=0.6pt] (-0.75,{-0.35-0.25*\m}) .. controls (-0.3,{-0.35+0.25*\m}) and (0.3,{-0.35+0.25*\m}) .. (0.75,{-0.35-0.25*\m});
+  \draw[ink, line width=0.7pt, -{Stealth[length=3pt]}] (4.6,-93.0) -- (\W,-93.0);
+  \draw[ink, line width=0.7pt] (4.6,-92.2) -- (4.6,-93.8);
+  \node[small, anchor=north west] at (4.0,-93.4) {time};
+  \foreach \x/\col/\m/\t in {56.4/wiseconv/-1/in time, 67.0/baseline/1/too late} {
+    \begin{scope}[shift={(\x,-96.2)}]
+      \draw[draw=\col, line width=0.6pt] (0,0) circle (1.6);
+      \fill[fill=\col] (-0.55,0.45) circle (0.22) (0.55,0.45) circle (0.22);
+      \draw[draw=\col, line width=0.6pt] (-0.75,{-0.35-0.25*\m}) .. controls (-0.3,{-0.35+0.25*\m}) and (0.3,{-0.35+0.25*\m}) .. (0.75,{-0.35-0.25*\m});
+      \node[anchor=north, font=\fontsize{7}{8}\selectfont\bfseries, text=\col!80!black, inner sep=0.6pt] at (0,-1.8) {\t};
     \end{scope}}
 \end{tikzpicture}
 \end{document}

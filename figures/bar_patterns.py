@@ -1,8 +1,8 @@
 """Shared colors and restrained hatch encodings for paper bar charts.
 
 Palette (2026-11-12): the baselines are three tonal steps of one slate blue (Dense darkest, solid; tile skipping mid,
-"//"; gather-scatter light, "\\\\"), and WISEConv is the only saturated hue (the orange of the WISEConv frame in
-fig:overview).  Adjacent pairs validated with the dataviz skill's validate_palette.js (normal vision >= 21.3, CVD >=
+"//"; gather-scatter light, "\\\\"), and WISEConv is the only saturated hue (the green of the WISEConv frame in
+fig:overview; orange until 2026-11-16, re-validated: green vs tile skipping normal 15.1, deutan 11.9).  Adjacent pairs validated with the dataviz skill's validate_palette.js (normal vision >= 21.3, CVD >=
 20.6); the low chroma of the baselines is deliberate and the hatches carry identity in print.  Hatches are drawn in a
 per-path ink over the fill (``add_bar``).  Wasted work is a neutral gray with a dot texture, never a system color.
 """
@@ -14,7 +14,7 @@ COLORS = {
     "dense": "#2b3a4a",
     "tile_skip": "#6a86a0",
     "gather_scatter": "#b7c6d4",
-    "wiseconv": "#dd7428",
+    "wiseconv": "#2a7f4a",
 }
 HATCHES = {
     "dense": "",
@@ -30,7 +30,7 @@ HATCH_INKS = {"tile_skip": "#ffffff", "gather_scatter": "#6a86a0"}
 EDGE = "#2b2b2b"  # outline of the older figures (plot_e2e.py and friends)
 INK = "#222222"  # text and axes
 MUTED = "#6b6b68"  # secondary text, reference lines
-IDEAL = "#14a05a"  # the Ideal (proportional) line: a hue no bar uses
+IDEAL = "#c07f00"  # the Ideal (proportional) line: a hue no bar uses (amber; green is WISEConv since 2026-11-16)
 IDEAL_LS = (0, (3.2, 1.3))
 
 

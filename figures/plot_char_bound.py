@@ -14,7 +14,7 @@ from char_style import CFG, FS_LAB, DEV_LS, DEV_MK, FIG_W, FS_CAP, FS_LEG, FS_NO
 CAUSE = (("param", ("imc_miss",), "constant-cache miss", "#a9c8e8"),
          ("sync", ("barrier", "membar"), "barrier, memory fence", "#f2b98f"),
          ("pipe", ("short_scoreboard", "wait"), "on-chip latency", "#f0d98a"),
-         ("mem", ("long_scoreboard",), "DRAM/L2 latency", "#127a55"),
+         ("mem", ("long_scoreboard",), "DRAM/L2 latency", "#3b4f6b"),
          ("other", ("other",), "other", "#e2e2de"))
 KEYS = tuple(k for c in CAUSE for k in c[1])
 GROUPS = (("RTX 3080", "FP32"), ("RTX 3080", "FP16"), ("AGX Orin", "FP32"), ("AGX Orin", "FP16"))

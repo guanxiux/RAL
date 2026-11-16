@@ -11,7 +11,7 @@ import numpy as np
 from char_style import FIG_W, FS_CAP, FS_LAB, FS_LEG, INK, MUTED, plt, read, save, tidy
 
 ORDERS = ("sorted", "shuffled", "uniform")
-OC = {"sorted": "#2a78d6", "shuffled": "#eb6834", "uniform": "#1baf7a"}  # dataviz reference slots 1-3 (all pairs)
+OC = {"sorted": "#2a78d6", "shuffled": "#eb6834", "uniform": "#7660a6"}  # dataviz slots 1-2 and a purple (green is WISEConv)
 OLABEL = {"sorted": "sorted globally", "shuffled": "shuffled", "uniform": "uniform positions (control)"}
 GROUPS = (("RTX 3080", "FP32"), ("RTX 3080", "FP16"), ("AGX Orin", "FP32"), ("AGX Orin", "FP16"))
 

@@ -2,7 +2,8 @@
 rows Y0..Y0+640 and cut into a 12x5 grid of 128-px cells, the positions of the schematic convolution; teaser.tex uses
 the same grid and the same ACTIVE cells (col, row), the upstream mask's active positions (the pedestrian and the car).
 Writes scene.jpg (the cropped frame) and the receptive-field mosaics patches_dense.png (all 60 positions) and
-patches_ours.png (the active positions, laid out where they sit in the grid)."""
+patches_ours.png (the active positions, laid out where they sit in the grid), and tile_{a,b,c}.png (the
+2x2 tiles that tile skipping computes)."""
 from PIL import Image, ImageEnhance, ImageOps
 
 CELL, COLS, ROWS, Y0 = 128, 12, 5, 192
@@ -30,3 +31,7 @@ def mosaic(cells, name):
 
 mosaic([(c, r) for r in range(ROWS) for c in range(COLS)], 'patches_dense')
 mosaic(ACTIVE, 'patches_ours')
+# tile skipping computes the 2x2 tiles that hold an active position (columns 4-5 rows 0-1, columns 4-5 rows 2-3,
+# columns 6-7 rows 2-3), every position of each
+for name, c0, r0 in (('tile_a', 4, 0), ('tile_b', 4, 2), ('tile_c', 6, 2)):
+    mosaic([(c, r) for r in (r0, r0 + 1) for c in (c0, c0 + 1)], name)

@@ -4,22 +4,21 @@
 \begin{figure}[t]
   \centering
   \includegraphics[width=\columnwidth]{figures/tikz/teaser.pdf}
-  \caption{Background of masked convolution: dense convolution vs.\ \sysname. The dense baseline recomputes every position,
-  including the inactive ones of the upstream mask $M$. \sysname drives the same
-  dense pipeline with a worklist of only the active positions (red), computing
-  them at nearly the per-output throughput of dense convolution and reusing the
-  other outputs. Its convolution therefore ends earlier, and planning reacts
-  sooner.}
+  \caption{Comparison of tile skipping~\cite{sbnet,skipconv,evconv,deltacnn} and \sysname in masked convolution
+  execution. Tile skipping skips the tiles with no active position (blue) in
+  the mask $M$ but computes every position of the remaining tiles. \sysname
+  drives the same dense pipeline with a worklist of the active positions while
+  keeping its per-tile throughput, so its convolution ends earlier and planning
+  reacts sooner.}
   \Description{Top: a grayscale street scene seen from a vehicle on a grid of
   convolution positions; the cells around a crossing pedestrian and a moving car
-  are red, the active positions of the upstream mask M, which is also drawn
-  below the scene. The WISEConv trajectory changes lane right away, while the
-  dashed Dense trajectory keeps straight until its perception finishes. Bottom:
-  Dense convolves the 3x3 receptive fields of all positions with the weights and
-  recomputes the whole output with its detections; WISEConv convolves only the
-  receptive fields of the active positions, recomputes those outputs and reuses
-  the remaining detections. Its GPU box is narrower, so its prediction and
-  planning finish earlier on the timeline.}
+  are blue, the active positions of the upstream mask M, which is also drawn
+  below the scene. The WISEConv trajectory changes lane right away and arrives in
+  time, while the dashed tile-skipping trajectory keeps straight and is too late.
+  Bottom: tile skipping computes three 2x2 tiles, all 12 receptive fields for 5
+  active positions, convolved with the weights; WISEConv turns the mask into a
+  worklist of the 5 active coordinates and convolves only their receptive fields
+  in place. On the timeline WISEConv finishes before tile skipping.}
   \label{fig:teaser}
 \end{figure}
 
@@ -40,72 +39,74 @@ systems~\cite{evconv,deltacnn,dgnet,dynconv} rarely
 translate the sparsity into proportional latency reduction.
 
 Dense GPU convolution obtains high \emph{throughput} (operations per second)
-from coordinate-driven, tiled execution. Each tile enumerates a contiguous
-block of output coordinates; those coordinates fix each output position's
-receptive field and write location, while the reduction over channels and
-kernel offsets follows a regular datapath with coalesced loads and
-weight-tile reuse.
-In masked convolution, reducing latency proportionally requires
-sustaining this throughput while achieving a high \emph{useful-compute ratio}
-(the fraction of issued operations that produce needed outputs), but the
-per-frame position selection imposed by the mask conflicts with the contiguous
-coordinate assumption that sustains throughput, placing these two
-axes in tension.
+from tiled execution: each tile enumerates a contiguous block of output
+coordinates and reduces over channels and kernel offsets along a regular
+datapath with coalesced loads and weight-tile reuse.
+In masked convolution, reducing latency proportionally requires sustaining
+this throughput while achieving a high \emph{useful-compute ratio} (the
+fraction of issued operations that produce needed outputs), but the mask
+places the two axes in tension: it selects scattered positions while each
+tile covers a contiguous block, so keeping the blocks issues operations on
+inactive positions, and abandoning them gives up the regular datapath.
 
-The two existing execution paradigms each sacrifice one axis for the other.
+Neither existing execution paradigm sustains both axes.
 \emph{Gather-scatter}~\cite{sai,dgnet,dynconv} extracts exactly the
 active positions into a packed representation, computes, and
-scatters the results back, but is bottlenecked by the memory traffic of
-materializing their receptive fields.
+scatters the results back, but adds memory passes that materialize their
+receptive fields and a host synchronization per layer.
 \emph{Tile skipping}~\cite{sbnet,skipconv,evconv,deltacnn} suppresses tiles that are entirely inactive and retains the dense
 pipeline, but wastes computation on partially active tiles.
 On an RTX~3080 running YOLOv8m~\cite{yolov8} at batch~4 under temporal
-difference masks~\cite{deltacnn}, 82.2\% of convolution work is unnecessary.
+difference masks~\cite{deltacnn}, 82.2\% of convolution work is unnecessary
+(an \emph{active ratio} of 17.8\%).
 Gather-scatter sustains only 31.7\% of the dense pipeline's throughput,
 reducing latency by just 43.8\%.
-Tile skipping reaches higher throughput but
+Tile skipping sustains 41.9\% but
 wastes 32.6\% of issued operations, reducing latency by only 36.9\%,
 slower than gather-scatter despite its throughput advantage
 (\S\ref{sec:bg:gap}).
 
-Contrary to the expectation that scattered work breaks dense efficiency, we
-find that restricting a dense tiled pipeline to scattered active positions
-largely preserves its per-tile throughput. We collect these positions into a
-worklist and characterize the resulting execution on a desktop and an embedded
-GPU (\S\ref{sec:char}). The input stays a dense grid, so
-every neighbor of an active position lies at a fixed offset from it; the
-irregularity reduces to one index per output row, outside the reduction loop
-that drives coalesced channel loads and weight-tile reuse. Hardware counters
-confirm that a worklist tile executes the same instructions as a dense tile and
-spends 0.98--1.04$\times$ its SM cycles. When the tile configuration follows the worklist length,
-convolution time is affine in the active ratio with a slope matching the dense
-marginal cost; the residual gap is an intercept of 5.6--17.4\% of dense time
-per layer (median per GPU and precision), dominated by kernel launch latency
-and fixed per-tile stalls such as barriers, not by throughput loss.
+We observe that output coordinates can serve as the interface between
+position selection and the dense reduction datapath, resolving this
+tension. Because the input stays on the dense grid, every neighbor lies at
+a fixed offset from an output's base address, so a worklist of active
+positions in place of a tile's contiguous coordinate block sets only
+per-row base addresses and leaves the reduction loop intact. We characterize this
+\emph{worklist-driven tiled execution} on a desktop and an embedded GPU
+(\S\ref{sec:char}) and find that it preserves the per-tile throughput of
+dense execution: a worklist tile executes the same number of instructions as a dense
+tile and spends 0.98--1.04$\times$ its SM cycles. This parity carries over
+to a whole layer when the tile configuration follows the worklist length:
+convolution time is then affine in the active ratio with a slope matching
+the dense marginal cost, and the residual gap is an intercept of
+5.6--17.4\% of dense time per layer (median per GPU and precision),
+dominated by kernel launch latency and fixed per-tile stalls, not by
+throughput loss.
 
-Per-tile throughput parity does not by itself yield end-to-end latency
-reduction; two challenges remain.
+While worklist-driven execution retains dense throughput within each tile,
+two challenges remain in the full per-frame path.
 First, \emph{worklist construction cost}: deriving the worklist from the
-mask requires scanning the whole grid and costs time independent of the active count, so construction's share of
-latency grows as activity falls and accumulates when every layer rebuilds.
+mask requires scanning the whole grid and costs time nearly independent of
+the active count, so construction's share of latency grows as activity falls
+and accumulates when every layer rebuilds. At an active ratio of 17.5\%,
+rebuilding at every layer adds 2.6--18.7\% to
+convolution time (\S\ref{sec:char:bound}).
 Second, \emph{worklist consumption efficiency}: the best tile configuration
 shifts with the worklist length, but
 the length is visible only on the device after construction and
 changes across frames and layers. Reading it back to the host stalls the
 per-frame path; adapting on the device avoids the stall but incurs a
 non-negligible cost per decision point, as current GPUs lack a lightweight
-mechanism to condition a launch on a device-resident value
-(\S\ref{sec:char}).
+mechanism to condition a launch on a device-resident value. Even the cheapest
+existing mechanism costs more than it saves on 7--25\% of YOLOv8m layers (\S\ref{sec:char:cost}).
 
 We present \sysname
 (\textbf{W}orklist-dr\textbf{I}ven ma\textbf{S}k\textbf{E}d
-\textbf{Conv}o\-lu\-tion), which drives the unchanged dense pipeline with an
-active-output worklist. This establishes \emph{worklist-driven tiled
-execution} as a third paradigm for masked convolution, beside tile skipping
-and gather-scatter: it retains the dense pipeline, as tile skipping does, and
-computes only active positions, as gather-scatter does, because the worklist
-enters a tile only as its row indices and leaves the reduction, the tensor and
-weight layouts, and the dense kernel's configuration space unchanged. Around this compute stage, \sysname co-designs worklist
+\textbf{Conv}o\-lu\-tion), which establishes worklist-driven tiled execution
+as a third paradigm for masked convolution, beside tile skipping and
+gather-scatter: it keeps the dense pipeline and its configuration space, as
+tile skipping does, and restricts computation to active positions, as
+gather-scatter does. Around this execution, \sysname co-designs worklist
 construction and consumption to meet both challenges.
 To reduce construction cost, a single mask-space pass fuses output-mask
 propagation with per-tile compaction, operating on only mask and coordinate
@@ -113,7 +114,7 @@ metadata; compatible operators reuse the worklist instead of
 reconstructing it.
 To sustain consumption efficiency, a persistent compute grid consumes the
 worklist without host synchronization, and a cost-aware selection mechanism
-adapts the tile configuration per frame, adding a candidate to a layer only
+adapts the tile configuration per frame, adding a candidate configuration to a layer only
 where its expected gain exceeds the selection overhead.
 
 This paper makes the following contributions:

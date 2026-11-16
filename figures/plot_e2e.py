@@ -27,7 +27,7 @@ BW = 1.0           # bar width (slot = 1): the bars of a cluster touch
 CGAP = 0.6         # between the FP32 and FP16 clusters
 GGAP = 1.6         # between workloads
 FP16_BAND = "#f3f1ec"
-OURS_INK = "#a8521a"  # WISEConv labels: a darker step of the WISEConv orange
+OURS_INK = "#1f5f37"  # WISEConv labels: a darker step of the WISEConv green
 TRUNC = "#c62828"     # the truncation mark
 FS_IN = 6.0        # numbers inside / above bars
 
@@ -106,7 +106,7 @@ def panel(ax, platform, left, bottom_row):
     if bottom_row:
         for c, (_, name) in zip(centers, WORKLOADS):
             ax.text(c, -0.20, name, transform=ax.get_xaxis_transform(), ha="center", va="top", fontsize=FS_TICK + 0.5)
-            ax.text(c, -0.40, r"$\hat{\alpha}$ = " + alpha_label(name, any(k[0] == platform and k[2] == "fp16" for k in data)), transform=ax.get_xaxis_transform(),
+            ax.text(c, -0.40, r"$\hat{\alpha}$ = " + alpha_label(name), transform=ax.get_xaxis_transform(),
                     ha="center", va="top", fontsize=FS_NOTE, color=INK)
     ax.text(0.0, 1.07, platform, transform=ax.transAxes, ha="left", va="bottom", fontsize=FS_CAP, fontweight="bold")
 

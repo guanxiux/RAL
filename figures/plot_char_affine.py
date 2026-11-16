@@ -9,7 +9,7 @@ from bar_patterns import IDEAL, IDEAL_LS
 from char_style import CFG, FIG_W, FS_CAP, FS_LEG, FS_NOTE, INK, plt, read, save, tidy
 
 rows = read("char_affine.csv")
-INDEXED = "#7660a6"  # the purple of the baseline frames (figures/tikz/bgstyle.tex): an existing execution paradigm
+INDEXED = "#c0392b"  # the red of the baseline frames (figures/tikz/bgstyle.tex): an existing execution paradigm
 DEVS, PRECS = ("RTX 3080", "AGX Orin"), ("FP32", "FP16")
 
 fig = plt.figure(figsize=(FIG_W, 2.55))

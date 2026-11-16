@@ -22,7 +22,7 @@ NAMES = {"dense": "Dense", "tile_skip": "Tile skipping", "gather_scatter": "Gath
 CGAP, GGAP, YMAX = 0.45, 1.0, 1.25
 BW = 0.84  # bar width (slot = 1): a small gap between bars
 FP16_BAND = "#f3f1ec"
-OURS_INK = "#a8521a"
+OURS_INK = "#1f5f37"
 FS_IN = 6.0
 
 data = defaultdict(dict)
