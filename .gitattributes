@@ -1,0 +1,6 @@
+# PDFs and images are binary: git never tries to merge them (rebuild and commit on conflict)
+*.pdf binary
+*.png binary
+*.jpg binary
+# section-aware hunk headers in diffs
+*.tex diff=tex
