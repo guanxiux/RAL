@@ -76,7 +76,7 @@ agree.
 \begin{figure*}[htb]
   \centering
   \includegraphics[width=\textwidth]{figures/e2e_latency.pdf}
-  \caption{Full-model latency on six GPUs, normalized to Dense of the same
+  \caption{End-to-end latency comparison on six GPUs, normalized to Dense of the same
   precision (lower is better). Each workload has an FP32 and an FP16 group of
   all paths (no FP16 gather-scatter on DynConv). Dense bars give the absolute latency (per frame; per batch of four
   for YOLOv8m b4), \sysname bars give its speedup over the fastest other path
@@ -144,7 +144,7 @@ AEE and AP elsewhere) is set by the upstream mask policy.
 \begin{figure}[t]
   \centering
   \includegraphics[width=\columnwidth]{figures/effective_throughput.pdf}
-  \caption{Effective throughput $\eta T$ (colored) and wasted throughput
+  \caption{Throughput breakdown. Effective throughput $\eta T$ (colored) and wasted throughput
   $(1-\eta)T$ (dotted) of every path, relative to the raw throughput of Dense
   of the same precision. \sysname bars give its effective throughput.}
   \Description{Two panels (RTX 3080 and AGX Orin). For four workloads, an FP32
@@ -183,7 +183,7 @@ YOLOv8m b1 and DynConv, whose shortest worklists (P10) hold 26 and 3 entries.
 \begin{figure}[t]
   \centering
   \includegraphics[width=\columnwidth]{figures/decomposition.pdf}
-  \caption{YOLOv8m latency per frame by stage on RTX~3080, at batch~1 (b1)
+  \caption{Latency decomposition of YOLOv8m frames by stage on RTX~3080, at batch~1 (b1)
   and~4 (b4), with FP32 and FP16 on separate axes.
   Stages are each path's kernel shares of GPU busy time, scaled to its
   end-to-end latency; host sync is the remaining time in the frame, when the GPU

@@ -32,7 +32,7 @@ hardware are identical, so differences isolate the addressing mode.
 \begin{figure}[t]
   \centering
   \includegraphics[width=\columnwidth]{figures/char_affine.pdf}
-  \caption{Convolution time over dense time, averaged over the layers of
+  \caption{Affine latency of our worklist-driven kernel. Convolution time over dense time, averaged over the layers of
   YOLOv8m, against the active ratio. A configuration is one point of the dense
   kernel's configuration space (tile shape, warp layout, pipeline depth, and
   reduction split~\cite{cutlass}). The per-length best takes the fastest configuration at each worklist
@@ -93,7 +93,7 @@ configuration follows the worklist length.}
 \begin{figure}[t]
   \centering
   \includegraphics[width=\columnwidth]{figures/char_reduction.pdf}
-  \caption{A worklist tile against a dense tile of the same configuration on
+  \caption{Per-tile cost. A worklist tile against a dense tile of the same configuration on
   representative layers (Nsight Compute, cold L2; bar: range over the two GPUs
   and two precisions, dot: median). (a)~Global-load sectors per request of the
   median frame. (b)--(d)~Cost of one more tile: the slope over the tile count
@@ -140,7 +140,7 @@ identical to dense execution.}
 \begin{figure}[t]
   \centering
   \includegraphics[width=\columnwidth]{figures/char_order.pdf}
-  \caption{The worklist in other orders, relative to the tile-local order that
+  \caption{Effect of worklist order. The worklist in other orders, relative to the tile-local order that
   construction emits (same length and tile); uniform positions are a control
   without the spatial clustering of the mask. (a)~Every layer and captured
   frame (box: 25th--75th percentile, whiskers: 5th--95th, line: median). (b),
@@ -155,7 +155,7 @@ identical to dense execution.}
 \begin{figure*}[t]
   \centering
   \includegraphics[width=0.98\textwidth]{figures/tikz/overview.pdf}
-  \caption{\sysname on the running example of Figure~\ref{fig:masked-conv}.
+  \caption{Overview of \sysname on the running example of Figure~\ref{fig:masked-conv}, with a worklist $\mathcal{W}$ of its active positions.
   \ding{192}~One pass over $M_{out}$ compacts each construction tile into a
   segment, appends the segments to $\mathcal{W}$ in arrival order, and selects
   from $n_\mathcal{W}$ the tile configuration of every layer that reads
@@ -203,7 +203,7 @@ within 1.1\% of a global order.}
 \begin{figure}[t]
   \centering
   \includegraphics[width=\columnwidth]{figures/char_bound.pdf}
-  \caption{The two per-layer fixed costs. (a)~Stall cycles by cause and time of a
+  \caption{Per-layer fixed costs of launch and construction. (a)~Stall cycles by cause and time of a
   compute launch with no work or one tile, against the intercept $b$ (medians
   over representative layers; on-chip latency: short scoreboard and
   fixed-latency waits). (b)~Construction over convolution time.}
@@ -272,7 +272,7 @@ this trade-off.
 \begin{figure}[t]
   \centering
   \includegraphics[width=\columnwidth]{figures/char_cost.pdf}
-  \caption{Share of the layers of YOLOv8m on which a selection mechanism costs
+  \caption{Selection cost versus gain. Share of YOLOv8m layers on which a mechanism costs
   more than it saves. A layer's saving is how much faster per frame the
   per-length best configuration runs than the best single configuration, on
   the layer's traced worklist lengths. The updatable node is shown without and

@@ -47,9 +47,9 @@ feature grid, so a single masked-convolution runtime serves them all.
 \begin{figure}[b]
   \centering
   \includegraphics[width=\columnwidth]{figures/tikz/bg_conv.pdf}
-  \caption{Masked convolution executed by the dense baseline, on the example
-  that Figures~\ref{fig:tile-skip}, \ref{fig:gather-scatter}
-  and~\ref{fig:overview} reuse: a $3\times3$ convolution with padding 1 on a
+  \caption{Running example of masked convolution, executed by the dense baseline
+  and reused in Figures~\ref{fig:tile-skip}, \ref{fig:gather-scatter}
+  and~\ref{fig:overview}: a $3\times3$ convolution with padding 1 on a
   $4\times4$ grid.
   Each output $y_p$ aggregates its receptive field $\mathcal{N}(p)$, the
   $3\times3$ window of the padded $\mathbf{x}$ around $p$ (padding marked
@@ -123,7 +123,7 @@ and required work.
 \begin{figure}[htb]
   \centering
   \includegraphics[width=\columnwidth]{figures/gap.pdf}
-  \caption{YOLOv8m~\cite{yolov8} at batch~4 on WildTrack~640 and RTX~3080
+  \caption{Workload study of a notable sparsity-to-latency gap. YOLOv8m~\cite{yolov8} at batch~4 on WildTrack~640 and RTX~3080
   (FP32) under the DeltaCNN~\cite{deltacnn} temporal difference masks,
   comparing cuDNN (Dense), DeltaCNN tile skipping, and MMCV
   gather-scatter~\cite{mmcv}; all paths consume the same masks.
@@ -141,7 +141,7 @@ and required work.
 \begin{figure}[t]
   \centering
   \includegraphics[width=\columnwidth]{figures/tikz/bg_tileskip.pdf}
-  \caption{Tile skipping, the baseline that keeps the dense tiled pipeline and
+  \caption{One baseline, tile skipping, which keeps the dense tiled pipeline and
   skips only tiles with no active position, on the example of
   Figure~\ref{fig:masked-conv}. Each issued tile runs at dense throughput
   without extra passes, but a partially active tile still runs in full, so its
@@ -154,7 +154,7 @@ and required work.
 \begin{figure}[t]
   \centering
   \includegraphics[width=\columnwidth]{figures/tikz/bg_gather.pdf}
-  \caption{Gather-scatter, the baseline that computes only active outputs by
+  \caption{Another baseline, gather-scatter, which computes only active outputs by
   packing them into contiguous rows, on the example of
   Figure~\ref{fig:masked-conv}. It copies their receptive fields into a packed
   buffer (gather), runs a GEMM over the rows, and writes the packed results

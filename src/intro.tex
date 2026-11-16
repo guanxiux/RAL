@@ -4,7 +4,7 @@
 \begin{figure}[t]
   \centering
   \includegraphics[width=\columnwidth]{figures/tikz/teaser.pdf}
-  \caption{Dense convolution, the baseline, recomputes every position,
+  \caption{Background of masked convolution: dense convolution vs.\ \sysname. The dense baseline recomputes every position,
   including the inactive ones of the upstream mask $M$. \sysname drives the same
   dense pipeline with a worklist of only the active positions (red), computing
   them at nearly the per-output throughput of dense convolution and reusing the
