@@ -67,7 +67,7 @@
   \def\ts{1.5833}\def\tw{19}\def\th{7.9167}\def\u{0.0123698}   % output thumbnail: cell, width, height, mm per pixel
   % ---------------- the frame x ----------------
   \node[anchor=north west, inner sep=0] at (0,0) {\includegraphics[width=\W mm]{teaser_assets/scene.jpg}};
-  \foreach \c/\r in \active \fill[actfill, opacity=0.4] (\c*\s, -\r*\s) rectangle ++(\s, -\s);
+  \foreach \c/\r in \active \fill[actfill, opacity=0.6] (\c*\s, -\r*\s) rectangle ++(\s, -\s);
   \foreach \k in {1,...,11} \draw[white, line width=0.5pt] (\k*\s, 0) -- ++(0, -\H);
   \foreach \k in {1,...,4} \draw[white, line width=0.5pt] (0, -\k*\s) -- ++(\W, 0);
   \foreach \c/\r in \active \draw[actred, line width=0.8pt] (\c*\s, -\r*\s) rectangle ++(\s, -\s);
