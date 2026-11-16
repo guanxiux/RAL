@@ -20,7 +20,10 @@ RTX~3080 (68~SMs) and Jetson AGX Orin (16~SMs) at locked clocks, using
 YOLOv8m~\cite{yolov8} at batch~1 on WildTrack~\cite{wildtrack} unless noted
 otherwise. Dense time is the faster of our compute kernel with every position
 in the worklist (best configuration) and cuDNN's fastest non-Winograd,
-non-FFT algorithm.
+non-FFT algorithm. As a control, we evaluate the same kernel under
+kernel-map addressing (\S\ref{sec:bg:related}), where each row reads its
+input at every tap from a prebuilt map; the kernel, configuration space, and
+hardware are identical, so differences isolate the addressing mode.
 
 % ===========================================================================
 \subsection{Affine Latency Requires Following the Length}
@@ -35,9 +38,9 @@ non-FFT algorithm.
   reduction split~\cite{cutlass}). The per-length best takes the fastest configuration at each worklist
   length; the two fixed configurations keep one configuration for every length:
   the latency-optimal one has the lowest expected time over a uniform $\alpha$,
-  and the dense-tuned one is the fastest at $\alpha = 1$. Indexed is the same
+  and the dense-tuned one is the fastest at $\alpha = 1$. Kernel map is the same
   kernel reading each row's input from a kernel map at every tap, at its own
-  per-length best.}
+  per-length best; in FP32 it nearly covers the per-length best.}
   \Description{Four line charts of normalized time against active ratio: the
   per-length best is a straight line above the proportional diagonal; a
   configuration fixed at its alpha = 1 optimum flattens at low activity.}
@@ -45,7 +48,7 @@ non-FFT algorithm.
 \end{figure}
 
 A worklist kernel issues only active outputs ($\eta \approx 1$), so
-proportional speedup means keeping dense throughput. When we grant the kernel
+proportional speedup means keeping dense throughput. When the kernel runs under
 its best configuration at every worklist length, its latency averaged across
 layers is affine in $\alpha$, well fitted by $t/t_{\mathrm{dense}} = a\alpha + b$.
 On RTX~3080, $a = 0.89,\, b = 0.15$ (FP32) and $a = 0.83,\, b = 0.23$
@@ -55,14 +58,15 @@ b = 0.18$ (FP16), with per-layer $R^2$ medians of 0.985--0.995
 marginal cost; the entire departure from proportional is the intercept $b$, a
 per-layer fixed cost analyzed in \S\ref{sec:char:bound}.
 
-Indexing only the output rows is what keeps this slope. We give the same
-kernel and configuration space the addressing of sparse-input implicit GEMM
-(\S\ref{sec:bg:related}): each row reads its input at every tap from a kernel
-map, built in advance by grid arithmetic, the cheapest map a dense grid
-allows. At its own per-length best, this indexed kernel runs 1.06--1.10$\times$
+Indexing only the output rows is what keeps this slope. The kernel-map
+control (\S\ref{sec:bg:related}), given its own per-length best
+configuration, runs 1.06--1.10$\times$
 (RTX~3080) and 1.11--1.16$\times$ (AGX Orin) slower than the worklist kernel
 in FP16 (median over layers, per active ratio) and 1.01--1.05$\times$ in FP32,
-and its FP16 slope rises to $a = 0.87$ and 1.03 (Figure~\ref{fig:char-affine}).
+where its line nearly covers the per-length best (Figure~\ref{fig:char-affine}).
+Each tap adds the same index load in both precisions: in FP32 it sits among
+many CUDA-core FMAs, while in FP16 tensor cores shorten the math around it, so
+the FP16 slope rises to $a = 0.87$ and 1.03.
 
 This affine behavior holds only when the configuration follows the worklist
 length. At $\alpha \le 0.05$, the dense-tuned configuration (the fastest at
@@ -71,11 +75,12 @@ $\alpha = 1$) runs
 RTX~3080, and 6.2$\times$ and 3.6$\times$ on AGX Orin
 (Figure~\ref{fig:char-affine}): large tiles amortize weight loads over many
 rows, but when rows are few, configurations that expose more parallel work
-(smaller tiles or a split reduction) shorten the chain each SM executes. The latency-optimal configuration, the single configuration with
+(smaller tiles or a split reduction) shorten the chain each SM executes. The
+latency-optimal configuration, the single configuration with
 the lowest expected time over a uniform $\alpha$, narrows the
-gap to 2.0--2.6$\times$ at $\alpha \le 0.05$, at the price of running
-9.2--18.7\% slower than dense at $\alpha = 1$, and remains 11.2--16.5\% slower
-than the per-length best in expected time.
+gap to 2.0--2.6$\times$ at $\alpha \le 0.05$, but runs
+9.2--18.7\% slower than dense at $\alpha = 1$. Over all lengths it remains
+11.2--16.5\% slower than the per-length best in expected time.
 
 \insight{1}{Under worklist-driven tiled execution, convolution latency is
 affine in the active ratio at dense marginal cost only when the tile
@@ -93,13 +98,13 @@ configuration follows the worklist length.}
   and two precisions, dot: median). (a)~Global-load sectors per request of the
   median frame. (b)--(d)~Cost of one more tile: the slope over the tile count
   of six worklist prefixes over that of six dense prefixes, so per-launch costs
-  such as the cold weight reads cancel. Indexed (triangles): the kernel of
+  such as the cold weight reads cancel. Kernel map (triangles): the kernel of
   Figure~\ref{fig:char-affine} that reads a kernel map at every tap, against
   the dense tile of the same run.}
   \Description{Four dot-and-range panels, one row per layer: for worklist
   tiles, sectors per request, instructions, and SM cycles sit at one and DRAM
   bytes lie between one and 1.4 on 3x3 layers and at one on the 1x1 layer;
-  indexed tiles sit above one in instructions, SM cycles, and DRAM bytes and
+  kernel-map tiles sit above one in instructions, SM cycles, and DRAM bytes and
   below one in sectors per request.}
   \label{fig:char-reduction}
 \end{figure}
@@ -107,12 +112,10 @@ configuration follows the worklist length.}
 The worklist changes only the base address of each row; under a
 channels-last layout, the reduction loop over $k^2$ taps and channel slices
 keeps the dense kernel's addressing, so channel coalescing and weight-tile
-reuse are untouched. Counters confirm it
-(Figure~\ref{fig:char-reduction}). We compare the cost of one more tile, the
-slope over the tile count, because a single launch also carries fixed costs
-(cold weight reads, first misses) that a dense launch spreads over hundreds of
-tiles and a worklist launch over a few; those costs form the intercept of
-\S\ref{sec:char:bound}. Per added tile, a worklist tile executes the same
+reuse are untouched. Counters confirm this parity
+(Figure~\ref{fig:char-reduction}). To cancel per-launch fixed costs, we
+compare the marginal cost of one more tile (the slope over the tile count).
+Per added tile, a worklist tile executes the same
 instructions as a dense tile on every layer, GPU, and precision, and spends
 0.98--1.04$\times$ its SM cycles; sectors per request stay within
 0.92--1.03$\times$ of dense. It reads more DRAM bytes, up to 1.39$\times$
@@ -120,9 +123,9 @@ instructions as a dense tile on every layer, GPU, and precision, and spends
 fields with their neighbors; the $1\times1$ layer, whose receptive fields do
 not overlap, reads exactly as much as dense. The extra reads do not lengthen
 the tile: its SM cycles stay at dense, so they are hidden behind its
-computation. The indexed kernel loses this parity inside the reduction loop.
-Every tap adds a dependent index load ahead of the input copy, so in FP16 an
-indexed tile executes a median 1.15$\times$ the instructions of a dense tile
+computation. The kernel-map variant loses this parity inside the reduction loop.
+Every tap adds a dependent index load ahead of the input copy, so in FP16 a
+kernel-map tile executes a median 1.15$\times$ the instructions of a dense tile
 and spends 1.23$\times$ its SM cycles (up to 1.68$\times$), and its 4-byte
 index loads lower sectors per request to a median 0.86$\times$ of dense.
 
@@ -174,8 +177,8 @@ identical to dense execution.}
   \label{fig:overview}
 \end{figure*}
 
-Scattered worklist entries could hurt L1 reuse by placing positions with
-non-overlapping receptive fields into the same tile. Construction emits the
+Worklist order has a negligible effect on compute time.
+Construction emits the
 worklist in a tile-local order (\S\ref{sec:design:construct}): dense traversal
 order within each construction tile, arrival order across tiles. We compare it
 with the same worklist sorted globally in
@@ -210,9 +213,10 @@ within 1.1\% of a global order.}
   \label{fig:char-bound}
 \end{figure}
 
-The intercept $b$ is the time of a launch that computes almost nothing: a
-launch that computes a single tile already takes 69--80\% of $b$ (Figure~\ref{fig:char-bound}a), so $b$ is
-mostly the time to launch the kernel and finish one tile.
+The residual gap between the affine model and proportional scaling comes from
+per-layer fixed costs, not throughput loss. The intercept $b$ is dominated by
+the time to launch the kernel and finish one tile: a single-tile launch
+already takes 69--80\% of $b$ (Figure~\ref{fig:char-bound}a).
 Without work, a launch spends 65--81\% of its stall cycles on constant-cache
 misses (the kernel parameters are cold); one tile adds barriers and on-chip
 latency, while DRAM/L2 latency stays at 6--23\% (median;

@@ -72,7 +72,7 @@ fig.text(L - 0.012, T + 0.015, "input, $C_{in}$→$C_{out}$, kernel", ha="right"
          color=INK)
 fig.text((L + R) / 2, 0.01, "Tile / dense tile", ha="center", va="bottom", fontsize=FS_CAP)
 fig.legend([plt.Line2D([], [], color=ACC, marker="o", ms=2.8, lw=1.6, alpha=0.8),
-            plt.Line2D([], [], color=IDX, marker="^", ms=2.8, lw=1.6, alpha=0.8)], ["worklist", "indexed"],
+            plt.Line2D([], [], color=IDX, marker="^", ms=2.8, lw=1.6, alpha=0.8)], ["worklist", "kernel map"],
            loc="lower left", bbox_to_anchor=(0.0, 0.0), ncol=1, frameon=False, fontsize=FS_NOTE, handlelength=1.4,
            handletextpad=0.4, borderaxespad=0.1)
 save(fig, "char_reduction.pdf")

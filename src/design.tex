@@ -75,9 +75,9 @@ exactly one segment, so the worklist is exact: $n_{\mathcal{W}}=\|M_{out}\|_0$.
 \end{algorithm}
 
 The resulting order is tile-local: dense within each segment, arrival order
-across segments. A globally ordered worklist would need a device-wide prefix
-scan or a second pass, and order has a negligible effect on the compute
-stage (Insight~3). What remains is the cost of the pass itself: it scans the whole
+across segments. Order has a negligible effect on the compute
+stage (Insight~3), so construction does not sort globally, which would require
+a device-wide prefix scan or a second pass. What remains is the cost of the pass itself: it scans the whole
 grid, so it is fixed by the layer shape while the convolution it enables
 shrinks with activity and channel width.
 
@@ -169,8 +169,8 @@ kernel offsets and channel slices exactly as dense execution does. Because the
 input stays a dense grid, every neighbor of an active position lies at a fixed
 offset from that position: the row's worklist entry and the tap's offset give
 each input address, so the addresses inside the reduction loop remain affine
-and no kernel map is read, where a sparse-input implicit GEMM reads one map
-entry per row and tap inside the loop (\S\ref{sec:bg:related}). The irregularity is $B_M$ indexed loads per
+and no kernel map is read, where a kernel-map implicit GEMM reads one map
+entry per row and tap inside the loop (\S\ref{sec:bg:related}). The irregularity is $B_M$ worklist loads per
 tile outside the reduction, while channel-contiguous loads and weight-tile
 reuse are those of the dense kernel (Insight~2). The
 epilogue stores only positions active in $M_{out}$ (line~13), so the padding
@@ -186,10 +186,10 @@ depends on $n_{\mathcal{W}}$ (Insight~1).
 \subsection{Cost-Aware Tile Selection}
 \label{sec:design:select}
 
-Following $n_{\mathcal{W}}$, however, costs time at every decision point
-(Insight~5). \sysname therefore decides per layer whether, and how
-finely, to follow the length, by weighing the expected gain of each additional
-candidate configuration against its cost.
+Adapting the configuration to $n_{\mathcal{W}}$ costs time at every decision point
+(Insight~5), so \sysname decides per layer whether, and how
+finely, to follow the length by weighing the expected gain of each additional
+candidate against its cost.
 
 For layer $l$, an offline sweep on the target GPU measures the time $t_q(n)$
 of every configuration $q$ in the space $\mathcal{Q}$ across worklist lengths

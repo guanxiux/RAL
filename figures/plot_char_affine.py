@@ -47,7 +47,7 @@ fig.text(L + (R - L) / 2, 0.012, r"Active ratio $\alpha$", ha="center", va="bott
 fig.text(0.012, B + (T - B) / 2, r"$t\,/\,t_{\mathrm{dense}}$", ha="left", va="center", rotation=90, fontsize=FS_CAP)
 handles["ideal"] = plt.Line2D([], [], color=IDEAL, ls=IDEAL_LS, lw=1.0)
 fig.legend([handles[k] for k in ("best", "indexed", "single", "tuned", "ideal")],
-           ["best configuration per length", "indexed, best per length", "fixed: latency-optimal",
+           ["best configuration per length", "kernel map, best per length", "fixed: latency-optimal",
             "fixed: dense-tuned", "ideal ($t \\propto \\alpha$)"], loc="upper center",
            bbox_to_anchor=(0.54, 1.0), ncol=3, frameon=False, fontsize=FS_LEG, handlelength=1.8, columnspacing=0.8,
            handletextpad=0.4)

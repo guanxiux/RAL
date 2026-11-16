@@ -17,7 +17,7 @@ GROUPS = (("Construction", ("no_reuse", "shuffled"), ()),
 
 
 # variant labels, one line each in the variant column
-LABELS = {"indexed": "Kernel map (indexed)", "no_reuse": "No reuse", "shuffled": "Shuffled order", "readback": r"Readback \& launch",
+LABELS = {"indexed": "Kernel map", "no_reuse": "No reuse", "shuffled": "Shuffled order", "readback": r"Readback \& launch",
           "full_grid": "Full-layer grid", "dense_tile": r"Dense-tuned config.",
           "speedup_tile": r"Speedup-opt.\ config.", "latency_tile": r"Latency-opt.\ config.",
           "kmax": r"Cost-unaware $K_{\max}$", "oracle": "Zero-cost oracle", "ours": r"\sysname"}

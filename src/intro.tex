@@ -62,39 +62,42 @@ pipeline, but wastes computation on partially active tiles.
 On an RTX~3080 running YOLOv8m~\cite{yolov8} at batch~4 under temporal
 difference masks~\cite{deltacnn}, 82.2\% of convolution work is unnecessary.
 Gather-scatter sustains only 31.7\% of the dense pipeline's throughput,
-reducing latency by just 43.8\%; tile skipping reaches higher throughput but
-wastes 32.6\% of issued operations, reducing latency by 36.9\%, slower
-than gather-scatter despite its throughput advantage
+reducing latency by just 43.8\%.
+Tile skipping reaches higher throughput but
+wastes 32.6\% of issued operations, reducing latency by only 36.9\%,
+slower than gather-scatter despite its throughput advantage
 (\S\ref{sec:bg:gap}).
 
 Contrary to the expectation that scattered work breaks dense efficiency, we
 find that restricting a dense tiled pipeline to scattered active positions
 largely preserves its per-tile throughput. We collect these positions into a
 worklist and characterize the resulting execution on a desktop and an embedded
-GPU (\S\ref{sec:char}), identifying why: because the input stays a dense grid,
-every neighbor of an active position lies at a fixed offset from it, so the
+GPU (\S\ref{sec:char}). The input stays a dense grid, so
+every neighbor of an active position lies at a fixed offset from it; the
 irregularity reduces to one index per output row, outside the reduction loop
 that drives coalesced channel loads and weight-tile reuse. Hardware counters
-confirm it: a worklist tile executes the same instructions as a dense tile and
+confirm that a worklist tile executes the same instructions as a dense tile and
 spends 0.98--1.04$\times$ its SM cycles. When the tile configuration follows the worklist length,
 convolution time is affine in the active ratio with a slope matching the dense
 marginal cost; the residual gap is an intercept of 5.6--17.4\% of dense time
 per layer (median per GPU and precision), dominated by kernel launch latency
 and fixed per-tile stalls such as barriers, not by throughput loss.
 
-Turning this finding into end-to-end latency reduction requires solving two
-challenges.
+Per-tile throughput parity does not by itself yield end-to-end latency
+reduction; two challenges remain.
 First, \emph{worklist construction cost}: deriving the worklist from the
 mask requires scanning the whole grid and costs time independent of the active count, so construction's share of
 latency grows as activity falls and accumulates when every layer rebuilds.
-Second, \emph{worklist consumption efficiency}: the affine property holds for
-a given number of active positions under a matching tile configuration, but
-in deployment this number is visible only on the device after construction and
-shifts across frames and layers. Reading it back to the host stalls the
+Second, \emph{worklist consumption efficiency}: the best tile configuration
+shifts with the worklist length, but
+the length is visible only on the device after construction and
+changes across frames and layers. Reading it back to the host stalls the
 per-frame path; adapting on the device avoids the stall but incurs a
-non-negligible cost per decision point (\S\ref{sec:char}).
+non-negligible cost per decision point, as current GPUs lack a lightweight
+mechanism to condition a launch on a device-resident value
+(\S\ref{sec:char}).
 
-Based on these findings, we present \sysname
+We present \sysname
 (\textbf{W}orklist-dr\textbf{I}ven ma\textbf{S}k\textbf{E}d
 \textbf{Conv}o\-lu\-tion), which drives the unchanged dense pipeline with an
 active-output worklist. This establishes \emph{worklist-driven tiled
@@ -103,7 +106,7 @@ and gather-scatter: it retains the dense pipeline, as tile skipping does, and
 computes only active positions, as gather-scatter does, because the worklist
 enters a tile only as its row indices and leaves the reduction, the tensor and
 weight layouts, and the dense kernel's configuration space unchanged. Around this compute stage, \sysname co-designs worklist
-construction and consumption to meet the two challenges.
+construction and consumption to meet both challenges.
 To reduce construction cost, a single mask-space pass fuses output-mask
 propagation with per-tile compaction, operating on only mask and coordinate
 metadata; compatible operators reuse the worklist instead of
