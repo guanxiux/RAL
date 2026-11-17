@@ -12,7 +12,7 @@ Before presenting \sysname, we characterize what worklist-driven tiled
 execution achieves and where it falls short. We study its compute stage (the
 dense implicit-GEMM kernel with its GEMM rows taken from a worklist;
 \S\ref{sec:design:compute}) and its construction stage (a mask-to-worklist
-pass) separately, so that each finding belongs to the paradigm, not to a
+pass) separately, so that each finding belongs to the execution model, not to a
 particular implementation.
 FP16 uses \texttt{mma.sync} tensor cores; FP32 is a SIMT kernel of the same
 structure. Each configuration (a point of the dense kernel's configuration
