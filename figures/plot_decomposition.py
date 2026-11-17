@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
-"""fig:decomposition: per-frame YOLOv8m latency by stage on RTX 3080 (reads decomposition.csv).
+"""fig:decomposition: per-frame YOLOv8m b4 latency by stage on RTX 3080 (reads decomposition.csv).
 
-Horizontal stacked bars, one per path, grouped by batch and precision; the total is printed at the end of each bar.
+b4 only: four streams amortize every path's per-call costs the most, so what remains separates the paradigms.
+Horizontal stacked bars, one per path, one panel per precision; the total is printed at the end of each bar.
 Stage colors are their own roles (not the path colors): convolution dark slate, construction bright yellow (far apart in
 lightness: the two are always adjacent), gather/scatter
 sea green with the gather-scatter hatch, other operators warm gray, GPU idle the wasted gray with dots.
@@ -25,15 +26,15 @@ H = 0.74  # bar height
 
 rows = read("decomposition.csv")
 # FP32 and FP16 side by side, sharing the path labels on the left
-PANELS = [("fp32", 15.5, [0, 5, 10, 15]), ("fp16", 15.5, [0, 5, 10, 15])]
-fig = plt.figure(figsize=(FIG_W, 2.05))
-L, R, T, B, HG = 0.25, 0.99, 0.80, 0.16, 0.03
+PANELS = [("fp32", 9.6, [0, 2, 4, 6, 8]), ("fp16", 9.6, [0, 2, 4, 6, 8])]
+fig = plt.figure(figsize=(FIG_W, 1.35))
+L, R, T, B, HG = 0.19, 0.99, 0.69, 0.25, 0.03
 w_ax = (R - L - HG) / 2
 for pi, (dtype, xmax, xt) in enumerate(PANELS):
     ax = fig.add_axes([L + pi * (w_ax + HG), B, w_ax, T - B])
     tidy(ax, "x")
     y, ticks, labels, group_mid = 0.0, [], [], []
-    for gi, batch in enumerate((1, 4)):
+    for gi, batch in enumerate((4,)):
         rs = [r for r in rows if int(r["batch"]) == batch and r["dtype"] == dtype]
         y0 = y
         for r in rs:
@@ -63,10 +64,6 @@ for pi, (dtype, xmax, xt) in enumerate(PANELS):
         for t in ax.get_yticklabels():
             if t.get_text() == "WISEConv":
                 t.set_fontweight("bold")
-        for mid, text in group_mid:
-            ax.text(0.025, mid, text, transform=blended_transform_factory(fig.transFigure, ax.transData), ha="center",
-                    va="center", rotation=90,
-                    fontsize=FS_TICK, fontweight="bold")
     else:
         ax.set_yticklabels([])
     ax.tick_params(axis="y", length=0)

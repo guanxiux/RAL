@@ -204,12 +204,7 @@ $n_{\mathcal{W}}$ when its last CTA finishes, compares it with the thresholds
 of every layer that reads the worklist, and, before the compute launches,
 switches each of these layers whose selected candidate has changed. The design
 does not depend on a particular switching mechanism: $c(K)$ is the cost of the
-cheapest device-side one the GPU offers (\S\ref{sec:impl}).
-We measure $c(K)$ on the model's layer chain with each frame's active ratio
-drawn independently, so it charges a switch whenever consecutive frames choose
-different candidates, which video, whose activity is correlated across frames,
-does less often; a producer that serves several reusing layers compares all
-their thresholds in one epilogue. Because $K$ comes
+cheapest device-side one the GPU offers (\S\ref{sec:impl}). Because $K$ comes
 from Eq.~\ref{eq:select}, it differs across layers, GPUs, and precisions: layers whose optimum shifts little keep
 one configuration and pay nothing for selection;
 \S\ref{sec:eval:ablation-sensitivity} shows that ignoring the cost loses to

@@ -11,10 +11,8 @@ variants of the evaluated models, and mask-aware auxiliary operators. Each
 frame runs as one CUDA graph. Selection uses the lowest-latency device-side
 mechanism CUDA offers, device-updatable kernel nodes (CUDA~12.4):
 each candidate is a node of the graph, and the worklist producer enables the selected node and disables the previous one only when it changes.
-Every kernel agrees with cuDNN at each active output position within a
-relative and absolute tolerance of $10^{-3}$ in FP32 and $3\times10^{-2}$ in
-FP16; the equal task accuracy of the masked paths (Table~\ref{tab:e2e-accuracy})
-checks reuse and mask-aware writeback over whole models.
+Every kernel agrees with cuDNN at each active output position within
+$10^{-3}$ (FP32) and $3\times10^{-2}$ (FP16) relative and absolute tolerance.
 
 % --- OLD VERSION ---
 % We implement \sysname as a PyTorch extension with a Python frontend and a CUDA
