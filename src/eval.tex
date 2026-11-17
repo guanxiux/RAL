@@ -213,10 +213,7 @@ The buffers also tie every layer to the host: sizing them and the GEMM needs
 the layer's active count, which exists only on the device, so each layer reads
 it back before it launches. These round trips leave the GPU idle for 8.26\,ms,
 64.8\% of its frame, and even its busy time alone (4.48\,ms) is 1.49$\times$
-\sysname's 3.00\,ms. We know of no gather-scatter design that sizes its
-buffers and its GEMM without the host; even one that did would remove only
-the idle time, because the busy time moves receptive fields through memory,
-which the paradigm requires.
+\sysname's 3.00\,ms.
 
 At b4, four streams hide most of that idle time and bring it to
 4.50\,ms per frame, still 2.39$\times$ \sysname's 1.88\,ms. In FP16, tensor
@@ -301,6 +298,22 @@ latency caps the end-to-end speedup: FP16 tensor cores shrink that share,
 which is why FP16 speedups are narrower than FP32 ones
 (\S\ref{sec:eval:microbenchmarks}), and models dominated by other operators
 gain less.
+
+\paragraph{Baseline implementations.}
+Each baseline is the strongest public implementation of its paradigm we
+found, and the comparison inherits each implementation's limits. DeltaCNN's
+kernels are direct convolutions on CUDA cores that keep a tile's outputs in
+registers, fuse the per-position mask test and the output-mask update into
+input staging, and switch a tile with at most four active inputs to a
+selective path that computes only their contributions. Tensor-core fragments
+compute at least 16 rows together, so a tensor-core version would lose both
+the per-position test and this selective path and issue more inactive work
+than the 1.25--2.04$\times$ measured here; we know of no such version and do
+not measure its latency. MMCV's and DynConv's gather-scatter read each layer's
+active count back to the host, and we know of no design that sizes its
+buffers and its GEMM without the host. Such a design would remove only the
+idle time: gather-scatter's busy time alone is 1.49$\times$ \sysname's
+(\S\ref{sec:eval:microbenchmarks}).
 
 \paragraph{Hardware implications.}
 The remaining gap comes from two per-layer costs that GPUs leave to software. The affine intercept is launch and dependency latency, not lost
