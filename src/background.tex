@@ -249,8 +249,8 @@ than one per output and offset, and the reduction keeps the dense kernel's
 addressing, so a worklist tile executes the instructions of a dense tile
 (\S\ref{sec:char:reduction}). Mixture-of-experts grouped
 GEMM~\cite{scattermoe,megablocks} and the Blackwell TMA row
-gather~\cite{ptxisa} also load rows by index, but rows of a matrix, in which
-no kernel offsets arise.
+gather~\cite{ptxisa} also load rows by index, but rows of a matrix, with no
+kernel offsets.
 
 \sysname selects a tile configuration at every layer of every frame, from a
 length that exists only on the device, for layers that last microseconds, so

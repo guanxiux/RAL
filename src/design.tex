@@ -157,15 +157,12 @@ beyond the worklist:
 $\eta_{\mathrm{compute}}=n_{\mathcal{W}}/(\lceil n_{\mathcal{W}}/B_M\rceil
 B_M)$.
 
-What a static grid cannot fix is the configuration itself: the fastest $q$
-depends on $n_{\mathcal{W}}$ (Insight~1).
-
 %% ================================================================
 \subsection{Cost-Aware Tile Selection}
 \label{sec:design:select}
 
-Adapting the configuration to $n_{\mathcal{W}}$ costs time at every decision point
-(Insight~5), so \sysname decides per layer whether, and how
+The fastest configuration depends on $n_{\mathcal{W}}$ (Insight~1), but
+adapting it costs time at every decision point (Insight~5), so \sysname decides per layer whether, and how
 finely, to follow the length by weighing the expected gain of each additional
 candidate against its cost.
 

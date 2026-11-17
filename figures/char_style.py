@@ -69,9 +69,20 @@ def tidy(ax, grid_axis="y"):
     ax.set_axisbelow(True)
 
 
-def save(fig, name):
+def save(fig, name, pad=0.02):
+    """Save at the full figure width (the width sets the scale in LaTeX), cropping only the blank above and below."""
     out = os.path.join(HERE, name)
-    fig.savefig(out)
+    import io
+
+    import numpy as np
+    from matplotlib.transforms import Bbox
+    buf, dpi = io.BytesIO(), 300
+    fig.savefig(buf, format="png", dpi=dpi, facecolor="white")  # the rendered ink sets the crop (the tight bbox
+    buf.seek(0)                                                    # counts invisible artists)
+    rows = np.where((plt.imread(buf)[..., :3].min(axis=(1, 2)) < 0.92))[0]
+    w, h = fig.get_size_inches()
+    y1, y0 = h - rows[0] / dpi, h - (rows[-1] + 1) / dpi
+    fig.savefig(out, bbox_inches=Bbox([[0, max(0, y0 - pad)], [w, min(h, y1 + pad)]]))
     plt.close(fig)
     print(f"wrote {out}")
 
