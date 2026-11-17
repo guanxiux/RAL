@@ -232,18 +232,36 @@ in tensor formats. DPACS~\cite{dpacs} targets the same dynamic 2D spatial
 sparsity but designs a custom dataflow accelerator to handle the resulting
 irregular access patterns.
 
-The closest mechanism is the kernel-map implicit GEMM of 3D sparse
-convolution~\cite{spconv2,torchsparsepp,cutlass}. Because a point cloud
-is itself a sparse
-coordinate set, these systems build a kernel map that pairs each output with
-its input neighbors at every kernel offset and resolve each pair inside the
-reduction loop; in masked 2D convolution the input stays on a dense grid, so
-one worklist entry per output row suffices and the reduction keeps the dense
-kernel's addressing (\S\ref{sec:char:reduction}).
-Existing tile-configuration selection by problem
-size~\cite{dietcode,nimble,tensorrt,damoe} serves sizes that change per
-request or batch, where kernels run long enough to absorb selection. A masked layer lasts microseconds, so each decision
-point competes with the gain it buys (\S\ref{sec:char:cost}).
+\sysname's worklist-driven tiled execution indexes only the output rows of a
+tiled GEMM, and we find that this removes two costs that the coordinate-indexed implicit GEMM of 3D sparse
+convolution pays~\cite{spconv2,torchsparsepp}. A point cloud is itself
+a sparse coordinate set, so these systems first build a kernel map that pairs
+each output with its input neighbors at every kernel offset, by hashing,
+sorting, and global scans that often outlast the GEMM~\cite{torchsparsepp,minuet},
+and then resolve the input row of every (output, offset) pair through the map
+inside the reduction loop; CUTLASS's gather/scatter convolution indexes its
+input the same way~\cite{cutlass}. In masked 2D convolution the input stays on
+the dense grid, so every neighbor of an active output lies at a fixed offset
+from it, and one worklist entry per row fixes all of the row's loads. Both
+costs disappear: the worklist comes from one compaction pass over the mask
+(\S\ref{sec:design:construct}) and holds one entry per active output rather
+than one per output and offset, and the reduction keeps the dense kernel's
+addressing, so a worklist tile executes the instructions of a dense tile
+(\S\ref{sec:char:reduction}). Mixture-of-experts grouped
+GEMM~\cite{scattermoe,megablocks} and the Blackwell TMA row
+gather~\cite{ptxisa} also load rows by index, but rows of a matrix, in which
+no kernel offsets arise.
+
+\sysname selects a tile configuration at every layer of every frame, from a
+length that exists only on the device, for layers that last microseconds, so
+each decision point competes with the gain it buys (\S\ref{sec:char:cost}).
+Kernel selection by problem size elsewhere serves sizes that change per
+request or batch: compilers and inference engines for dynamic shapes tune
+kernels over shape ranges and dispatch among them at run
+time~\cite{dietcode,nimble,tensorrt}, GEMM libraries choose a schedule per
+problem size~\cite{streamkpp}, and DA-MoE selects fused mixture-of-experts
+kernels on the device from each layer's token distribution~\cite{damoe}. Their
+kernels run long enough to absorb a selection step; a masked layer does not.
 
 
 % Some 3D systems~\cite{spconv2,torchsparsepp} compute through

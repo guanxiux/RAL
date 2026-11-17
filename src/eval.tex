@@ -53,7 +53,8 @@ machinery (no mask generation, propagation, or temporal state).
 \emph{gather-scatter} uses MMCV's masked convolution~\cite{mmcv} (DynConv's
 own CUDA backend~\cite{dynconv} for pose). All paths run the same weights and
 inputs, and the three masked paths the same layer masks, so they differ only
-in the masked-convolution backend. Every path except gather-scatter replays as
+in the masked-convolution backend. TF32 is disabled, so in FP32 every path,
+Dense included, runs on CUDA cores. Every path except gather-scatter replays as
 a CUDA graph; gather-scatter reads each layer's active count on the host to
 size its buffers and its GEMM, so it must run eagerly. Every path runs in both
 precisions except gather-scatter on DynConv in FP16: DynConv's kernels support
@@ -64,7 +65,11 @@ fastest baseline on each workload and platform.\par}
 \paragraph{Protocol.}
 Latency is the GPU time of one frame (of one batch of four for YOLOv8m b4)
 measured with CUDA events; it includes worklist construction and all
-non-convolution operators. YOLOv8m processes whole videos continuously, so its
+non-convolution operators. Each path runs every frame of the evaluation set
+three times, and a frame's latency is the median of its three runs.
+On the Jetson boards, energy integrates the board's input power, sampled every
+2\,ms, over a separate run of continuous inference that excludes input loading.
+YOLOv8m processes whole videos continuously, so its
 temporal masks evolve as in deployment.
 \sysname's per-device tuning (\S\ref{sec:design:select}) runs once offline
 and is excluded. Task accuracy is reported to confirm that the sparse paths
@@ -79,7 +84,8 @@ agree.
   \caption{End-to-end latency of every path on six GPUs, normalized to Dense of
   the same precision (lower is better). Labels give Dense's absolute latency and
   \sysname's speedup over the fastest other path; the ideal line scales Dense by
-  the mean active ratio $\hat{\alpha}$ given under each workload (FP32 / FP16).}
+  the mean active ratio of convolution MACs $\hat{\alpha}$ given under each workload (FP32 / FP16);
+  it scales the whole frame, including operators that no masked path shrinks.}
   \Description{Six panels, one per GPU. In each, four workloads each show an
   FP32 and an FP16 group of Dense, Tile skipping, Gather-scatter, and WISEConv
   bars, normalized to Dense. WISEConv is the
@@ -96,10 +102,16 @@ and in FP16 1.27--4.25$\times$ faster (2.09$\times$), 2.07$\times$ over all
 tiled execution, whose tiles restrict computation to active positions at the
 per-tile cost of dense tiles (Insight~2). No baseline is consistently second in FP32: tile skipping is the
 fastest baseline in 13 of the 24 groups, gather-scatter in 6, and Dense in 5.
+With TF32 disabled, all four paths run on CUDA cores in FP32, so these groups
+compare the execution paradigms on the same arithmetic units.
 
 In FP16, Dense is the fastest baseline in 19 of the 20 groups, because tensor
 cores shorten its convolution while DeltaCNN's FP16 kernels run on CUDA cores
 and gather-scatter's host synchronization does not depend on precision.
+Tile skipping's useful-compute ratio depends only on the mask and the tile
+shape, so tensor-core kernels would raise its raw throughput but still issue
+1.25--2.04$\times$ the required work, against at most 1.10$\times$ for \sysname
+(\S\ref{sec:eval:microbenchmarks}).
 Gather-scatter varies most, since its per-layer extraction, scatter, and host
 synchronization do not shrink with the active ratio. In 23 groups, mostly
 FireFlowNet, DynConv, and YOLOv8m b1, it runs 1.85--12.4$\times$ slower than Dense, beyond the axis. On YOLOv8m b4, four streams amortize these
@@ -127,7 +139,9 @@ Given the same layer masks, the three masked paths reach the same accuracy
 (Table~\ref{tab:e2e-accuracy}): AEE is identical, PCKh differs by at most
 0.01 points, and YOLOv8m AP by at most 0.3 points, residuals of
 floating-point reduction order. The remaining gap to Dense (1.4 PCKh points lower on DynConv, slightly better
-AEE and AP elsewhere) is set by the upstream mask policy.
+AEE and AP elsewhere) is set by the upstream mask policy, so \sysname's speedup
+over Dense on DynConv carries the policy's accuracy cost, while its speedups
+over the masked baselines compare paths of equal accuracy.
 
 \input{figures/e2e_accuracy_table}
 
@@ -199,7 +213,10 @@ The buffers also tie every layer to the host: sizing them and the GEMM needs
 the layer's active count, which exists only on the device, so each layer reads
 it back before it launches. These round trips leave the GPU idle for 8.26\,ms,
 64.8\% of its frame, and even its busy time alone (4.48\,ms) is 1.49$\times$
-\sysname's 3.00\,ms.
+\sysname's 3.00\,ms. We know of no gather-scatter design that sizes its
+buffers and its GEMM without the host; even one that did would remove only
+the idle time, because the busy time moves receptive fields through memory,
+which the paradigm requires.
 
 At b4, four streams hide most of that idle time and bring it to
 4.50\,ms per frame, still 2.39$\times$ \sysname's 1.88\,ms. In FP16, tensor
@@ -263,6 +280,11 @@ it picks the same tile as Cost-unaware $K_{\max}$ for every layer and frame,
 its gap to that variant is the cost of the device-side mechanism itself, the
 cheapest measured in \S\ref{sec:char:cost}; a launch predicate evaluated
 before CTA allocation would remove it (\S\ref{sec:eval:discussion}).
+Most of what following $n_W$ gains comes from configurations chosen for the
+sparse regime (1.71$\times$ and 1.28$\times$ over the dense-tuned ones).
+Per-frame switching adds 1.6\% and 9\% on top; the selection cost of current
+GPUs bounds this margin, and the oracle, 8\% and 12\% below \sysname's
+latency, bounds what switching gains at zero cost.
 
 \subsection{Discussion}
 \label{sec:eval:discussion}

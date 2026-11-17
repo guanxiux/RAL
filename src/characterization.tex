@@ -113,6 +113,16 @@ fields with their neighbors (the $1\times1$ layer, whose receptive fields do
 not overlap, reads exactly as much as dense); since its SM cycles stay at
 dense, computation hides these reads.
 
+The parity rests on two properties of the input, not on a particular network.
+A position's channels must fill a 32-byte sector (8 FP32 or 16 FP16 values),
+which holds on every layer of the evaluated models past the input layer, and
+channels only widen with depth in modern CNNs. Active positions must cluster,
+so that neighbors share receptive fields; every mask source of
+\S\ref{sec:bg:masked} provides this, because events, temporal differences,
+and learned gates follow objects and motion. Uniformly drawn positions, the
+control without clustering, read up to 4.1$\times$ the DRAM bytes
+(\S\ref{sec:char:order}).
+
 Under kernel-map addressing, the kernel loses this parity inside the reduction
 loop.
 Every tap adds a dependent index load ahead of the input copy, so in FP16 a
