@@ -43,6 +43,16 @@ def work(dev, task, dtype):
     return paths, f
 
 
+def eta_construct(task):
+    """Share of the worklists' MACs that the layers' own masks need (work_counts.py eta_construct_measured, FP32
+    replay, 2026-11-17): required MACs are counted on n_W, which a reused worklist overstates by its superset."""
+    for name in ("work_etac2_fp32.json", "work_etac_fp32.json"):
+        f = EV / "rtx_3080_sm86" / task / "micro_upd" / name
+        if f.exists():
+            return json.loads(f.read_text())["paths"]["wiseconv"]["eta_construct_measured"]
+    return 1.0
+
+
 def main():
     lat = {(r["platform"], r["workload"], r["dtype"], r["path"]): float(r["latency_ms"])
            for r in csv.DictReader((HERE / "e2e_stats.csv").open())}
@@ -54,13 +64,16 @@ def main():
                 if not w or (plat, key, dtype, "dense") not in lat:
                     continue
                 dense_macs = w["dense"]["dense_macs"]
-                required = w["wiseconv"]["required_macs"]
+                etac = eta_construct(task)  # the FP32 replay's value also for FP16 (its masks differ slightly)
+                required = w["wiseconv"]["required_macs"] * etac
                 t_dense = lat[(plat, key, dtype, "dense")]
                 for path in ("dense", "tile_skip", "gather_scatter", "wiseconv"):
                     if path not in w or (plat, key, dtype, path) not in lat:
                         continue
-                    issued = w[path]["issued_macs"]
-                    eta = w[path]["eta_mac"] if path == "tile_skip" and "eta_mac" in w[path] else required / issued
+                    # gather-scatter issues each layer's own active set: its issued MACs are the required ones
+                    issued = required if path == "gather_scatter" else w[path]["issued_macs"]
+                    eta = (w[path]["eta_mac"] * etac if path == "tile_skip" and "eta_mac" in w[path]
+                           else required / issued)
                     T = issued / dense_macs * t_dense / lat[(plat, key, dtype, path)]
                     rows.append({"platform": plat, "workload": key, "dtype": dtype, "path": path, "eta": f"{eta:.5f}",
                                  "T": f"{T:.5f}", "effective": f"{eta * T:.5f}", "wasted": f"{(1 - eta) * T:.5f}",

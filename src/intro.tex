@@ -4,15 +4,15 @@
 \begin{figure}[t]
   \centering
   \includegraphics[width=\columnwidth]{figures/tikz/teaser.pdf}
-  \caption{Comparison of tile skipping~\cite{sbnet,skipconv,evconv,deltacnn} and \sysname in masked convolution
-  execution. Tile skipping skips the tiles with no active position (blue) in
-  the mask $M$ but computes every position of the remaining tiles. \sysname
-  drives the same dense pipeline with a worklist of the active positions while
-  keeping its per-tile throughput, so its convolution ends earlier and planning
-  reacts sooner.}
+  \caption{Comparison of tile skipping~\cite{sbnet,skipconv,evconv,deltacnn} and \sysname in masked convolution execution.
+  Tile skipping keeps the dense pipeline's tiled execution for throughput but
+  selects only whole tiles, wasting 7 of the 12 positions it computes.
+  \sysname turns the active positions (blue) into a worklist that drives the
+  same pipeline as its coordinate source, which, we find, keeps the dense
+  per-tile throughput, so planning reacts sooner.}
   \Description{Top: a grayscale street scene seen from a vehicle on a grid of
   convolution positions; the cells around a crossing pedestrian and a moving car
-  are blue, the active positions of the upstream mask M, which is also drawn
+  are blue, the active positions of the upstream mask M_out, which is also drawn
   below the scene. The WISEConv trajectory changes lane right away and arrives in
   time, while the dashed tile-skipping trajectory keeps straight and is too late.
   Bottom: tile skipping computes three 2x2 tiles, all 12 receptive fields for 5
@@ -39,28 +39,30 @@ systems~\cite{evconv,deltacnn,dgnet,dynconv} rarely turn the sparsity into propo
 Dense GPU convolution obtains high \emph{throughput} (operations per second)
 from tiled execution: each tile enumerates a contiguous block of output
 coordinates and reduces over channels and kernel offsets along a regular
-datapath with coalesced loads and weight-tile reuse.
+datapath (the dense reduction datapath) with coalesced loads and
+weight-tile reuse.
 In masked convolution, reducing latency proportionally requires sustaining
 this throughput while achieving a high \emph{useful-compute ratio} (the
 fraction of issued operations that produce needed outputs), but the mask
 places the two axes in tension: it selects scattered positions while each
 tile covers a contiguous block, so keeping the blocks issues operations on
-inactive positions, and abandoning them gives up the regular datapath.
+inactive positions, and abandoning them gives up this datapath.
 
 Neither existing execution paradigm sustains both axes.
-\emph{Gather-scatter}~\cite{sai,dgnet,dynconv} extracts exactly the
-active positions into a packed representation, computes, and
-scatters the results back, but adds memory passes that materialize their
-receptive fields and a host synchronization per layer.
-\emph{Tile skipping}~\cite{sbnet,skipconv,evconv,deltacnn} suppresses tiles that are entirely inactive and retains the dense
-pipeline, but wastes computation on partially active tiles.
-On an RTX~3080 running YOLOv8m~\cite{yolov8} at batch~4 under temporal
-difference masks~\cite{deltacnn}, 82.2\% of convolution work is unnecessary
-(an \emph{active ratio} of 17.8\%).
-Gather-scatter sustains only 31.7\% of the dense pipeline's throughput,
+\emph{Gather-scatter}~\cite{sai,dgnet,dynconv} selects exactly the active
+positions but gives up the dense reduction datapath: it extracts them into a
+packed representation, computes, and scatters the results back, adding memory
+passes that materialize their receptive fields and a host synchronization per
+layer. \emph{Tile skipping}~\cite{sbnet,skipconv,evconv,deltacnn} keeps the
+dense reduction datapath but selects positions only per tile: it suppresses
+entirely inactive tiles and wastes computation on partially active ones.
+On an RTX~3080 running YOLOv8m~\cite{yolov8} at batch~4 under temporal-difference
+masks~\cite{deltacnn}, 82.3\% of convolution work is unnecessary
+(an \emph{active ratio} of 17.7\%).
+Gather-scatter sustains only 31.4\% of the dense pipeline's throughput,
 reducing latency by just 43.8\%.
 Tile skipping sustains 41.9\% but
-wastes 32.6\% of issued operations, reducing latency by only 36.9\%,
+wastes 33.1\% of issued operations, reducing latency by only 36.9\%,
 slower than gather-scatter despite its throughput advantage
 (\S\ref{sec:bg:gap}).
 
@@ -119,13 +121,14 @@ This paper makes the following contributions:
         locating its remaining gap, and identifying the hardware support that
         would narrow it (\S\ref{sec:char}).
 
-  \item We present \sysname, which co-designs the worklist's construction,
-        reuse, and consumption around these findings (\S\ref{sec:design}).
+  \item We present \sysname, which co-designs the worklist's construction and consumption around these findings to sustain both throughput and useful-compute ratio,
+        narrowing the sparsity-to-speedup gap in masked convolution.
 
   % geomean over 44 workload-device-precision cases (fastest available baseline, dense included), 2026-11-16
-  \item We evaluate \sysname on four workloads and six GPUs, where it runs
-        2.06$\times$ (FP32) and 2.09$\times$ (FP16) faster than the fastest
-        baseline (geometric mean) and uses 60.8--82.5\% less energy than dense
+  \item We evaluate \sysname on six GPUs and four workloads, where it
+        achieves 2.06$\times$ (FP32) and 2.09$\times$ (FP16) geometric-mean
+        speedups over the fastest baseline per workload-platform pair and
+        reduces energy by 60.8--82.5\% versus dense
         execution on embedded GPUs (\S\ref{sec:eval}).
 \end{itemize}
 

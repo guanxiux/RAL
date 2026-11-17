@@ -85,7 +85,7 @@
   \node[wlabel, anchor=north east, font=\fontsize{7}{8}\selectfont] at (\W-0.8,-0.8) {Input frame $\mathbf{x}$};
   \node[anchor=north east, draw=rule, line width=0.4pt, rounded corners=1.2pt, inner xsep=1.2pt, inner ysep=1.0pt,
         align=left, small] at (\W,-35.9) {%
-    \tikz[baseline=-0.6ex]{\fill[actfill] (0,-0.9mm) rectangle (2.4mm,0.9mm); \draw[actred, line width=0.6pt] (0,-0.9mm) rectangle (2.4mm,0.9mm);}~active in mask $M$\\[0.4mm]
+    \tikz[baseline=-0.6ex]{\fill[actfill] (0,-0.9mm) rectangle (2.4mm,0.9mm); \draw[actred, line width=0.6pt] (0,-0.9mm) rectangle (2.4mm,0.9mm);}~active in $M_{out}$\\[0.4mm]
     \tikz[baseline=-0.6ex]{\path[waste] (0,-0.9mm) rectangle (2.4mm,0.9mm); \draw[rule, line width=0.4pt] (0,-0.9mm) rectangle (2.4mm,0.9mm);}~inactive (wasted if computed)
 };
 
@@ -98,12 +98,12 @@
     \foreach \c/\r in \active \draw[actred, line width=0.6pt] (\c*1.5, -\r*1.5) rectangle ++(1.5, -1.5);
     \draw[rule, line width=0.5pt] (0,0) rectangle (18,-7.5);
     \node[anchor=west, align=left, small] at (19.4,-3.75)
-      {{\fontsize{7.4}{8.4}\selectfont\textbf{Upstream mask $M$}}\\[0.3mm]the positions that need\\recomputing (blue), here\\where the scene changed};
+      {{\fontsize{7.4}{8.4}\selectfont\textbf{Upstream mask $M_{out}$}}\\[0.3mm]the positions that need\\recomputing (blue), here\\where the scene changed};
   \end{scope}
   % x and M feed both systems
   \draw[ink, line width=0.55pt] (2.5,-\H) -- (2.5,-78.6) (6.4,-41.35) -- (2.5,-41.35);
   \fill[ink] (2.5,-41.35) circle (0.45);
-  \node[small, anchor=east, rotate=90] at (1.4,-47.0) {$\mathbf{x}$, $M$};
+  \node[small, anchor=east, rotate=90] at (1.4,-47.0) {$\mathbf{x}$, $M_{out}$};
   \draw[flow] (2.5,-57.0) -- (4.5,-57.0);
   \draw[flow] (2.5,-78.6) -- (4.5,-78.6);
 

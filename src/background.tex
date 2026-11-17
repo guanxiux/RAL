@@ -50,7 +50,7 @@ feature grid, so a single masked-convolution runtime serves them all.
   \caption{Background of masked convolution and its execution by the dense
   pipeline, on a
   $3\times3$ convolution with padding~1 (marked --),
-  the example reused in Figures~\ref{fig:tile-skip}, \ref{fig:gather-scatter}
+  the example reused in Figures~\ref{fig:tile-skip}, \ref{fig:gather-scatter},
   and~\ref{fig:overview}. The dense pipeline computes every output, but only the outputs active in $M_{out}$ (blue) are required, so the computation of the
   rest (gray) is wasted.}
   \Description{An input grid with a ring of padding, the receptive fields of all sixteen positions
@@ -175,7 +175,7 @@ For $|\mathcal{C}|>0$, an ideal path achieves $\eta=1$ by issuing only required 
 \begin{equation}
   \begin{aligned}
     T &= \frac{2|\mathcal{C}|k^2 C_{in} C_{out}}{t},
-    & T_{\mathrm{eff}} &= \eta T.
+    & T_{\mathrm{eff}} &= \eta T,
   \end{aligned}
   \label{eq:efficiency-framework-throughput}
 \end{equation}
@@ -212,10 +212,12 @@ where \(t\) denotes the latency of the execution path, including auxiliary mask 
 Figure~\ref{fig:gap} makes this concrete for YOLOv8m~\cite{yolov8} at
 batch~4 on WildTrack~640~\cite{wildtrack} (RTX~3080, FP32), comparing cuDNN
 (Dense), DeltaCNN tile skipping, and MMCV gather-scatter~\cite{mmcv} on the
-same temporal difference masks~\cite{deltacnn}. Under these masks, 82.2\% of
-convolution work is unnecessary. Tile skipping holds 41.9\% of dense throughput but a useful-compute ratio of only 67.4\%;
+same temporal-difference masks~\cite{deltacnn}. Under these masks, 82.3\% of
+convolution work is unnecessary. Tile skipping holds 41.9\% of dense throughput but a useful-compute ratio of only 66.9\%;
 gather-scatter lifts the useful-compute ratio to one, yet extraction traffic
-and per-layer host synchronization cut its throughput to 31.7\% of dense. Neither path turns the GPU's capability into effective throughput.
+and per-layer host synchronization cut its throughput to 31.4\% of dense. Both thus reach under a third of
+dense throughput in effective throughput (28.0\% and 31.4\%);
+proportional speedup needs all of it.
 
 
 \subsection{Distinction from Related Sparse Execution}
@@ -232,25 +234,23 @@ in tensor formats. DPACS~\cite{dpacs} targets the same dynamic 2D spatial
 sparsity but designs a custom dataflow accelerator to handle the resulting
 irregular access patterns.
 
-\sysname's worklist-driven tiled execution indexes only the output rows of a
-tiled GEMM, and we find that this removes two costs that the coordinate-indexed implicit GEMM of 3D sparse
-convolution pays~\cite{spconv2,torchsparsepp}. A point cloud is itself
-a sparse coordinate set, so these systems first build a kernel map that pairs
-each output with its input neighbors at every kernel offset, by hashing,
-sorting, and global scans that often outlast the GEMM~\cite{torchsparsepp,minuet},
-and then resolve the input row of every (output, offset) pair through the map
-inside the reduction loop; CUTLASS's gather/scatter convolution indexes its
-input the same way~\cite{cutlass}. In masked 2D convolution the input stays on
-the dense grid, so every neighbor of an active output lies at a fixed offset
-from it, and one worklist entry per row fixes all of the row's loads. Both
-costs disappear: the worklist comes from one compaction pass over the mask
-(\S\ref{sec:design:construct}) and holds one entry per active output rather
-than one per output and offset, and the reduction keeps the dense kernel's
-addressing, so a worklist tile executes the instructions of a dense tile
-(\S\ref{sec:char:reduction}). Mixture-of-experts grouped
-GEMM~\cite{scattermoe,megablocks} and the Blackwell TMA row
-gather~\cite{ptxisa} also load rows by index, but rows of a matrix, with no
-kernel offsets.
+\sysname's worklist-driven tiled execution is closest in mechanism to the
+kernel-map implicit GEMM of these 3D systems~\cite{spconv2,torchsparsepp},
+but they are bound by the kernel map that a sparse input requires, which the
+dense grid of masked convolution makes unnecessary. A point
+cloud is itself a sparse coordinate set, so 3D systems first build a kernel
+map that pairs each output with its input neighbors at every kernel offset, by
+hashing, sorting, and global scans that often outlast the
+GEMM~\cite{torchsparsepp,minuet}, and then look up the input row of every
+(output, offset) pair inside the reduction loop; CUTLASS's gather/scatter
+convolution indexes its input the same way~\cite{cutlass}. On the dense grid,
+every neighbor lies at a fixed offset from its output, so \sysname's worklist comes from one compaction pass over the mask
+(\S\ref{sec:design:construct}) with one entry per active output, and its
+reduction keeps the dense kernel's addressing: a worklist tile executes the
+instructions of a dense tile (\S\ref{sec:char:reduction}). Mixture-of-experts
+grouped GEMM~\cite{scattermoe,megablocks} and the Blackwell TMA row
+gather~\cite{ptxisa} also load rows by index, but matrix rows, with no kernel
+offsets.
 
 \sysname selects a tile configuration at every layer of every frame, from a
 length that exists only on the device, for layers that last microseconds, so

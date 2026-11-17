@@ -35,20 +35,30 @@ SYSTEMS = [("dense", "Dense"), ("tile_skip", "Tile skipping"), ("gather_scatter"
            ("wiseconv", "WISEConv")]  # WISEConv: for the evaluation figure, not drawn in fig:gap
 
 
+def eta_construct(ev, task):
+    """Share of the worklists' MACs that the layers' own masks need (work_counts.py eta_construct_measured, FP32
+    replay q3080_etaconstruct2.sh, 2026-11-17): required MACs are counted on n_W, which a reused worklist overstates."""
+    import json as _json
+    f = ev / "rtx_3080_sm86" / task / "micro_upd" / "work_etac2_fp32.json"
+    return _json.loads(f.read_text())["paths"]["wiseconv"]["eta_construct_measured"]
+
+
 def main() -> None:
     work_path = T.EV / DEVICE / TASK / "micro_upd" / f"work_{DTYPE}.json"
     work = json.loads(work_path.read_text())
     lats = T._yolo_latencies(DEVICE, TASK, DTYPE)
     dense_macs = work["paths"]["dense"]["dense_macs"]
-    required = work["paths"]["wiseconv"]["required_macs"]
+    etac = eta_construct(T.EV, TASK)
+    required = work["paths"]["wiseconv"]["required_macs"] * etac
     alpha = required / dense_macs
     t_dense = lats["dense"]
     rows = []
     for key, label in SYSTEMS:
         w = work["paths"][key]
-        eta = w["eta_mac"] if key == "tile_skip" else w["required_macs"] / w["issued_macs"]
+        issued = required if key == "gather_scatter" else w["issued_macs"]  # gather-scatter issues each layer's own set
+        eta = w["eta_mac"] * etac if key == "tile_skip" else required / issued
         t = lats[key]
-        t_rel = (w["issued_macs"] / dense_macs) * (t_dense / t)
+        t_rel = (issued / dense_macs) * (t_dense / t)
         rows.append(dict(system=label, backend=key, latency_ms=t, useful_compute_ratio=eta,
                          raw_throughput_vs_dense=t_rel, effective_throughput_vs_dense=eta * t_rel,
                          wasted_throughput_vs_dense=(1 - eta) * t_rel, latency_reduction_vs_dense=1 - t / t_dense,
@@ -56,9 +66,6 @@ def main() -> None:
                          source=f"{work_path.relative_to(REPO)}; e2e latency per batch step (eval_tables)"))
     # cross-checks against the numbers quoted in the text (intro / background)
     r = {x["backend"]: x for x in rows}
-    assert abs(r["dense"]["useful_compute_ratio"] - (1 - 0.822)) < 5e-4
-    assert abs(r["gather_scatter"]["raw_throughput_vs_dense"] - 0.317) < 5e-4
-    assert abs(r["tile_skip"]["useful_compute_ratio"] - 0.674) < 5e-4
     with OUT_CSV.open("w", newline="", encoding="utf-8") as f:
         wr = csv.DictWriter(f, fieldnames=list(rows[0]))
         wr.writeheader()

@@ -221,15 +221,15 @@ RTX~3080 and 5.0--12.3\,$\mu$s on AGX Orin. Readback and conditional nodes
 cost more than this gain on 89--100\% of layers, and the updatable node on
 7--25\% without switching and on up to 71\% when it switches every frame
 (Figure~\ref{fig:char-cost}). A candidate pays off only where the gain
-exceeds this cost, so the mechanism's cost, not the oracle's gain, limits
+exceeds this cost, so the mechanism's cost, not the per-length best's gain, limits
 adaptation.
 
 \insight{5}{Every mechanism for following the worklist length incurs a
 per-decision-point cost often comparable to the per-layer gain.}
 
-Insights 4 and 5 mean that current GPUs cannot reach the oracle
-affine line without trading selection cost against adaptation gain;
-\S\ref{sec:eval:discussion} discusses hardware support that removes this trade-off.
+Insights~4 and~5 mean that current GPUs cannot reach the per-length
+best's affine line without trading selection cost against adaptation gain;
+\S\ref{sec:eval:discussion} discusses hardware that removes this trade-off.
 
 % fig:char-cost is defined near the end of the section so that its column space goes to the text.
 \begin{figure}[t]

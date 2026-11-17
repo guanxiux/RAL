@@ -79,11 +79,20 @@ def runs(dev, wl, dtype, gs):
     return res
 
 
+def eta_construct(ev, task):
+    """Share of the worklists' MACs that the layers' own masks need (work_counts.py eta_construct_measured, FP32
+    replay q3080_etaconstruct2.sh, 2026-11-17): required MACs are counted on n_W, which a reused worklist overstates."""
+    import json as _json
+    f = ev / "rtx_3080_sm86" / task / "micro_upd" / "work_etac2_fp32.json"
+    return _json.loads(f.read_text())["paths"]["wiseconv"]["eta_construct_measured"]
+
+
 def alpha(task, dtype):
     # per precision (2026-11-16): the temporal policies threshold activations of the run's precision, so FP16 masks
     # differ from FP32's (YOLOv8m b1 15.3% vs 17.5%); work_full_fp16.json is the FP16 replay (work_counts.py --dtype fp16)
     w = et.load(et.EV / "rtx_3080_sm86" / task / "micro_upd" / f"work_full_{dtype}.json")
-    return w["paths"]["wiseconv"]["required_macs"] / w["paths"]["dense"]["dense_macs"] if w else None
+    return (w["paths"]["wiseconv"]["required_macs"] * eta_construct(et.EV, task)
+            / w["paths"]["dense"]["dense_macs"]) if w else None
 
 
 def main():
